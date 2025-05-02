@@ -171,7 +171,7 @@ Examples:
   fluxfce force-day        # Apply Day mode now and disable auto switching
   fluxfce force-night      # Apply Night mode now and disable auto switching
   fluxfce set-default --day # Save current desktop look as the new Day default
-  fluxfce uninstall        # Remove systemd units and clear schedule
+  fluxfce uninstall        # Remove systemd units and clear schedule (prompts for config removal)
 """
     )
     parser.add_argument('-v', '--verbose', action='store_true', help="Enable detailed logging output.")
@@ -180,7 +180,7 @@ Examples:
 
     # Define Simplified Commands
     subparsers.add_parser('install', help='Install systemd units and enable automatic scheduling.')
-    subparsers.add_parser('uninstall', help='Remove systemd units & clear schedule (prompts to remove config).') # Updated help
+    subparsers.add_parser('uninstall', help='Remove systemd units & clear schedule (prompts to remove config).')
     subparsers.add_parser('enable', help='Enable automatic scheduling (schedules transitions).')
     subparsers.add_parser('disable', help='Disable automatic scheduling (clears scheduled transitions).')
     subparsers.add_parser('status', help='Show config, calculated times, and schedule status.')
@@ -208,27 +208,57 @@ Examples:
         log.debug(f"Script path: {SCRIPT_PATH}")
         log.debug(f"Python executable: {PYTHON_EXECUTABLE}")
 
-        # --- Use fluxfce_core directly for API calls ---
         if args.command == 'install':
+            # --- Start Updated Install Block ---
             log.info("Starting installation...")
+            # Core API calls remain the same
             fluxfce_core.install_fluxfce(script_path=SCRIPT_PATH, python_executable=PYTHON_EXECUTABLE)
             log.info("Systemd units installed. Enabling scheduling...")
             fluxfce_core.enable_scheduling(python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH)
-            print("FluxFCE installed and enabled successfully.")
-            print("Please ensure this script is executable and in your system's PATH.")
+
+            # --- CORRECTED User Feedback Messages ---
+            print() # Blank line
+            print("-" * 45)
+            print(" fluxfce installed and enabled successfully. ")
+            print("-" * 45)
+
+            # PATH Instructions
+            user_bin_dir = pathlib.Path.home() / ".local" / "bin"
+
+            print("\nTo run 'fluxfce' easily from your terminal, you need to make the command")
+            print("available in your system's $PATH.")
+
+            print(f"\nRecommended Method (using a symbolic link):")
+            print(f"  1. Ensure '{user_bin_dir}' exists and is in your PATH:")
+            print(f"     $ mkdir -p \"{user_bin_dir}\"")
+            print(f"     $ echo $PATH  # Check if the directory is listed")
+            print(f"     # If not, add 'export PATH=\"{user_bin_dir}:$PATH\"' to your ~/.bashrc or ~/.zshrc")
+            print(f"     # then run 'source ~/.bashrc' or restart your terminal.")
+            print(f"  2. Make the main script executable:")
+            print(f"     $ chmod +x \"{SCRIPT_PATH}\"")
+            print(f"  3. Create a symbolic link in your PATH pointing to the script:")
+            print(f"     $ ln -s \"{SCRIPT_PATH}\" \"{user_bin_dir / 'fluxfce'}\"")
+            print(f"     (This keeps the code in '{pathlib.Path(SCRIPT_PATH).parent}' so imports work.)")
+
+            # set-default Instructions
+            print() # Blank line
+            print("Tip: Configure the Day/Night appearance by setting your preferred")
+            print("     theme/background and xsct temperature (eg 'xsct 4500') then run:")
+            print("     $ fluxfce set-default --mode day")
+            print("     or")
+            print("     $ fluxfce set-default --mode night")
+            # --- End CORRECTED User Feedback Messages ----
+            # --- End Updated Install Block ---
 
         elif args.command == 'uninstall':
             # --- Start Updated Uninstall Block ---
             log.info("Starting uninstallation (system components)...")
-            # Call core API for system cleanup first
-            fluxfce_core.uninstall_fluxfce() # This raises on critical failure
+            fluxfce_core.uninstall_fluxfce()
             print("FluxFCE systemd units removed and schedule cleared.")
 
-            # Now handle config directory removal prompt
-            config_dir_path = fluxfce_core.CONFIG_DIR # Get path from core
+            config_dir_path = fluxfce_core.CONFIG_DIR
             if config_dir_path.exists():
                 try:
-                    # Prompt user
                     confirm = input(f"\nDo you want to remove the configuration directory ({config_dir_path})? [y/N]: ").strip().lower()
                     if confirm == 'y':
                         log.warning(f"User confirmed removal of configuration directory: {config_dir_path}")
@@ -237,21 +267,18 @@ Examples:
                     else:
                         print("Configuration directory kept.")
                 except OSError as e:
-                    # Handle errors during rmtree
                     print(f"\nError removing configuration directory {config_dir_path}: {e}", file=sys.stderr)
                     log.error(f"Failed to remove config directory {config_dir_path}: {e}")
-                    # Continue without changing exit code, as core uninstall succeeded
                 except EOFError:
-                    # Handle case where input cannot be read (e.g., running non-interactively)
                      print("\nSkipping config directory removal prompt (no input received).")
                      log.warning("Skipping config directory removal prompt due to EOFError.")
             else:
-                # Log if dir doesn't exist, no need to tell user unless verbose maybe
                 log.debug(f"Configuration directory {config_dir_path} not found, skipping removal prompt.")
 
             print("\n--- Uninstallation Complete ---")
             # --- End Updated Uninstall Block ---
 
+        # ... (Keep other elif blocks: enable, disable, status, force-day, force-night, set-default) ...
         elif args.command == 'enable':
             log.info("Enabling scheduling...")
             fluxfce_core.enable_scheduling(python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH)
@@ -284,7 +311,8 @@ Examples:
             print(f"Current desktop settings saved as default for {mode.capitalize()} mode.")
             print("(Run 'fluxfce enable' if needed to apply schedule changes).")
 
-        # --- Internal Command Handling ---
+
+        # --- Internal Command Handling (Keep as before) ---
         elif args.command == 'internal-apply':
             mode = args.internal_mode
             log.info(f"CLI: Executing internal-apply for mode '{mode}'")
@@ -301,7 +329,6 @@ Examples:
 
         elif args.command == 'run-login-check':
             log.info("CLI: Executing run-login-check command")
-            # FIX: Corrected typo in function name from previous version
             success = fluxfce_core.handle_run_login_check()
             exit_code = 0 if success else 1
 

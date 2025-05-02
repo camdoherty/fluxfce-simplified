@@ -1,5 +1,8 @@
 todo
 
+The initial script interactively prompted for coordinates and timezone. Can we re-add that? Eventually we will add the drop-down menu for city, but for now we should allow the user to input lat/long and timezone. Data should be validated. Does this make sense?
+
+
 1.
 done - uninstall should prompt to remove '~/.config/fluxfce'
 
@@ -8,6 +11,36 @@ done - There is an issue with the set-default command related to xsct.
 'set-default --mode day|night' 
 WARNING: fluxfce_core.xfce: Could not find brightness pattern in xsct output: 'Screen 0: temperature ~ 6500 1.000000'
 
-3.
-is there a better way to handle screen brightness and temperature? xrandr?
+3. done -
+is there a better way to handle screen brightness and temperature? xrandr? -- not really
 
+
+4. done -
+
+Next we need to update the output messages during install. Currently it appears like this:
+```
+~/dev/fluxfce-simplified main ❯ fluxfce install
+Starting installation...
+Systemd units installed. Enabling scheduling...
+FluxFCE installed and enabled successfully.
+Please ensure this script is executable and in your system's PATH.
+```
+
+we need to update it as follows (rough draft - make it look good)
+```
+~/dev/fluxfce-simplified main ❯ fluxfce install  
+Starting installation...
+Systemd units installed. Enabling scheduling...
+<add blank line here >
+--- fluxfce installed and enabled successfully. --- # update case of fluxfce (no caps), and add dashes or appropriate indicator for visibility
+<add blank line here >
+Please ensure this script is executable and in your system's PATH.
+<provide brief instructions with example commands to add the script to the PATH>
+<add blank line here >
+<provide brief instructions to set-default --mode day|night>
+```
+
+(Proper Installation - Recommended for distribution):
+  - Create packaging files (e.g., pyproject.toml).
+  - Run 'pip install .' in the project directory (/home/cad/dev/fluxfce-simplified).
+  - This installs the 'fluxfce_core' library and places the 'fluxfce' command correctly.
