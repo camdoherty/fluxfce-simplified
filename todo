@@ -1,0 +1,13 @@
+todo
+
+1.
+done - uninstall should prompt to remove '~/.config/fluxfce'
+
+2.
+done - There is an issue with the set-default command related to xsct.
+'set-default --mode day|night' 
+WARNING: fluxfce_core.xfce: Could not find brightness pattern in xsct output: 'Screen 0: temperature ~ 6500 1.000000'
+
+3.
+is there a better way to handle screen brightness and temperature? xrandr?
+
