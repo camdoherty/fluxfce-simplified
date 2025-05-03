@@ -16,6 +16,8 @@ import traceback
 import pathlib
 import shutil
 from datetime import datetime
+from fluxfce_core import helpers as core_helpers
+from fluxfce_core import config as core_config
 
 # Import the refactored core library API and exceptions
 try:
@@ -209,22 +211,110 @@ Examples:
         log.debug(f"Python executable: {PYTHON_EXECUTABLE}")
 
         if args.command == 'install':
-            # --- Start Updated Install Block ---
-            log.info("Starting installation...")
-            # Core API calls remain the same
+            # --- Start FINAL FINAL Updated Install Block ---
+            log.info("Starting installation process...")
+
+            config_existed = fluxfce_core.CONFIG_FILE.exists()
+            log.debug(f"Config file exists before install attempt: {config_existed}")
+
+            # Load config (applies defaults in memory if file is new/missing keys)
+            config = fluxfce_core.get_current_config() # Use API call
+            config_needs_saving = False # Track if we need to save
+
+            # --- Initial Setup Block (Only if config didn't exist) ---
+            if not config_existed:
+                log.info("Configuration file not found or is empty. Attempting setup.")
+
+                # -- Timezone Handling --
+                detected_tz = fluxfce_core.detect_system_timezone() # Use helper via core init
+                default_tz = core_config.DEFAULT_CONFIG['Location']['TIMEZONE'] # Get default
+                final_tz = default_tz # Start with default
+
+                if detected_tz:
+                    print(f"Detected system timezone: '{detected_tz}'")
+                    if detected_tz != default_tz:
+                         print(f"Using detected timezone for initial configuration.")
+                         config.set('Location', 'TIMEZONE', detected_tz)
+                         final_tz = detected_tz
+                         config_needs_saving = True # Mark for saving
+                    else:
+                         print(f"Detected timezone matches default ('{default_tz}').")
+                else:
+                    print(f"Could not detect system timezone. Using default: '{default_tz}'")
+                    print(f"You can change this later in {fluxfce_core.CONFIG_FILE}")
+
+                # -- Coordinate Handling --
+                print("\nPlease provide location coordinates for accurate sun times.")
+                print("(Format: e.g., 43.65N, 79.38W - Press Enter to use defaults)")
+                default_lat = core_config.DEFAULT_CONFIG['Location']['LATITUDE']
+                default_lon = core_config.DEFAULT_CONFIG['Location']['LONGITUDE']
+                chosen_lat = default_lat
+                chosen_lon = default_lon
+                coords_valid = False
+
+                try:
+                    # Prompt for Lat/Lon
+                    lat_input = input(f"Enter Latitude [{default_lat}]: ").strip()
+                    lon_input = input(f"Enter Longitude [{default_lon}]: ").strip()
+
+                    # Use input if provided, otherwise stick with default
+                    chosen_lat = lat_input if lat_input else default_lat
+                    chosen_lon = lon_input if lon_input else default_lon
+
+                    # Validate chosen values immediately
+                    core_helpers.latlon_str_to_float(chosen_lat) # Raises ValidationError on failure
+                    core_helpers.latlon_str_to_float(chosen_lon) # Raises ValidationError on failure
+                    coords_valid = True # Mark as valid if no exception raised
+
+                except (EOFError, KeyboardInterrupt):
+                    print("\nInput skipped. Using default coordinates.")
+                    # Keep default values, coords_valid remains False
+                except core_exc.ValidationError as e:
+                    print(f"\nWarning: Invalid coordinate input ({e}). Using default coordinates.")
+                    # Keep default values, coords_valid remains False
+                except Exception as e:
+                    print(f"\nWarning: Unexpected error during coordinate input ({e}). Using default coordinates.")
+                    log.exception("Coordinate input error")
+                    # Keep default values, coords_valid remains False
+
+                # Update config object *only if* validation passed and values differ from default
+                if coords_valid and (chosen_lat != default_lat or chosen_lon != default_lon):
+                    config.set('Location', 'LATITUDE', chosen_lat)
+                    config.set('Location', 'LONGITUDE', chosen_lon)
+                    print(f"Using coordinates: Latitude={chosen_lat}, Longitude={chosen_lon}")
+                    config_needs_saving = True # Mark for saving
+                elif coords_valid:
+                    # User entered values identical to defaults, or just hit Enter
+                    print(f"Using default coordinates: Latitude={default_lat}, Longitude={default_lon}")
+                # Else: Warnings about invalid/skipped input already printed
+
+                # -- Save Config --
+                # Save config *if* timezone changed OR valid non-default coords were entered OR it was just created
+                if config_needs_saving or not config_existed: # Always save if newly created
+                    log.info("Saving initial/updated configuration file...")
+                    fluxfce_core.save_configuration(config) # Use API call
+            else:
+                # Config existed, no initial setup needed
+                log.info("Existing configuration file found.")
+
+            # --- Proceed with Systemd and Scheduling ---
+            log.info("Installing systemd units...")
             fluxfce_core.install_fluxfce(script_path=SCRIPT_PATH, python_executable=PYTHON_EXECUTABLE)
             log.info("Systemd units installed. Enabling scheduling...")
             fluxfce_core.enable_scheduling(python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH)
 
-            # --- CORRECTED User Feedback Messages ---
-            print() # Blank line
+            # --- Final User Feedback Messages (Keep corrected version from previous step) ---
+            print()
             print("-" * 45)
             print(" fluxfce installed and enabled successfully. ")
             print("-" * 45)
+            print()
 
             # PATH Instructions
             user_bin_dir = pathlib.Path.home() / ".local" / "bin"
-
+            print("IMPORTANT: The fluxfce code is now split into an executable script")
+            print(f"({pathlib.Path(SCRIPT_PATH).name}) and a library directory ('fluxfce_core').")
+            print("Simply moving the script will NOT work.")
             print("\nTo run 'fluxfce' easily from your terminal, you need to make the command")
             print("available in your system's $PATH.")
 
@@ -240,22 +330,25 @@ Examples:
             print(f"     $ ln -s \"{SCRIPT_PATH}\" \"{user_bin_dir / 'fluxfce'}\"")
             print(f"     (This keeps the code in '{pathlib.Path(SCRIPT_PATH).parent}' so imports work.)")
 
+            print(f"\nAlternative (Proper Installation - Recommended for distribution):")
+            print(f"  - Create packaging files (e.g., pyproject.toml).")
+            print(f"  - Run 'pip install .' in the project directory ({pathlib.Path(SCRIPT_PATH).parent}).")
+            print(f"  - This installs the 'fluxfce_core' library and places the 'fluxfce' command correctly.")
+
             # set-default Instructions
-            print() # Blank line
+            print()
             print("Tip: Configure the Day/Night appearance by setting your preferred")
-            print("     theme/background and xsct temperature (eg 'xsct 4500') then run:")
+            print("     theme/background manually, then run:")
             print("     $ fluxfce set-default --mode day")
             print("     or")
             print("     $ fluxfce set-default --mode night")
-            # --- End CORRECTED User Feedback Messages ----
-            # --- End Updated Install Block ---
+            # --- End FINAL Updated Install Block ---
 
+        # ... (rest of main function: uninstall, enable, disable, etc.) ...
         elif args.command == 'uninstall':
-            # --- Start Updated Uninstall Block ---
             log.info("Starting uninstallation (system components)...")
             fluxfce_core.uninstall_fluxfce()
             print("FluxFCE systemd units removed and schedule cleared.")
-
             config_dir_path = fluxfce_core.CONFIG_DIR
             if config_dir_path.exists():
                 try:
@@ -274,11 +367,8 @@ Examples:
                      log.warning("Skipping config directory removal prompt due to EOFError.")
             else:
                 log.debug(f"Configuration directory {config_dir_path} not found, skipping removal prompt.")
-
             print("\n--- Uninstallation Complete ---")
-            # --- End Updated Uninstall Block ---
 
-        # ... (Keep other elif blocks: enable, disable, status, force-day, force-night, set-default) ...
         elif args.command == 'enable':
             log.info("Enabling scheduling...")
             fluxfce_core.enable_scheduling(python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH)
@@ -310,7 +400,6 @@ Examples:
             fluxfce_core.set_default_from_current(mode)
             print(f"Current desktop settings saved as default for {mode.capitalize()} mode.")
             print("(Run 'fluxfce enable' if needed to apply schedule changes).")
-
 
         # --- Internal Command Handling (Keep as before) ---
         elif args.command == 'internal-apply':

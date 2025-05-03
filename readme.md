@@ -1,3 +1,1 @@
-readme.md
-
-fluxfce sets ... based on a NOAA algorithm to locally calculate sunrise and sunset times 
+fluxfce sets ... based on locally calculated sunrise and sunset times using a NOAA algorithm

@@ -1,11 +1,17 @@
 # ~/dev/fluxfce-simplified/fluxfce_core/helpers.py
 
+import os
+import pathlib
 import logging
 import re
 import shutil
 import subprocess
 from typing import List, Tuple, Optional
 
+try:
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+except ImportError:
+    raise ImportError("Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+.")
 # Import custom exceptions from within the same package
 from .exceptions import DependencyError, ValidationError, FluxFceError
 
@@ -154,6 +160,113 @@ def check_atd_service() -> bool:
         log.exception(f"Failed to check 'atd' status: {e}")
         raise FluxFceError(f"Failed to check 'atd' status: {e}") from e
 
+# --- Detect timezone ---
+def detect_system_timezone() -> Optional[str]:
+    """
+    Attempts to detect the system's configured IANA timezone name.
+
+    Tries methods in order: TZ env var, timedatectl, /etc/localtime symlink, /etc/timezone file.
+
+    Returns:
+        The detected IANA timezone name (str) if found and valid, otherwise None.
+    """
+    log.debug("Attempting to detect system timezone...")
+
+    def _is_valid_timezone(tz_name: Optional[str]) -> bool:
+        """Helper to validate a potential timezone name."""
+        if not tz_name or not isinstance(tz_name, str):
+            return False
+        try:
+            ZoneInfo(tz_name)
+            log.debug(f"Validated timezone '{tz_name}' successfully.")
+            return True
+        except ZoneInfoNotFoundError:
+            log.debug(f"ZoneInfoNotFoundError for '{tz_name}'.")
+            return False
+        except Exception as e:
+            log.warning(f"Error validating timezone '{tz_name}' with ZoneInfo: {e}")
+            return False
+
+    # 1. Check TZ environment variable first (overrides system settings)
+    tz_env = os.environ.get('TZ')
+    if tz_env:
+        tz_env_cleaned = tz_env.lstrip(':')
+        log.debug(f"Found TZ environment variable: '{tz_env}' (cleaned: '{tz_env_cleaned}')")
+        if _is_valid_timezone(tz_env_cleaned):
+            log.info(f"Using timezone from TZ environment variable: {tz_env_cleaned}")
+            return tz_env_cleaned
+        else:
+            log.warning(f"TZ environment variable ('{tz_env}') is set but not a valid timezone name.")
+
+    # 2. Try timedatectl (systemd)
+    try:
+        check_dependencies(['timedatectl']) # Check if command exists
+        cmd = ['timedatectl', 'show', '--property=Timezone', '--value']
+        code, stdout, stderr = run_command(cmd)
+        if code == 0 and stdout:
+            tz_name = stdout.strip()
+            log.debug(f"timedatectl returned: '{tz_name}'")
+            if _is_valid_timezone(tz_name):
+                log.info(f"Detected timezone via timedatectl: {tz_name}")
+                return tz_name
+            else:
+                log.warning(f"timedatectl returned invalid timezone: '{tz_name}'")
+        else:
+             log.debug(f"timedatectl command failed or returned empty (code: {code})")
+    except DependencyError:
+        log.debug("timedatectl command not found, skipping.")
+    except Exception as e:
+        log.warning(f"Error running timedatectl: {e}")
+
+    # 3. Try /etc/localtime symlink
+    localtime_path = pathlib.Path('/etc/localtime')
+    if localtime_path.is_symlink():
+        try:
+            target = localtime_path.readlink() # Read the target path object
+            zoneinfo_dir = pathlib.Path('/usr/share/zoneinfo')
+            if not target.is_absolute():
+                 target = (localtime_path.parent / target).resolve()
+            if zoneinfo_dir in target.parents or str(target).startswith(str(zoneinfo_dir)):
+                 try:
+                     tz_name = str(target.relative_to(zoneinfo_dir))
+                     log.debug(f"/etc/localtime points to '{target}', relative zoneinfo path: '{tz_name}'")
+                     if _is_valid_timezone(tz_name):
+                         log.info(f"Detected timezone via /etc/localtime symlink: {tz_name}")
+                         return tz_name
+                     else:
+                         log.warning(f"Extracted path '{tz_name}' from /etc/localtime link is not a valid timezone.")
+                 except ValueError:
+                      log.warning(f"Could not determine relative path for localtime target '{target}' within '{zoneinfo_dir}'.")
+            else:
+                 log.debug(f"/etc/localtime target '{target}' is outside standard zoneinfo directory.")
+        except OSError as e:
+            log.warning(f"Could not read /etc/localtime symlink: {e}")
+        except Exception as e:
+            log.exception(f"Unexpected error processing /etc/localtime link: {e}")
+
+    # 4. Try /etc/timezone file (Debian/Ubuntu)
+    timezone_path = pathlib.Path('/etc/timezone')
+    if timezone_path.is_file():
+        try:
+            content = timezone_path.read_text(encoding='utf-8').strip()
+            if content:
+                 tz_name = content.splitlines()[0].split()[0]
+                 log.debug(f"Read from /etc/timezone: '{tz_name}'")
+                 if _is_valid_timezone(tz_name):
+                     log.info(f"Detected timezone via /etc/timezone file: {tz_name}")
+                     return tz_name
+                 else:
+                      log.warning(f"Content of /etc/timezone ('{tz_name}') is not a valid timezone.")
+            else:
+                 log.debug("/etc/timezone file is empty.")
+        except IOError as e:
+            log.warning(f"Could not read /etc/timezone: {e}")
+        except Exception as e:
+             log.exception(f"Unexpected error processing /etc/timezone: {e}")
+
+    # 5. Fallback - Could not detect
+    log.warning("Failed to detect system timezone using common methods.")
+    return None
 
 # --- Data Validation ---
 
