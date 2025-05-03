@@ -1,6 +1,8 @@
 # fluxfce v0.1 - XFCE auto-theming utility
 
-**Fluxfce** automates switching XFCE desktop appearance (GTK Theme, Background, Screen Temperature) between configured Day and Night modes based on local sunrise and sunset times. It uses an adapted NOAA algorithm to calculate transition times, systemd and `atd`for low-resource scheduling.
+**Fluxfce** automates switching XFCE desktop appearance (GTK Theme, Background, Screen Temperature) between configured Day and Night modes based on local sunrise and sunset times. It uses an adapted NOAA algorithm to calculate transition times, scsystem `atd` scheduler for precise, low-resource scheduling.
+
+This is **v0.1**, a refactored and simplified version focusing on core functionality and maintainability.
 
 <p align="center">
   <img src="logo.png" alt="fluxfce Logo Placeholder" width="150">
@@ -14,7 +16,8 @@
 - **Component Control:** Adjusts:
   - GTK Theme (`Net/ThemeName`)
   - Desktop Background (Solid color or vertical/horizontal gradient via `xfce4-desktop` properties)
-  - Screen Temperature & Brightness (via `xsct`. Brightness control is simulated)
+  - Screen Temperature & Brightness (via `xsct`
+  - Background image switching to be added 
 - **Location Aware:** Calculates sunrise/sunset times based on user-configured latitude, longitude, and IANA timezone.
 - **Timezone Detection:** Attempts to automatically detect system timezone during initial install.
 - **Low Resource Usage:** Uses the system `atd` service for scheduling transitions, avoiding a persistent background daemon.
