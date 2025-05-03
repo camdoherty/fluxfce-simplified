@@ -4,7 +4,9 @@
 
 This is **v0.1**, a refactored and simplified version focusing on core functionality and maintainability.
 
-<img src="logo.png" alt="fluxfce Logo Placeholder" width="150">
+<p align="center">
+  <img src="logo.png" alt="fluxfce Logo Placeholder" width="150">
+</p>
 
 ---
 
