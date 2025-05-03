@@ -1,23 +1,26 @@
 todo
 
-The initial script interactively prompted for coordinates and timezone. Can we re-add that? Eventually we will add the drop-down menu for city, but for now we should allow the user to input lat/long and timezone. Data should be validated. Does this make sense?
+(Proper Installation - Recommended for distribution):
+  - Create packaging files (e.g., pyproject.toml).
+  - Run 'pip install .' in the project directory (/home/cad/dev/fluxfce-simplified).
+  - This installs the 'fluxfce_core' library and places the 'fluxfce' command correctly.
 
+GUI
+slow transition?
+Python AppIndicator
 
-1.
+done- The initial script interactively prompted for coordinates and timezone. Can we re-add that? Eventually we will add the drop-down menu for city, but for now we should allow the user to input lat/long and timezone. Data should be validated. Does this make sense?
+
 done - uninstall should prompt to remove '~/.config/fluxfce'
 
-2.
 done - There is an issue with the set-default command related to xsct.
 'set-default --mode day|night' 
 WARNING: fluxfce_core.xfce: Could not find brightness pattern in xsct output: 'Screen 0: temperature ~ 6500 1.000000'
 
-3. done -
-is there a better way to handle screen brightness and temperature? xrandr? -- not really
+done- is there a better way to handle screen brightness and temperature? xrandr? -- not really
 
 
-4. done -
-
-Next we need to update the output messages during install. Currently it appears like this:
+done-Next we need to update the output messages during install. Currently it appears like this:
 ```
 ~/dev/fluxfce-simplified main ❯ fluxfce install
 Starting installation...
