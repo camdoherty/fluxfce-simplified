@@ -5,7 +5,7 @@ todo
   - Run 'pip install .' in the project directory (/home/cad/dev/fluxfce-simplified).
   - This installs the 'fluxfce_core' library and places the 'fluxfce' command correctly.
 
-GUI
+GUI?
 slow transition?
 Python AppIndicator
 
