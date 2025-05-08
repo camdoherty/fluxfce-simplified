@@ -96,13 +96,13 @@ def print_status(status_data: dict):
         print(f"  Light Theme:   {status_data['config'].get('light_theme', 'N/A')}")
         print(f"  Dark Theme:    {status_data['config'].get('dark_theme', 'N/A')}")
 
-    # State (Keep as before)
-    print("\n[State]")
-    if status_data['state'].get('error'):
-        print(f"  Error reading state: {status_data['state']['error']}")
-    else:
-        last_state = status_data['state'].get('last_auto_applied')
-        print(f"  Last Auto-Applied: {last_state or 'Unknown'}")
+    # State (Keep as before - or remove if state file removal step is done)
+    # print("\n[State]")
+    # if status_data['state'].get('error'):
+    #     print(f"  Error reading state: {status_data['state']['error']}")
+    # else:
+    #     last_state = status_data['state'].get('last_auto_applied')
+    #     print(f"  Last Auto-Applied: {last_state or 'Unknown'}")
 
     # Calculated Sun Times & Period (Keep as before)
     print("\n[Calculated Sun Times (Today)]")
@@ -141,20 +141,22 @@ def print_status(status_data: dict):
              print("  Status:        Disabled")
              print("  (Run 'fluxfce enable' to schedule transitions)")
 
-    # Systemd (UPDATED KEYS USED FOR RETRIEVAL)
+    # Systemd (UPDATED TO INCLUDE RESUME SERVICE)
     print("\n[Systemd Units]")
     if status_data['systemd'].get('error'):
          print(f"  Error checking systemd status: {status_data['systemd']['error']}")
     else:
          # Use the distinct keys generated in the API layer
-         timer_status = status_data['systemd'].get('scheduler_timer', 'Unknown') # Key for timer
-         service_status = status_data['systemd'].get('scheduler_service', 'Unknown') # Key for service
-         login_status = status_data['systemd'].get('login_service', 'Unknown') # Key for login
+         timer_status = status_data['systemd'].get('scheduler_timer', 'Unknown')
+         service_status = status_data['systemd'].get('scheduler_service', 'Unknown')
+         login_status = status_data['systemd'].get('login_service', 'Unknown')
+         resume_status = status_data['systemd'].get('resume_service', 'Unknown') # <-- Get resume status
 
          # Access constants directly via fluxfce_core thanks to __init__.py update
          print(f"  Scheduler Timer ({fluxfce_core.SCHEDULER_TIMER_NAME}): {timer_status}")
          print(f"  Scheduler Service ({fluxfce_core.SCHEDULER_SERVICE_NAME}): {service_status}")
          print(f"  Login Service ({fluxfce_core.LOGIN_SERVICE_NAME}): {login_status}")
+         print(f"  Resume Service ({fluxfce_core.RESUME_SERVICE_NAME}): {resume_status}") # <-- Print resume status
          print("  (For detailed logs/status, use 'systemctl --user status ...' or 'journalctl --user -u ...')")
 
     print("-" * 25)

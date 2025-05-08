@@ -150,20 +150,21 @@ class AtdScheduler:
         lon: float,
         tz_name: str,
         python_exe_path: str,
-        script_exe_path: str
+        script_exe_path: str,
+        days_to_schedule: int = 7 # <-- Added parameter with default
         ) -> bool:
         """
-        Calculates the next sunrise and sunset, clears old jobs, and schedules
-        new 'at' jobs for the transitions using systemd-cat for logging.
+        Calculates sunrise/sunset for the next N days, clears old jobs, and
+        schedules new 'at' jobs for all future transitions within that window.
         Attempts to inject DISPLAY and XAUTHORITY environment variables into the job.
 
         Args:
             lat: Latitude for sun calculation.
             lon: Longitude for sun calculation.
             tz_name: IANA timezone name.
-            python_exe_path: Absolute path to the Python interpreter to use.
-            script_exe_path: Absolute path to the script that 'at' should execute
-                             (this script should handle the 'internal-apply' command).
+            python_exe_path: Absolute path to the Python interpreter.
+            script_exe_path: Absolute path to the fluxfce script.
+            days_to_schedule: Number of days ahead to calculate and schedule (default: 7).
 
         Returns:
             True if at least one transition was successfully scheduled.
@@ -172,123 +173,96 @@ class AtdScheduler:
         Raises:
             SchedulerError, CalculationError, ValidationError, FileNotFoundError, Exception
         """
-        log.info(f"Calculating and scheduling transitions for {lat}, {lon} (TZ: {tz_name})...")
+        if not isinstance(days_to_schedule, int) or days_to_schedule <= 0:
+             log.warning(f"Invalid days_to_schedule value ({days_to_schedule}), using default 7.")
+             days_to_schedule = 7
 
-        # Ensure executable paths exist
+        log.info(f"Calculating and scheduling transitions for next {days_to_schedule} days for {lat}, {lon} (TZ: {tz_name})...")
+
+        # Validate paths
         if not pathlib.Path(python_exe_path).is_file():
             raise FileNotFoundError(f"Python executable not found: {python_exe_path}")
         if not pathlib.Path(script_exe_path).is_file():
              raise FileNotFoundError(f"Target script not found: {script_exe_path}")
 
         # 1. Clear existing jobs first
-        self.clear_scheduled_transitions()
+        self.clear_scheduled_transitions() # Raises SchedulerError on failure
 
         # 2. Get current time and timezone info
         try:
             tz_info = ZoneInfo(tz_name)
             now_local = datetime.now(tz_info)
             today = now_local.date()
-            tomorrow = today + timedelta(days=1)
         except ZoneInfoNotFoundError:
              raise ValidationError(f"Invalid Timezone '{tz_name}' during scheduling.")
         except Exception as e:
              raise SchedulerError(f"Error getting current time/date for timezone '{tz_name}': {e}") from e
 
-        # --- START Environment Injection Logic ---
+        # 3. Get Environment Injection Logic
         env_prefix = ""
         try:
             log.debug("Attempting to get user environment via systemctl show-environment")
-            # Make sure 'systemctl' dependency was checked in __init__
             code_env, stdout_env, stderr_env = helpers.run_command(['systemctl', '--user', 'show-environment'])
             if code_env == 0 and stdout_env:
                 display_var = None
                 xauthority_var = None
                 for line in stdout_env.splitlines():
                     if line.startswith("DISPLAY="):
-                        # Use shlex.quote directly on the value part for safety
                         display_val = line.split("=", 1)[1]
-                        display_var = shlex.quote(display_val) # Store quoted value
+                        display_var = shlex.quote(display_val)
                     elif line.startswith("XAUTHORITY="):
                         xauth_val = line.split("=", 1)[1]
-                        xauthority_var = shlex.quote(xauth_val) # Store quoted value
-
+                        xauthority_var = shlex.quote(xauth_val)
                 if display_var:
-                    # Use the already quoted variables
                     env_prefix += f"export DISPLAY={display_var}; "
                     log.debug(f"Found DISPLAY variable (quoted): {display_var}")
                     if xauthority_var:
                         env_prefix += f"export XAUTHORITY={xauthority_var}; "
                         log.debug(f"Found XAUTHORITY variable (quoted): {xauthority_var}")
-                    else:
-                        log.warning("Found DISPLAY but not XAUTHORITY in user environment. xsct might still fail if XAUTHORITY is required.")
-                else:
-                    log.warning("Could not find DISPLAY variable in systemctl user environment. xsct calls in 'at' jobs will likely fail.")
-            else:
-                log.warning(f"systemctl show-environment failed (code {code_env}) or returned empty. Cannot inject environment for 'at' jobs. Stderr: {stderr_env}")
-        except Exception as e:
-            log.warning(f"Failed to get or parse user environment: {e}. Cannot inject environment for 'at' jobs.")
-        # --- END Environment Injection Logic ---
+                    else: log.warning("Found DISPLAY but not XAUTHORITY in user environment. xsct might still fail if XAUTHORITY is required.")
+                else: log.warning("Could not find DISPLAY variable in systemctl user environment. xsct calls in 'at' jobs will likely fail.")
+            else: log.warning(f"systemctl show-environment failed (code {code_env}) or returned empty. Cannot inject environment for 'at' jobs. Stderr: {stderr_env}")
+        except Exception as e: log.warning(f"Failed to get or parse user environment: {e}. Cannot inject environment for 'at' jobs.")
 
-
-        # 3. Collect potential future events in the next ~48h
+        # 4. Collect potential future events for the next N days
         potential_events: Dict[datetime, str] = {}
-        for target_date in [today, tomorrow]:
+        for i in range(days_to_schedule): # <-- Loop N days
+            target_date = today + timedelta(days=i)
             try:
                 sun_times = sun.get_sun_times(lat, lon, target_date, tz_name) # Raises CalculationError/ValidationError
+                # Only consider events strictly in the future relative to 'now'
                 if sun_times['sunrise'] > now_local:
                     potential_events[sun_times['sunrise']] = 'day'
                 if sun_times['sunset'] > now_local:
                     potential_events[sun_times['sunset']] = 'night'
             except CalculationError as e:
-                log.warning(f"Could not calculate sun times for {target_date} ({lat},{lon}): {e}. Skipping.")
+                log.warning(f"Could not calculate sun times for {target_date} ({lat},{lon}): {e}. Skipping date.")
+            except ValidationError as e: # Should only happen once if TZ is bad
+                 log.error(f"Invalid timezone '{tz_name}' during sun time calculation: {e}")
+                 raise # Propagate validation error
 
         if not potential_events:
-            log.warning("No future sunrise/sunset events found to schedule in the next ~48 hours.")
-            return False
+            log.warning(f"No future sunrise/sunset events found to schedule in the next {days_to_schedule} days.")
+            return False # Nothing to schedule
 
-        # 4. Determine the *very next* sunrise and sunset from the potential events
-        next_sunrise_event: Optional[datetime] = None
-        next_sunset_event: Optional[datetime] = None
-        for event_time, mode in sorted(potential_events.items()):
-            if mode == 'day' and next_sunrise_event is None: next_sunrise_event = event_time
-            if mode == 'night' and next_sunset_event is None: next_sunset_event = event_time
-            if next_sunrise_event and next_sunset_event: break
+        # 5. Sort events chronologically
+        final_events_to_schedule = dict(sorted(potential_events.items()))
+        log.info(f"Found {len(final_events_to_schedule)} events to schedule in the next {days_to_schedule} days.")
 
-        # 5. Create the final dictionary of jobs to schedule
-        final_events_to_schedule: Dict[datetime, str] = {}
-        if next_sunrise_event:
-            final_events_to_schedule[next_sunrise_event] = 'day'
-            log.debug(f"Selected next sunrise event for scheduling: {next_sunrise_event.isoformat()}")
-        if next_sunset_event:
-            final_events_to_schedule[next_sunset_event] = 'night'
-            log.debug(f"Selected next sunset event for scheduling: {next_sunset_event.isoformat()}")
-
-        if not final_events_to_schedule:
-             log.warning("No suitable future events found after filtering. Cannot schedule.")
-             return False
-
-        # 6. Proceed with scheduling the selected events via 'at' and 'systemd-cat'
+        # 6. Proceed with scheduling ALL selected events
         scheduled_count = 0
         schedule_failed = False
         safe_python_exe = shlex.quote(python_exe_path)
         safe_script_path = shlex.quote(script_exe_path)
 
-        for event_time, mode in sorted(final_events_to_schedule.items()):
+        for event_time, mode in final_events_to_schedule.items():
             at_time_str = event_time.strftime('%H:%M %Y-%m-%d')
-
             systemd_cat_command_list = [
-                'systemd-cat',
-                '-t', SYSTEMD_CAT_TAG,
-                '--level-prefix=false',
-                safe_python_exe,
-                safe_script_path,
-                'internal-apply',
-                '--mode', mode
+                'systemd-cat', '-t', SYSTEMD_CAT_TAG, '--level-prefix=false',
+                safe_python_exe, safe_script_path, 'internal-apply', '--mode', mode
             ]
-            # Prepend environment exports (if any found) to the command string
             command_to_pipe_to_at = f"{env_prefix}{' '.join(systemd_cat_command_list)} {AT_JOB_TAG}"
-
-            log.debug(f"Scheduling command via 'at {at_time_str}': {command_to_pipe_to_at}")
+            log.debug(f"Scheduling '{mode}' for {at_time_str}...")
 
             try:
                 code, stdout, stderr = helpers.run_command(['at', at_time_str], input_str=command_to_pipe_to_at)
@@ -303,13 +277,13 @@ class AtdScheduler:
                  log.exception(f"Error running 'at' command for {mode} at {at_time_str}: {e}")
                  schedule_failed = True
 
-        log.info(f"Scheduling complete ({scheduled_count} jobs scheduled).")
+        log.info(f"Scheduling complete ({scheduled_count} / {len(final_events_to_schedule)} jobs successfully scheduled).")
 
         if schedule_failed:
              raise SchedulerError(f"One or more 'at' commands failed during scheduling ({scheduled_count} succeeded). Check logs.")
 
         return scheduled_count > 0
-
+    
     def list_scheduled_transitions(self) -> List[Dict[str, str]]:
         """
         Returns a list of pending fluxfce transition jobs.

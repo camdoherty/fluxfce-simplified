@@ -493,7 +493,7 @@ def get_status() -> Dict[str, Any]:
     log.debug("API: Getting status...")
     status: Dict[str, Any] = {
         'config': {},
-        'state': {'last_auto_applied': None},
+        'state': {'last_auto_applied': None}, # Keep placeholder if state removal not done
         'sun_times': {'sunrise': None, 'sunset': None, 'error': None},
         'current_period': 'unknown',
         'schedule': {'enabled': False, 'jobs': [], 'error': None},
@@ -501,10 +501,9 @@ def get_status() -> Dict[str, Any]:
         'systemd': {'error': None}
     }
 
-    # 1. Get Config
+    # 1. Get Config (Keep as before)
     try:
-        # Use the public API function to load config
-        config = get_current_config()
+        config = get_current_config() # Use public API call now
         status['config']['latitude'] = config.get('Location', 'LATITUDE', fallback='Not Set')
         status['config']['longitude'] = config.get('Location', 'LONGITUDE', fallback='Not Set')
         status['config']['timezone'] = config.get('Location', 'TIMEZONE', fallback='Not Set')
@@ -513,76 +512,72 @@ def get_status() -> Dict[str, Any]:
     except exc.FluxFceError as e:
          status['config']['error'] = str(e)
 
-    # 2. Get State
+    # 2. Get State (Remove or keep based on whether Step 3 of prior plan was done)
+    # Example if keeping for now:
     try:
         status['state']['last_auto_applied'] = _cfg_mgr.read_state()
     except exc.ConfigError as e:
-         status['state']['error'] = str(e)
+        # Only log error, don't populate dict['error'] for state
+        log.warning(f"API: Error reading state file for status: {e}")
+        status['state']['last_auto_applied'] = "Error" # Indicate error in value
 
-    # 3. Calculate Sun Times & Current Period
+
+    # 3. Calculate Sun Times & Current Period (Keep as before)
     lat_str = status['config'].get('latitude')
     lon_str = status['config'].get('longitude')
     tz_name = status['config'].get('timezone')
     lat, lon = None, None
-    # Proceed only if config loading was successful and values seem okay
     if 'error' not in status['config'] and lat_str and lon_str and tz_name and tz_name != 'Not Set':
         try:
             lat = helpers.latlon_str_to_float(lat_str)
             lon = helpers.latlon_str_to_float(lon_str)
-            try:
-                 tz_info = ZoneInfo(tz_name)
-            except Exception as tz_err:
-                 raise exc.ValidationError(f"Invalid timezone '{tz_name}': {tz_err}") from tz_err
-
+            try: tz_info = ZoneInfo(tz_name)
+            except Exception as tz_err: raise exc.ValidationError(f"Invalid timezone '{tz_name}': {tz_err}") from tz_err
             today = datetime.now(tz_info).date()
-            sun_times_today = sun.get_sun_times(lat, lon, today, tz_name) # Raises CalculationError/ValidationError
+            sun_times_today = sun.get_sun_times(lat, lon, today, tz_name)
             status['sun_times']['sunrise'] = sun_times_today['sunrise']
             status['sun_times']['sunset'] = sun_times_today['sunset']
-
             now_local = datetime.now(tz_info)
-            if sun_times_today['sunrise'] <= now_local < sun_times_today['sunset']:
-                 status['current_period'] = 'day'
-            else:
-                 status['current_period'] = 'night'
-
+            if sun_times_today['sunrise'] <= now_local < sun_times_today['sunset']: status['current_period'] = 'day'
+            else: status['current_period'] = 'night'
         except (exc.ValidationError, exc.CalculationError) as e:
-             status['sun_times']['error'] = str(e)
-             status['current_period'] = 'error'
+             status['sun_times']['error'] = str(e); status['current_period'] = 'error'
         except Exception as e:
-             log.exception("API: Unexpected error calculating sun times for status.")
-             status['sun_times']['error'] = f"Unexpected: {e}"
-             status['current_period'] = 'error'
-    elif 'error' not in status['config']: # Config loaded but values were bad
-        status['sun_times']['error'] = "Location/Timezone not configured or invalid."
-        status['current_period'] = 'unknown'
-    # Else: Keep default 'error' if config itself failed to load
+             log.exception("API: Unexpected error calculating sun times for status."); status['sun_times']['error'] = f"Unexpected: {e}"; status['current_period'] = 'error'
+    elif 'error' not in status['config']:
+        status['sun_times']['error'] = "Location/Timezone not configured or invalid."; status['current_period'] = 'unknown'
 
 
-    # 4. Get Schedule Status
+    # 4. Get Schedule Status (Keep as before)
     try:
-        scheduler = sched.AtdScheduler() # Raises on init fail
+        scheduler = sched.AtdScheduler()
         status['schedule']['jobs'] = scheduler.list_scheduled_transitions()
         status['schedule']['enabled'] = bool(status['schedule']['jobs'])
     except (exc.SchedulerError, exc.DependencyError) as e:
-         status['schedule']['error'] = str(e)
-         status['schedule']['enabled'] = False # Explicitly false if error
+         status['schedule']['error'] = str(e); status['schedule']['enabled'] = False
     except Exception as e:
-         log.exception("API: Unexpected error getting schedule status.")
-         status['schedule']['error'] = f"Unexpected: {e}"
-         status['schedule']['enabled'] = False
+         log.exception("API: Unexpected error getting schedule status."); status['schedule']['error'] = f"Unexpected: {e}"; status['schedule']['enabled'] = False
 
 
-    # 5. Get Systemd Status
+    # 5. Get Systemd Status (FINAL CORRECTED KEY GENERATION)
     try:
-        sysd_mgr = sysd.SystemdManager() # Raises on init fail
+        sysd_mgr = sysd.SystemdManager()
         for unit_name in sysd.MANAGED_UNITS:
+            # --- FINAL CORRECTED KEY GENERATION ---
+            unit_key = None # Reset key for each iteration
             if sysd.SCHEDULER_TIMER_NAME == unit_name:
                 unit_key = 'scheduler_timer'
             elif sysd.SCHEDULER_SERVICE_NAME == unit_name:
                 unit_key = 'scheduler_service'
             elif sysd.LOGIN_SERVICE_NAME == unit_name:
                 unit_key = 'login_service'
-            else: continue
+            elif sysd.RESUME_SERVICE_NAME == unit_name: # <-- ADDED THIS CASE
+                 unit_key = 'resume_service'
+            # --- END CORRECTION ---
+
+            if unit_key is None: # Safety check / handle unrecognized units
+                 log.warning(f"API: Unrecognized or skipped managed unit name '{unit_name}' during status check.")
+                 continue
 
             status['systemd'][unit_key] = "Error checking" # Default
             enabled_status_str = "Unknown"
@@ -601,7 +596,6 @@ def get_status() -> Dict[str, Any]:
                 elif code_active == 3: active_status_str = "Inactive"
                 else: active_status_str = f"Failed/Error ({code_active})"
 
-                # Combine status
                 if "Error" in enabled_status_str or "Failed/Error" in active_status_str:
                      status['systemd'][unit_key] = f"{enabled_status_str}, {active_status_str}"
                 elif "Unknown" in enabled_status_str or "Unknown" in active_status_str:
@@ -625,7 +619,6 @@ def get_status() -> Dict[str, Any]:
          status['systemd']['error'] = f"Unexpected error: {e}"
 
     return status
-
 
 # --- Internal Command Handlers (Called by Executable Script) ---
 
