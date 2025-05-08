@@ -59,14 +59,53 @@ The project is split into two main parts:
 **Current Codebase:**
 The complete codebase for `fluxfce-simplified` v0.1 will be provided in the `codebase.txt` file accompanying this prompt.
 
-**Known Issues / Immediate Next Steps:**
-1.  **Automated Testing:** The project completely lacks automated tests (unit/integration). This is the highest priority before adding significant new features or distributing widely.
-2.  **Packaging:** No `pyproject.toml` or `setup.py` exists. Installation relies on manual PATH setup (symlink recommended). Proper packaging using `pip` is needed.
-3.  **Documentation:** Docstrings within `fluxfce_core` are sparse. The `README.md` needs review and potentially minor updates based on the final code state.
-4.  **Real-world Testing:** Needs more testing across different XFCE versions, login managers, and suspend/resume scenarios. Confirm `xsct` env injection works reliably across systems.
+**Config File:**
+*   **Example Config File:**
+```
+~/.config/fluxfce/config.ini
+[Location]
+latitude = 43.65N
+longitude = 79.38W
+timezone = America/Toronto
+
+[Themes]
+light_theme = Adwaita
+dark_theme = Adwaita-dark
+
+[BackgroundDay]
+bg_hex1 = ADD8E6
+bg_hex2 = 87CEEB
+bg_dir = v
+
+[ScreenDay]
+xsct_temp = 6500
+xsct_bright = 1.0
+
+[BackgroundNight]
+bg_hex1 = 1E1E2E
+bg_hex2 = 000000
+bg_dir = v
+
+[ScreenNight]
+xsct_temp = 4500
+xsct_bright = 0.85
+```
 
 **Your Task:**
 1.  Familiarize yourself thoroughly with the provided codebase (`codebase.txt`) and this project description.
 2.  Verify you understand the architecture, key decisions, and current state.
 3.  Be prepared to answer questions about the code and its functionality.
-4.  Your first development task will likely involve addressing the "Known Issues / Immediate Next Steps", starting with **implementing automated tests** for the `fluxfce_core` library or creating the **packaging setup** (`pyproject.toml`). Await further instructions on which to prioritize.
+4.  **Your first actions are to perform a thorough code review and discuss next steps for the project. Think about how fluxfce could be improved and/or enhanced.  What functionality or features would make sense to implement next and going forward. Keep in mind the "core tenets" of fluxfce; reliability, lightweight/efficiency, user friendliness.**
+
+**Please procceed**
+
+
+   development task will likely involve addressing the "Known Issues / Immediate Next Steps", starting with **implementing automated tests** for the `fluxfce_core` library or creating the **packaging setup** (`pyproject.toml`). Await further instructions on which to prioritize.
+
+
+
+**Known Issues / Immediate Next Steps:**
+1.  **Automated Testing:** The project completely lacks automated tests (unit/integration). This is the highest priority before adding significant new features or distributing widely.
+2.  **Packaging:** No `pyproject.toml` or `setup.py` exists. Installation relies on manual PATH setup (symlink recommended). Proper packaging using `pip` is needed.
+3.  **Documentation:** Docstrings within `fluxfce_core` are sparse. The `README.md` needs review and potentially minor updates based on the final code state.
+4.  **Real-world Testing:** Needs more testing across different XFCE versions, login managers, and suspend/resume scenarios. Confirm `xsct` env injection works reliably across systems.

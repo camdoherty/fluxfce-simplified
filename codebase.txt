@@ -1,0 +1,3477 @@
+##############
+./fluxfce_cli.py
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+fluxfce (CLI) - Simplified XFCE Theming Tool
+
+Command-line interface for managing automatic XFCE theme/background/screen
+switching based on sunrise/sunset times using the fluxfce_core library.
+"""
+
+import argparse
+import logging
+import os
+import sys
+import traceback
+import pathlib
+import shutil
+from datetime import datetime
+from fluxfce_core import helpers as core_helpers
+from fluxfce_core import config as core_config
+
+# Import the refactored core library API and exceptions
+try:
+    # Import the package itself
+    import fluxfce_core
+    # Import the exceptions submodule separately if needed, or rely on __init__.py exposing them
+    from fluxfce_core import exceptions as core_exc
+except ImportError as e:
+    print(f"Error: Failed to import the fluxfce_core library: {e}", file=sys.stderr)
+    print("Ensure fluxfce_core is installed or available in your Python path.", file=sys.stderr)
+    sys.exit(1)
+
+# --- Global Variables ---
+# Resolve the path of the currently running script
+SCRIPT_PATH = str(pathlib.Path(__file__).resolve())
+PYTHON_EXECUTABLE = sys.executable
+log = logging.getLogger('fluxfce_cli')
+
+
+# --- CLI Logging Setup ---
+def setup_cli_logging(verbose: bool):
+    """Configures logging for the CLI based on verbosity."""
+    cli_log_level = logging.DEBUG if verbose else logging.INFO
+    # Basic config first to ensure root logger has a handler if needed
+    logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(name)s: %(message)s')
+
+    # Configure our CLI logger specifically
+    log.setLevel(cli_log_level)
+    log.handlers.clear() # Remove default handlers from basicConfig if any attached here
+
+    # Configure core library logging level directly
+    core_log_level = logging.DEBUG if verbose else logging.WARNING
+    logging.getLogger('fluxfce_core').setLevel(core_log_level)
+    # Ensure the core logger also has a handler if basicConfig didn't cover it
+    if not logging.getLogger('fluxfce_core').hasHandlers():
+         core_handler = logging.StreamHandler(sys.stderr)
+         core_formatter = logging.Formatter('%(levelname)s: %(name)s: %(message)s')
+         core_handler.setFormatter(core_formatter)
+         logging.getLogger('fluxfce_core').addHandler(core_handler)
+
+    # Simpler console output for CLI INFO messages to stdout
+    if cli_log_level <= logging.INFO:
+        info_handler = logging.StreamHandler(sys.stdout)
+        info_formatter = logging.Formatter('%(message)s') # Just the message
+        info_handler.setFormatter(info_formatter)
+        info_handler.setLevel(logging.INFO)
+        # Filter out lower/higher levels from this stdout handler
+        info_handler.addFilter(lambda record: record.levelno == logging.INFO)
+        log.addHandler(info_handler)
+
+    # Handler for CLI debug/warning/error to stderr
+    error_handler = logging.StreamHandler(sys.stderr)
+    error_formatter = logging.Formatter('%(levelname)s: %(message)s') # Level prefix for non-info
+    error_handler.setFormatter(error_formatter)
+    # Show DEBUG only if verbose, otherwise WARNING+
+    error_handler.setLevel(logging.DEBUG if verbose else logging.WARNING)
+    log.addHandler(error_handler)
+
+    log.propagate = False # Prevent double logging
+
+    log.debug("Verbose logging enabled.")
+
+
+# --- Output Formatting ---
+def print_status(status_data: dict):
+    """Formats and prints the status dictionary."""
+    print("--- fluxfce Status ---")
+
+    # Config (Keep as before)
+    print("\n[Configuration]")
+    if status_data['config'].get('error'):
+        print(f"  Error loading config: {status_data['config']['error']}")
+    else:
+        print(f"  Location:      {status_data['config'].get('latitude', 'N/A')}, {status_data['config'].get('longitude', 'N/A')}")
+        print(f"  Timezone:      {status_data['config'].get('timezone', 'N/A')}")
+        print(f"  Light Theme:   {status_data['config'].get('light_theme', 'N/A')}")
+        print(f"  Dark Theme:    {status_data['config'].get('dark_theme', 'N/A')}")
+
+    # State (Keep as before - or remove if state file removal step is done)
+    # print("\n[State]")
+    # if status_data['state'].get('error'):
+    #     print(f"  Error reading state: {status_data['state']['error']}")
+    # else:
+    #     last_state = status_data['state'].get('last_auto_applied')
+    #     print(f"  Last Auto-Applied: {last_state or 'Unknown'}")
+
+    # Calculated Sun Times & Period (Keep as before)
+    print("\n[Calculated Sun Times (Today)]")
+    if status_data['sun_times'].get('error'):
+         print(f"  Error: {status_data['sun_times']['error']}")
+    elif status_data['sun_times'].get('sunrise') and status_data['sun_times'].get('sunset'):
+        sunrise_dt = status_data['sun_times']['sunrise']
+        sunset_dt = status_data['sun_times']['sunset']
+        try:
+            print(f"  Sunrise:       {sunrise_dt.isoformat(sep=' ', timespec='seconds')}")
+            print(f"  Sunset:        {sunset_dt.isoformat(sep=' ', timespec='seconds')}")
+        except Exception:
+             print(f"  Sunrise:       {sunrise_dt}")
+             print(f"  Sunset:        {sunset_dt}")
+    else:
+        print("  Could not be calculated (check config/location).")
+    print(f"  Current Period:  {status_data.get('current_period', 'unknown').capitalize()}")
+
+    # Schedule (Keep as before)
+    print("\n[Scheduled Transitions ('at' jobs)]")
+    if status_data['schedule'].get('error'):
+         print(f"  Error checking schedule: {status_data['schedule']['error']}")
+    else:
+        jobs = status_data['schedule'].get('jobs', [])
+        enabled = status_data['schedule'].get('enabled', False)
+        if jobs:
+             print(f"  Status:        Enabled ({len(jobs)} job(s) found)")
+             for job in jobs:
+                  job_id = job.get('id', 'N/A')
+                  mode = job.get('mode', 'unknown').capitalize()
+                  time_str = job.get('time_str', 'Unknown Time')
+                  print(f"  - Job {job_id}: {mode} at {time_str}")
+        elif enabled:
+             print("  Status:        Enabled (No specific jobs found - state mismatch?)")
+        else:
+             print("  Status:        Disabled")
+             print("  (Run 'fluxfce enable' to schedule transitions)")
+
+    # Systemd (UPDATED TO INCLUDE RESUME SERVICE)
+    print("\n[Systemd Units]")
+    if status_data['systemd'].get('error'):
+         print(f"  Error checking systemd status: {status_data['systemd']['error']}")
+    else:
+         # Use the distinct keys generated in the API layer
+         timer_status = status_data['systemd'].get('scheduler_timer', 'Unknown')
+         service_status = status_data['systemd'].get('scheduler_service', 'Unknown')
+         login_status = status_data['systemd'].get('login_service', 'Unknown')
+         resume_status = status_data['systemd'].get('resume_service', 'Unknown') # <-- Get resume status
+
+         # Access constants directly via fluxfce_core thanks to __init__.py update
+         print(f"  Scheduler Timer ({fluxfce_core.SCHEDULER_TIMER_NAME}): {timer_status}")
+         print(f"  Scheduler Service ({fluxfce_core.SCHEDULER_SERVICE_NAME}): {service_status}")
+         print(f"  Login Service ({fluxfce_core.LOGIN_SERVICE_NAME}): {login_status}")
+         print(f"  Resume Service ({fluxfce_core.RESUME_SERVICE_NAME}): {resume_status}") # <-- Print resume status
+         print("  (For detailed logs/status, use 'systemctl --user status ...' or 'journalctl --user -u ...')")
+
+    print("-" * 25)
+
+# --- Main Execution Logic ---
+def main():
+    parser = argparse.ArgumentParser(
+        description="fluxfce (CLI): Manage XFCE appearance via sunrise/sunset timing.",
+        formatter_class=argparse.RawTextHelpFormatter, # Keep formatting in help
+        epilog="""
+Examples:
+  fluxfce install          # Interactive setup and enable
+  fluxfce status           # Show current status and configuration
+  fluxfce enable           # Enable automatic switching
+  fluxfce disable          # Disable automatic switching
+  fluxfce force-day        # Apply Day mode now and disable auto switching
+  fluxfce force-night      # Apply Night mode now and disable auto switching
+  fluxfce set-default --day # Save current desktop look as the new Day default
+  fluxfce uninstall        # Remove systemd units and clear schedule (prompts for config removal)
+"""
+    )
+    parser.add_argument('-v', '--verbose', action='store_true', help="Enable detailed logging output.")
+
+    subparsers = parser.add_subparsers(dest='command', title='Commands', required=True)
+
+    # Define Simplified Commands
+    subparsers.add_parser('install', help='Install systemd units and enable automatic scheduling.')
+    subparsers.add_parser('uninstall', help='Remove systemd units & clear schedule (prompts to remove config).')
+    subparsers.add_parser('enable', help='Enable automatic scheduling (schedules transitions).')
+    subparsers.add_parser('disable', help='Disable automatic scheduling (clears scheduled transitions).')
+    subparsers.add_parser('status', help='Show config, calculated times, and schedule status.')
+    subparsers.add_parser('force-day', help='Apply Day Mode settings now (disables automatic scheduling).')
+    subparsers.add_parser('force-night', help='Apply Night Mode settings now (disables automatic scheduling).')
+
+    parser_set_default = subparsers.add_parser('set-default', help='Save current desktop look as the new default for Day or Night mode.')
+    parser_set_default.add_argument('--mode', choices=['day', 'night'], required=True, dest='default_mode', help='Specify whether to save as the Day or Night default.')
+
+    # --- Internal Commands (Hidden) ---
+    parser_internal = subparsers.add_parser('internal-apply', help=argparse.SUPPRESS)
+    parser_internal.add_argument('--mode', choices=['day', 'night'], required=True, dest='internal_mode')
+
+    subparsers.add_parser('schedule-jobs', help=argparse.SUPPRESS)
+    subparsers.add_parser('run-login-check', help=argparse.SUPPRESS)
+
+    args = parser.parse_args()
+
+    # --- Setup & Dispatch ---
+    setup_cli_logging(args.verbose)
+    exit_code = 0 # Default to success
+
+    try:
+        log.debug(f"Running command: {args.command}")
+        log.debug(f"Script path: {SCRIPT_PATH}")
+        log.debug(f"Python executable: {PYTHON_EXECUTABLE}")
+
+        if args.command == 'install':
+            # --- Start FINAL FINAL Updated Install Block ---
+            log.info("Starting installation process...")
+
+            config_existed = fluxfce_core.CONFIG_FILE.exists()
+            log.debug(f"Config file exists before install attempt: {config_existed}")
+
+            # Load config (applies defaults in memory if file is new/missing keys)
+            config = fluxfce_core.get_current_config() # Use API call
+            config_needs_saving = False # Track if we need to save
+
+            # --- Initial Setup Block (Only if config didn't exist) ---
+            if not config_existed:
+                log.info("Configuration file not found or is empty. Attempting setup.")
+
+                # -- Timezone Handling --
+                detected_tz = fluxfce_core.detect_system_timezone() # Use helper via core init
+                default_tz = core_config.DEFAULT_CONFIG['Location']['TIMEZONE'] # Get default
+                final_tz = default_tz # Start with default
+
+                if detected_tz:
+                    print(f"Detected system timezone: '{detected_tz}'")
+                    if detected_tz != default_tz:
+                         print(f"Using detected timezone for initial configuration.")
+                         config.set('Location', 'TIMEZONE', detected_tz)
+                         final_tz = detected_tz
+                         config_needs_saving = True # Mark for saving
+                    else:
+                         print(f"Detected timezone matches default ('{default_tz}').")
+                else:
+                    print(f"Could not detect system timezone. Using default: '{default_tz}'")
+                    print(f"You can change this later in {fluxfce_core.CONFIG_FILE}")
+
+                # -- Coordinate Handling --
+                print("\nPlease provide location coordinates for accurate sun times.")
+                print("(Format: e.g., 43.65N, 79.38W - Press Enter to use defaults)")
+                default_lat = core_config.DEFAULT_CONFIG['Location']['LATITUDE']
+                default_lon = core_config.DEFAULT_CONFIG['Location']['LONGITUDE']
+                chosen_lat = default_lat
+                chosen_lon = default_lon
+                coords_valid = False
+
+                try:
+                    # Prompt for Lat/Lon
+                    lat_input = input(f"Enter Latitude [{default_lat}]: ").strip()
+                    lon_input = input(f"Enter Longitude [{default_lon}]: ").strip()
+
+                    # Use input if provided, otherwise stick with default
+                    chosen_lat = lat_input if lat_input else default_lat
+                    chosen_lon = lon_input if lon_input else default_lon
+
+                    # Validate chosen values immediately
+                    core_helpers.latlon_str_to_float(chosen_lat) # Raises ValidationError on failure
+                    core_helpers.latlon_str_to_float(chosen_lon) # Raises ValidationError on failure
+                    coords_valid = True # Mark as valid if no exception raised
+
+                except (EOFError, KeyboardInterrupt):
+                    print("\nInput skipped. Using default coordinates.")
+                    # Keep default values, coords_valid remains False
+                except core_exc.ValidationError as e:
+                    print(f"\nWarning: Invalid coordinate input ({e}). Using default coordinates.")
+                    # Keep default values, coords_valid remains False
+                except Exception as e:
+                    print(f"\nWarning: Unexpected error during coordinate input ({e}). Using default coordinates.")
+                    log.exception("Coordinate input error")
+                    # Keep default values, coords_valid remains False
+
+                # Update config object *only if* validation passed and values differ from default
+                if coords_valid and (chosen_lat != default_lat or chosen_lon != default_lon):
+                    config.set('Location', 'LATITUDE', chosen_lat)
+                    config.set('Location', 'LONGITUDE', chosen_lon)
+                    print(f"Using coordinates: Latitude={chosen_lat}, Longitude={chosen_lon}")
+                    config_needs_saving = True # Mark for saving
+                elif coords_valid:
+                    # User entered values identical to defaults, or just hit Enter
+                    print(f"Using default coordinates: Latitude={default_lat}, Longitude={default_lon}")
+                # Else: Warnings about invalid/skipped input already printed
+
+                # -- Save Config --
+                # Save config *if* timezone changed OR valid non-default coords were entered OR it was just created
+                if config_needs_saving or not config_existed: # Always save if newly created
+                    log.info("Saving initial/updated configuration file...")
+                    fluxfce_core.save_configuration(config) # Use API call
+            else:
+                # Config existed, no initial setup needed
+                log.info("Existing configuration file found.")
+
+            # --- Proceed with Systemd and Scheduling ---
+            log.info("Installing systemd units...")
+            fluxfce_core.install_fluxfce(script_path=SCRIPT_PATH, python_executable=PYTHON_EXECUTABLE)
+            log.info("Systemd units installed. Enabling scheduling...")
+            fluxfce_core.enable_scheduling(python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH)
+
+            # --- Final User Feedback Messages (Keep corrected version from previous step) ---
+            print()
+            print("-" * 45)
+            print(" fluxfce installed and enabled successfully. ")
+            print("-" * 45)
+            print()
+
+            # PATH Instructions
+            user_bin_dir = pathlib.Path.home() / ".local" / "bin"
+            print("IMPORTANT: The fluxfce code is now split into an executable script")
+            print(f"({pathlib.Path(SCRIPT_PATH).name}) and a library directory ('fluxfce_core').")
+            print("Simply moving the script will NOT work.")
+            print("\nTo run 'fluxfce' easily from your terminal, you need to make the command")
+            print("available in your system's $PATH.")
+
+            print(f"\nRecommended Method (using a symbolic link):")
+            print(f"  1. Ensure '{user_bin_dir}' exists and is in your PATH:")
+            print(f"     $ mkdir -p \"{user_bin_dir}\"")
+            print(f"     $ echo $PATH  # Check if the directory is listed")
+            print(f"     # If not, add 'export PATH=\"{user_bin_dir}:$PATH\"' to your ~/.bashrc or ~/.zshrc")
+            print(f"     # then run 'source ~/.bashrc' or restart your terminal.")
+            print(f"  2. Make the main script executable:")
+            print(f"     $ chmod +x \"{SCRIPT_PATH}\"")
+            print(f"  3. Create a symbolic link in your PATH pointing to the script:")
+            print(f"     $ ln -s \"{SCRIPT_PATH}\" \"{user_bin_dir / 'fluxfce'}\"")
+            print(f"     (This keeps the code in '{pathlib.Path(SCRIPT_PATH).parent}' so imports work.)")
+
+            print(f"\nAlternative (Proper Installation - Recommended for distribution):")
+            print(f"  - Create packaging files (e.g., pyproject.toml).")
+            print(f"  - Run 'pip install .' in the project directory ({pathlib.Path(SCRIPT_PATH).parent}).")
+            print(f"  - This installs the 'fluxfce_core' library and places the 'fluxfce' command correctly.")
+
+            # set-default Instructions
+            print()
+            print("Tip: Configure the Day/Night appearance by setting your preferred")
+            print("     theme/background manually, then run:")
+            print("     $ fluxfce set-default --mode day")
+            print("     or")
+            print("     $ fluxfce set-default --mode night")
+            # --- End FINAL Updated Install Block ---
+
+        # ... (rest of main function: uninstall, enable, disable, etc.) ...
+        elif args.command == 'uninstall':
+            log.info("Starting uninstallation (system components)...")
+            fluxfce_core.uninstall_fluxfce()
+            print("FluxFCE systemd units removed and schedule cleared.")
+            config_dir_path = fluxfce_core.CONFIG_DIR
+            if config_dir_path.exists():
+                try:
+                    confirm = input(f"\nDo you want to remove the configuration directory ({config_dir_path})? [y/N]: ").strip().lower()
+                    if confirm == 'y':
+                        log.warning(f"User confirmed removal of configuration directory: {config_dir_path}")
+                        shutil.rmtree(config_dir_path)
+                        print(f"Removed configuration directory: {config_dir_path}")
+                    else:
+                        print("Configuration directory kept.")
+                except OSError as e:
+                    print(f"\nError removing configuration directory {config_dir_path}: {e}", file=sys.stderr)
+                    log.error(f"Failed to remove config directory {config_dir_path}: {e}")
+                except EOFError:
+                     print("\nSkipping config directory removal prompt (no input received).")
+                     log.warning("Skipping config directory removal prompt due to EOFError.")
+            else:
+                log.debug(f"Configuration directory {config_dir_path} not found, skipping removal prompt.")
+            print("\n--- Uninstallation Complete ---")
+
+        elif args.command == 'enable':
+            log.info("Enabling scheduling...")
+            fluxfce_core.enable_scheduling(python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH)
+            print("Automatic theme scheduling enabled.")
+
+        elif args.command == 'disable':
+            log.info("Disabling scheduling...")
+            fluxfce_core.disable_scheduling()
+            print("Automatic theme scheduling disabled ('at' jobs cleared).")
+
+        elif args.command == 'status':
+            log.info("Getting status...")
+            status = fluxfce_core.get_status()
+            print_status(status)
+
+        elif args.command == 'force-day':
+            log.info("Forcing Day mode...")
+            fluxfce_core.apply_manual_mode('day')
+            print("Day mode applied. Automatic scheduling disabled.")
+
+        elif args.command == 'force-night':
+            log.info("Forcing Night mode...")
+            fluxfce_core.apply_manual_mode('night')
+            print("Night mode applied. Automatic scheduling disabled.")
+
+        elif args.command == 'set-default':
+            mode = args.default_mode
+            log.info(f"Setting current look as default for {mode} mode...")
+            fluxfce_core.set_default_from_current(mode)
+            print(f"Current desktop settings saved as default for {mode.capitalize()} mode.")
+            print("(Run 'fluxfce enable' if needed to apply schedule changes).")
+
+        # --- Internal Command Handling (Keep as before) ---
+        elif args.command == 'internal-apply':
+            mode = args.internal_mode
+            log.info(f"CLI: Executing internal-apply for mode '{mode}'")
+            success = fluxfce_core.handle_internal_apply(mode)
+            exit_code = 0 if success else 1
+
+        elif args.command == 'schedule-jobs':
+            log.info("CLI: Executing schedule-jobs command")
+            success = fluxfce_core.handle_schedule_jobs_command(
+                python_exe_path=PYTHON_EXECUTABLE,
+                script_exe_path=SCRIPT_PATH
+            )
+            exit_code = 0 if success else 1
+
+        elif args.command == 'run-login-check':
+            log.info("CLI: Executing run-login-check command")
+            success = fluxfce_core.handle_run_login_check()
+            exit_code = 0 if success else 1
+
+        else:
+            log.error(f"Unknown command: {args.command}")
+            parser.print_help()
+            exit_code = 1
+
+    except core_exc.FluxFceError as e:
+        log.error(f"{e}", exc_info=args.verbose)
+        print(f"\nError: {e}", file=sys.stderr)
+        exit_code = 1
+    except Exception as e:
+        log.exception(f"An unexpected error occurred: {e}")
+        print(f"\nAn unexpected error occurred: {e}", file=sys.stderr)
+        if args.verbose:
+            print("\n--- Traceback ---", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            print("--- End Traceback ---", file=sys.stderr)
+        exit_code = 1
+
+    sys.exit(exit_code)
+
+
+if __name__ == "__main__":
+    main()
+##############
+./fluxfce_core/api.py
+
+# ~/dev/fluxfce-simplified/fluxfce_core/api.py
+
+import configparser # Ensure this is imported
+import logging
+import pathlib
+import sys
+from datetime import datetime
+from typing import Optional, Dict, Any, List
+
+# Import core components and exceptions
+from . import config as cfg
+from . import exceptions as exc
+from . import helpers
+from . import scheduler as sched
+from . import sun
+from . import systemd as sysd
+from . import xfce
+
+# zoneinfo needed here for status/period calculation
+try:
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError # Corrected import location for check
+except ImportError:
+    raise ImportError("Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+.")
+
+
+log = logging.getLogger(__name__)
+
+# --- Internal Helper ---
+
+# Instantiate managers that are reused across API calls
+_cfg_mgr = cfg.ConfigManager()
+_xfce_handler = xfce.XfceHandler() # Checks xfconf-query, xsct on init
+
+# RENAMED Internal Helper
+def _load_config_with_defaults() -> configparser.ConfigParser:
+    """Internal helper to load configuration, applying defaults in memory."""
+    try:
+        # Assume _cfg_mgr is already instantiated at module level
+        return _cfg_mgr.load_config()
+    except exc.ConfigError as e:
+        log.error(f"API Helper: Failed to load configuration: {e}")
+        raise exc.ConfigError(f"Failed to load configuration: {e}") from e
+    except Exception as e:
+        log.exception(f"API Helper: Unexpected error loading configuration: {e}")
+        raise exc.FluxFceError(f"Unexpected error loading configuration: {e}") from e
+
+# Updated internal helper to use the renamed config loader
+def _apply_settings_for_mode(mode: str) -> bool:
+    """Internal helper to apply all settings for 'day' or 'night'."""
+    if mode not in ['day', 'night']:
+        raise exc.ValidationError(f"Invalid mode specified for apply: {mode}")
+
+    config = _load_config_with_defaults() # UPDATED Call to renamed helper
+    theme_key = 'LIGHT_THEME' if mode == 'day' else 'DARK_THEME'
+    bg_section = 'BackgroundDay' if mode == 'day' else 'BackgroundNight'
+    screen_section = 'ScreenDay' if mode == 'day' else 'ScreenNight'
+
+    theme = config.get('Themes', theme_key, fallback=None)
+    bg_hex1 = config.get(bg_section, 'BG_HEX1', fallback=None)
+    bg_hex2 = config.get(bg_section, 'BG_HEX2', fallback=None)
+    bg_dir = config.get(bg_section, 'BG_DIR', fallback=None)
+    temp_str = config.get(screen_section, 'XSCT_TEMP', fallback=None)
+    bright_str = config.get(screen_section, 'XSCT_BRIGHT', fallback=None)
+
+    if not theme:
+        # Ensure the section name is correct in the error message
+        raise exc.ConfigError(f"Theme '{theme_key}' not configured in [Themes].")
+
+    xsct_temp: Optional[int] = None
+    xsct_bright: Optional[float] = None
+    try:
+        # Correct logic for Day mode reset (empty string signifies reset)
+        if mode == 'day' and (temp_str == '' or bright_str == ''):
+             log.info("Day mode specifies resetting screen temperature/brightness.")
+             # Ensure xsct_temp and xsct_bright remain None for reset call
+        # Check for Night mode or non-empty Day mode values
+        elif temp_str is not None and bright_str is not None and temp_str != '' and bright_str != '':
+             xsct_temp = int(temp_str)
+             xsct_bright = float(bright_str)
+        # Else: Leave as None if not configured or partially configured
+    except (ValueError, TypeError) as e:
+         log.warning(f"Could not parse screen settings from [{screen_section}]: {e}. Screen settings skipped.")
+
+    theme_ok, bg_ok, screen_ok = True, True, True # Assume success unless failed
+
+    # Apply Theme
+    try:
+        log.info(f"API: Applying theme '{theme}' for mode '{mode}'")
+        _xfce_handler.set_gtk_theme(theme)
+    except (exc.XfceError, exc.ValidationError) as e: # Catch validation error too
+        log.error(f"API: Failed to set theme: {e}")
+        theme_ok = False
+        raise exc.FluxFceError(f"Critical failure setting theme '{theme}': {e}") from e
+
+    # Apply Background (if configured)
+    if bg_hex1 and bg_dir:
+        try:
+            log.info(f"API: Applying background (Dir={bg_dir}, Hex1={bg_hex1}, Hex2={bg_hex2}) for mode '{mode}'")
+            _xfce_handler.set_background(bg_hex1, bg_hex2, bg_dir)
+        except (exc.XfceError, exc.ValidationError) as e:
+            log.error(f"API: Failed to set background: {e}")
+            bg_ok = False
+    else:
+        log.info("API: Background not fully configured in config, skipping background set.")
+
+    # Apply Screen Settings
+    try:
+        log.info(f"API: Applying screen settings (Temp={xsct_temp}, Bright={xsct_bright}) for mode '{mode}'")
+        _xfce_handler.set_screen_temp(xsct_temp, xsct_bright)
+    except (exc.XfceError, exc.ValidationError) as e:
+        log.error(f"API: Failed to set screen settings: {e}")
+        screen_ok = False
+
+    # Update state file only if theme applied successfully
+    if theme_ok:
+        try:
+            _cfg_mgr.write_state(mode)
+        except (exc.ConfigError, exc.ValidationError) as e: # Catch validation error too
+             log.error(f"API: Failed to write state file after applying mode '{mode}': {e}")
+
+    # Only return True if critical theme step succeeded. BG/Screen are optional.
+    # Return theme_ok # Decide if partial success is okay
+    if not theme_ok: # If theme failed, it's a failure
+         return False
+    if not bg_ok:
+        log.warning(f"Mode '{mode}' applied, but background setting failed.")
+    if not screen_ok:
+        log.warning(f"Mode '{mode}' applied, but screen setting failed.")
+    return True # Return True if theme succeeded, even if bg/screen failed
+
+
+# --- NEW Public API Functions for Config ---
+
+def get_current_config() -> configparser.ConfigParser:
+    """
+    Public API function to load the current configuration using ConfigManager.
+    Applies defaults in memory if keys/sections are missing.
+
+    Returns:
+        The loaded ConfigParser object.
+
+    Raises:
+        exc.ConfigError: If loading or parsing fails.
+        exc.FluxFceError: For unexpected errors during loading.
+    """
+    log.debug("API: get_current_config called")
+    # Call the renamed internal helper
+    return _load_config_with_defaults()
+
+def save_configuration(config_obj: configparser.ConfigParser) -> bool:
+    """
+    Public API function to save the given ConfigParser object to file.
+
+    Args:
+        config_obj: The ConfigParser object to save.
+
+    Returns:
+        True on success.
+
+    Raises:
+        exc.ConfigError: If saving fails.
+        exc.FluxFceError: For unexpected errors during saving.
+    """
+    log.debug("API: save_configuration called")
+    try:
+        # Assume _cfg_mgr is already instantiated at module level
+        return _cfg_mgr.save_config(config_obj)
+    except exc.ConfigError as e:
+        log.error(f"API: Failed to save configuration: {e}")
+        raise # Re-raise the specific error
+    except Exception as e:
+        log.exception(f"API: Unexpected error saving configuration: {e}")
+        raise exc.FluxFceError(f"Unexpected error saving configuration: {e}") from e
+
+
+# --- Existing Public API Functions ---
+
+def install_fluxfce(script_path: str, python_executable: Optional[str] = None) -> bool:
+    """
+    Handles the installation process: creates config, installs systemd units.
+    Assumes config file creation/defaults are handled by the caller using
+    get_current_config() and save_configuration() if needed before calling this.
+
+    Args:
+        script_path: Absolute path to the fluxfce script for systemd units.
+        python_executable: Path to python interpreter. Defaults to sys.executable.
+
+    Returns:
+        True if installation (systemd units) succeeded.
+
+    Raises:
+        exc.FluxFceError / exc.SystemdError / FileNotFoundError: On failure.
+    """
+    log.info("API: Starting fluxfce installation (systemd units).")
+    # Config loading/saving is now responsibility of the caller (CLI)
+
+    try:
+        sysd_mgr = sysd.SystemdManager()
+        success = sysd_mgr.install_units(script_path=script_path, python_executable=python_executable)
+        if success:
+             log.info("API: Systemd units installed successfully.")
+             return True
+        else:
+             raise exc.SystemdError("SystemdManager install_units returned False or failed.")
+    except (exc.SystemdError, FileNotFoundError, exc.DependencyError) as e: # Add DepError
+         log.error(f"API: Systemd unit installation failed: {e}")
+         raise
+    except Exception as e:
+         log.exception(f"API: Unexpected error during installation: {e}")
+         raise exc.FluxFceError(f"Unexpected error during installation: {e}") from e
+
+
+def uninstall_fluxfce() -> bool:
+    """
+    Handles the uninstallation process: removes systemd units and clears schedule.
+    (Note: Removing config dir is handled by CLI/GUI layer after confirmation).
+
+    Returns:
+        True if systemd removal and schedule clearing succeeded without critical errors.
+
+    Raises:
+        exc.FluxFceError: If a critical part of the uninstall fails.
+    """
+    log.info("API: Starting fluxfce uninstallation (systemd units, schedule).")
+    schedule_clear_ok = True # Assume success unless error occurs
+    systemd_remove_ok = True # Assume success unless error occurs
+    critical_error = None
+
+    # 1. Clear schedule
+    try:
+        scheduler = sched.AtdScheduler()
+        if not scheduler.clear_scheduled_transitions():
+             # Log warning, maybe not critical? Depends on definition. Let's log warning.
+             log.warning("API: clear_scheduled_transitions reported failure (some jobs might remain).")
+             # schedule_clear_ok = False # Don't mark as overall failure for this
+    except (exc.SchedulerError, exc.DependencyError) as e:
+         log.error(f"API: Failed to clear schedule during uninstall: {e}")
+         schedule_clear_ok = False
+         critical_error = critical_error or e # Keep first critical error
+    except Exception as e:
+         log.exception(f"API: Unexpected error clearing schedule during uninstall: {e}")
+         schedule_clear_ok = False
+         critical_error = critical_error or e
+
+    # 2. Remove systemd units
+    try:
+        sysd_mgr = sysd.SystemdManager()
+        if not sysd_mgr.remove_units():
+             log.error("API: Systemd unit removal reported failure.")
+             systemd_remove_ok = False
+             # Treat systemd removal failure as critical
+             critical_error = critical_error or exc.SystemdError("Systemd unit removal failed.")
+    except (exc.SystemdError, exc.DependencyError) as e:
+         log.error(f"API: Failed to remove systemd units during uninstall: {e}")
+         systemd_remove_ok = False
+         critical_error = critical_error or e
+    except Exception as e:
+         log.exception(f"API: Unexpected error removing systemd units during uninstall: {e}")
+         systemd_remove_ok = False
+         critical_error = critical_error or e
+
+    overall_success = schedule_clear_ok and systemd_remove_ok
+    log.info(f"API: Uninstallation process completed. Overall success: {overall_success}")
+    if critical_error:
+        # Raise the first critical error encountered
+        raise exc.FluxFceError(f"Uninstallation failed: {critical_error}") from critical_error
+    return True # Return true if no critical errors occurred
+
+
+def enable_scheduling(python_exe_path: str, script_exe_path: str) -> bool:
+    """
+    Enables automatic theme transitions by scheduling 'at' jobs.
+
+    Args:
+        python_exe_path: Absolute path to the Python interpreter.
+        script_exe_path: Absolute path to the fluxfce script.
+
+    Returns:
+        True if scheduling was successful (at least one job scheduled).
+
+    Raises:
+        exc.ConfigError, exc.ValidationError, exc.CalculationError,
+        exc.SchedulerError, FileNotFoundError, exc.DependencyError, exc.FluxFceError
+    """
+    log.info("API: Enabling automatic scheduling...")
+    config = _load_config_with_defaults() # Use internal helper
+    try:
+        lat_str = config.get('Location', 'LATITUDE')
+        lon_str = config.get('Location', 'LONGITUDE')
+        tz_name = config.get('Location', 'TIMEZONE')
+
+        lat = helpers.latlon_str_to_float(lat_str) # Raises ValidationError
+        lon = helpers.latlon_str_to_float(lon_str) # Raises ValidationError
+
+        if not tz_name:
+            raise exc.ValidationError("Timezone is not configured.")
+        # Validate timezone using zoneinfo before passing to scheduler
+        try:
+            ZoneInfo(tz_name)
+        except Exception as tz_err:
+            raise exc.ValidationError(f"Invalid timezone '{tz_name}': {tz_err}") from tz_err
+
+        scheduler = sched.AtdScheduler() # Raises SchedulerError/DepError on init fail
+        success = scheduler.schedule_transitions(lat, lon, tz_name, python_exe_path, script_exe_path)
+        log.info(f"API: Scheduling completed. Success: {success}")
+        return success
+
+    except (configparser.NoSectionError, configparser.NoOptionError) as e:
+         raise exc.ConfigError(f"Location settings missing in configuration: {e}") from e
+    except (exc.ValidationError, exc.CalculationError, exc.SchedulerError, FileNotFoundError, exc.DependencyError) as e:
+         log.error(f"API: Failed to enable scheduling: {e}")
+         raise
+    except Exception as e:
+         log.exception(f"API: Unexpected error enabling scheduling: {e}")
+         raise exc.FluxFceError(f"Unexpected error enabling scheduling: {e}") from e
+
+
+def disable_scheduling() -> bool:
+    """
+    Disables automatic theme transitions by clearing 'at' jobs.
+
+    Returns:
+        True if clearing jobs was successful.
+
+    Raises:
+        exc.SchedulerError, exc.DependencyError, exc.FluxFceError
+    """
+    log.info("API: Disabling automatic scheduling...")
+    try:
+        scheduler = sched.AtdScheduler() # Raises SchedulerError/DepError on init fail
+        success = scheduler.clear_scheduled_transitions()
+        log.info(f"API: Clearing scheduled jobs completed. Success: {success}")
+        return success
+    except (exc.SchedulerError, exc.DependencyError) as e:
+        log.error(f"API: Failed to disable scheduling: {e}")
+        raise
+    except Exception as e:
+        log.exception(f"API: Unexpected error disabling scheduling: {e}")
+        raise exc.FluxFceError(f"Unexpected error disabling scheduling: {e}") from e
+
+def apply_manual_mode(mode: str) -> bool:
+    """
+    Manually applies Day or Night mode settings and disables scheduling.
+
+    Args:
+        mode: 'day' or 'night'.
+
+    Returns:
+        True if theme setting succeeded (background/screen failures are warnings).
+
+    Raises:
+        exc.ValidationError: If mode is invalid.
+        exc.FluxFceError: If theme setting fails critically.
+        exc.SchedulerError: If disabling the schedule fails critically (less likely).
+    """
+    log.info(f"API: Manually applying mode '{mode}' and disabling schedule...")
+    apply_ok = False
+    try:
+        # 1. Apply settings for the mode
+        apply_ok = _apply_settings_for_mode(mode) # Raises FluxFceError on critical theme fail
+    except exc.FluxFceError as e:
+        log.error(f"API: Failed critical apply step for mode '{mode}': {e}")
+        raise # Re-raise critical failure
+
+    # 2. Disable scheduling (clear jobs) - attempt even if non-critical apply failed
+    try:
+        disable_ok = disable_scheduling()
+        if not disable_ok:
+             log.warning("API: Applied settings, but failed to disable schedule (clear jobs).")
+             # Don't raise, just warn. The main action (apply) might have succeeded.
+    except exc.SchedulerError as e:
+         log.warning(f"API: Applied settings, but failed to disable schedule: {e}")
+    except Exception as e:
+         log.exception(f"API: Applied settings, but unexpected error disabling schedule: {e}")
+
+    return apply_ok # Return success of the apply step (primarily theme success)
+
+def set_default_from_current(mode: str) -> bool:
+    """
+    Saves the current desktop settings (theme, background, screen) as the
+    new default configuration for the specified mode ('day' or 'night').
+
+    Args:
+        mode: 'day' or 'night'.
+
+    Returns:
+        True if settings were read and config was saved (or no changes needed).
+
+    Raises:
+        exc.ValidationError, exc.XfceError, exc.ConfigError, exc.FluxFceError
+    """
+    if mode not in ['day', 'night']:
+        raise exc.ValidationError(f"Invalid mode for set-default: {mode}")
+
+    log.info(f"API: Saving current desktop settings as default for mode '{mode}'...")
+
+    try:
+        # 1. Get Current Settings
+        current_theme = _xfce_handler.get_gtk_theme() # Raises XfceError if fail
+        current_bg = None
+        try:
+             # Handle background get failure gracefully - don't fail whole operation
+             current_bg = _xfce_handler.get_background_settings()
+        except exc.XfceError as bg_e:
+             log.warning(f"API: Could not get current background settings: {bg_e}. Skipping background save.")
+
+        current_screen = _xfce_handler.get_screen_settings() # Doesn't usually raise
+
+        # 2. Load Config
+        config = _load_config_with_defaults() # Use internal helper
+        config_changed = False
+
+        # 3. Update Theme Setting
+        theme_key = 'LIGHT_THEME' if mode == 'day' else 'DARK_THEME'
+        if config.get('Themes', theme_key, fallback=None) != current_theme:
+             _cfg_mgr.set_setting(config, 'Themes', theme_key, current_theme)
+             log.debug(f"API: Updating [{mode} Theme] to '{current_theme}'")
+             config_changed = True
+
+        # 4. Update Background Settings
+        bg_section = 'BackgroundDay' if mode == 'day' else 'BackgroundNight'
+        if current_bg: # Only update if successfully retrieved
+             for key, config_key in [('dir', 'BG_DIR'), ('hex1', 'BG_HEX1'), ('hex2', 'BG_HEX2')]:
+                 new_value = current_bg.get(key)
+                 current_value = config.get(bg_section, config_key, fallback=None)
+                 new_value_str = str(new_value) if new_value is not None else ''
+                 current_value_str = str(current_value) if current_value is not None else ''
+                 if new_value_str != current_value_str:
+                      _cfg_mgr.set_setting(config, bg_section, config_key, new_value_str)
+                      log.debug(f"API: Updating [{bg_section} {config_key}] to '{new_value_str}'")
+                      config_changed = True
+        # No else needed, warning logged above if current_bg is None
+
+        # 5. Update Screen Settings
+        screen_section = 'ScreenDay' if mode == 'day' else 'ScreenNight'
+        temp_to_save: Optional[str] = None
+        bright_to_save: Optional[str] = None
+
+        if current_screen:
+            cur_temp = current_screen.get('temperature')
+            cur_bright = current_screen.get('brightness')
+            if cur_temp is None and cur_bright is None:
+                temp_to_save = ''
+                bright_to_save = ''
+                log.debug("API: Current screen state is off/default; saving reset values ('')")
+            elif cur_temp is not None and cur_bright is not None:
+                temp_to_save = str(cur_temp)
+                bright_to_save = f"{cur_bright:.2f}"
+                log.debug(f"API: Current screen state: Temp={temp_to_save}, Bright={bright_to_save}")
+            else:
+                 log.warning("API: Inconsistent screen settings read; not updating defaults.")
+
+        if temp_to_save is not None and bright_to_save is not None:
+            if config.get(screen_section, 'XSCT_TEMP', fallback=None) != temp_to_save:
+                _cfg_mgr.set_setting(config, screen_section, 'XSCT_TEMP', temp_to_save)
+                log.debug(f"API: Updating [{screen_section} XSCT_TEMP] to '{temp_to_save}'")
+                config_changed = True
+            if config.get(screen_section, 'XSCT_BRIGHT', fallback=None) != bright_to_save:
+                _cfg_mgr.set_setting(config, screen_section, 'XSCT_BRIGHT', bright_to_save)
+                log.debug(f"API: Updating [{screen_section} XSCT_BRIGHT] to '{bright_to_save}'")
+                config_changed = True
+
+        # 6. Save Config if Changed
+        if config_changed:
+            if save_configuration(config): # Use the public API save function
+                 log.info(f"API: Successfully saved updated defaults for mode '{mode}'.")
+                 return True
+            else:
+                 # save_configuration should raise on failure, this is fallback
+                 return False
+        else:
+            log.info(f"API: Current settings already match defaults for mode '{mode}'. No changes made.")
+            return True # Success even if no changes
+
+    except (exc.ValidationError, exc.XfceError, exc.ConfigError) as e:
+        log.error(f"API: Failed to set default from current: {e}")
+        raise
+    except Exception as e:
+        log.exception(f"API: Unexpected error setting default from current: {e}")
+        raise exc.FluxFceError(f"Unexpected error setting default from current: {e}") from e
+
+def get_status() -> Dict[str, Any]:
+    """
+    Retrieves the current status of fluxfce.
+
+    Returns:
+        A dictionary containing status information. (Structure documented previously)
+
+    Raises:
+        FluxFceError for unexpected issues, but tries to return partial status
+        even if some components fail. Errors within components are noted in the dict.
+    """
+    log.debug("API: Getting status...")
+    status: Dict[str, Any] = {
+        'config': {},
+        'state': {'last_auto_applied': None}, # Keep placeholder if state removal not done
+        'sun_times': {'sunrise': None, 'sunset': None, 'error': None},
+        'current_period': 'unknown',
+        'schedule': {'enabled': False, 'jobs': [], 'error': None},
+        # systemd statuses will be added dynamically below
+        'systemd': {'error': None}
+    }
+
+    # 1. Get Config (Keep as before)
+    try:
+        config = get_current_config() # Use public API call now
+        status['config']['latitude'] = config.get('Location', 'LATITUDE', fallback='Not Set')
+        status['config']['longitude'] = config.get('Location', 'LONGITUDE', fallback='Not Set')
+        status['config']['timezone'] = config.get('Location', 'TIMEZONE', fallback='Not Set')
+        status['config']['light_theme'] = config.get('Themes', 'LIGHT_THEME', fallback='Not Set')
+        status['config']['dark_theme'] = config.get('Themes', 'DARK_THEME', fallback='Not Set')
+    except exc.FluxFceError as e:
+         status['config']['error'] = str(e)
+
+    # 2. Get State (Remove or keep based on whether Step 3 of prior plan was done)
+    # Example if keeping for now:
+    try:
+        status['state']['last_auto_applied'] = _cfg_mgr.read_state()
+    except exc.ConfigError as e:
+        # Only log error, don't populate dict['error'] for state
+        log.warning(f"API: Error reading state file for status: {e}")
+        status['state']['last_auto_applied'] = "Error" # Indicate error in value
+
+
+    # 3. Calculate Sun Times & Current Period (Keep as before)
+    lat_str = status['config'].get('latitude')
+    lon_str = status['config'].get('longitude')
+    tz_name = status['config'].get('timezone')
+    lat, lon = None, None
+    if 'error' not in status['config'] and lat_str and lon_str and tz_name and tz_name != 'Not Set':
+        try:
+            lat = helpers.latlon_str_to_float(lat_str)
+            lon = helpers.latlon_str_to_float(lon_str)
+            try: tz_info = ZoneInfo(tz_name)
+            except Exception as tz_err: raise exc.ValidationError(f"Invalid timezone '{tz_name}': {tz_err}") from tz_err
+            today = datetime.now(tz_info).date()
+            sun_times_today = sun.get_sun_times(lat, lon, today, tz_name)
+            status['sun_times']['sunrise'] = sun_times_today['sunrise']
+            status['sun_times']['sunset'] = sun_times_today['sunset']
+            now_local = datetime.now(tz_info)
+            if sun_times_today['sunrise'] <= now_local < sun_times_today['sunset']: status['current_period'] = 'day'
+            else: status['current_period'] = 'night'
+        except (exc.ValidationError, exc.CalculationError) as e:
+             status['sun_times']['error'] = str(e); status['current_period'] = 'error'
+        except Exception as e:
+             log.exception("API: Unexpected error calculating sun times for status."); status['sun_times']['error'] = f"Unexpected: {e}"; status['current_period'] = 'error'
+    elif 'error' not in status['config']:
+        status['sun_times']['error'] = "Location/Timezone not configured or invalid."; status['current_period'] = 'unknown'
+
+
+    # 4. Get Schedule Status (Keep as before)
+    try:
+        scheduler = sched.AtdScheduler()
+        status['schedule']['jobs'] = scheduler.list_scheduled_transitions()
+        status['schedule']['enabled'] = bool(status['schedule']['jobs'])
+    except (exc.SchedulerError, exc.DependencyError) as e:
+         status['schedule']['error'] = str(e); status['schedule']['enabled'] = False
+    except Exception as e:
+         log.exception("API: Unexpected error getting schedule status."); status['schedule']['error'] = f"Unexpected: {e}"; status['schedule']['enabled'] = False
+
+
+    # 5. Get Systemd Status (FINAL CORRECTED KEY GENERATION)
+    try:
+        sysd_mgr = sysd.SystemdManager()
+        for unit_name in sysd.MANAGED_UNITS:
+            # --- FINAL CORRECTED KEY GENERATION ---
+            unit_key = None # Reset key for each iteration
+            if sysd.SCHEDULER_TIMER_NAME == unit_name:
+                unit_key = 'scheduler_timer'
+            elif sysd.SCHEDULER_SERVICE_NAME == unit_name:
+                unit_key = 'scheduler_service'
+            elif sysd.LOGIN_SERVICE_NAME == unit_name:
+                unit_key = 'login_service'
+            elif sysd.RESUME_SERVICE_NAME == unit_name: # <-- ADDED THIS CASE
+                 unit_key = 'resume_service'
+            # --- END CORRECTION ---
+
+            if unit_key is None: # Safety check / handle unrecognized units
+                 log.warning(f"API: Unrecognized or skipped managed unit name '{unit_name}' during status check.")
+                 continue
+
+            status['systemd'][unit_key] = "Error checking" # Default
+            enabled_status_str = "Unknown"
+            active_status_str = "Unknown"
+
+            try:
+                code_enabled, _, err_enabled = sysd_mgr._run_systemctl(['is-enabled', unit_name], check_errors=False)
+                if code_enabled == 0: enabled_status_str = "Enabled"
+                elif code_enabled == 1: enabled_status_str = "Disabled"
+                else: enabled_status_str = f"Error ({code_enabled})"
+
+                code_active, _, err_active = sysd_mgr._run_systemctl(['is-active', unit_name], check_errors=False)
+                if code_active == 0:
+                    active_status_str = "Active"
+                    if unit_name.endswith(".timer"): active_status_str += " (waiting)"
+                elif code_active == 3: active_status_str = "Inactive"
+                else: active_status_str = f"Failed/Error ({code_active})"
+
+                if "Error" in enabled_status_str or "Failed/Error" in active_status_str:
+                     status['systemd'][unit_key] = f"{enabled_status_str}, {active_status_str}"
+                elif "Unknown" in enabled_status_str or "Unknown" in active_status_str:
+                     status['systemd'][unit_key] = "Unknown State"
+                else:
+                     status['systemd'][unit_key] = f"{enabled_status_str}, {active_status_str}"
+
+                log.debug(f"API: Status for systemd unit {unit_name} (key: {unit_key}): {status['systemd'][unit_key]}")
+
+            except exc.SystemdError as unit_e:
+                 log.error(f"API: Could not get full status for systemd unit {unit_name}: {unit_e}")
+                 status['systemd'][unit_key] = "Error processing"
+            except Exception as unit_e:
+                 log.exception(f"API: Unexpected error getting status for unit {unit_name}: {unit_e}")
+                 status['systemd'][unit_key] = "Unexpected error"
+
+    except (exc.SystemdError, exc.DependencyError) as e:
+         status['systemd']['error'] = f"Systemd check failed: {e}"
+    except Exception as e:
+         log.exception("API: Unexpected error getting systemd status.")
+         status['systemd']['error'] = f"Unexpected error: {e}"
+
+    return status
+
+# --- Internal Command Handlers (Called by Executable Script) ---
+
+def handle_internal_apply(mode: str) -> bool:
+    """
+    Called internally by the scheduled 'at' job or login service.
+    Applies settings for the given mode. Returns True on success.
+    """
+    log.info(f"API: Internal apply called for mode '{mode}'")
+    try:
+        # Use the helper which now returns bool indicating if theme succeeded
+        return _apply_settings_for_mode(mode)
+    except exc.FluxFceError as e:
+        log.error(f"API: Error during internal apply for mode '{mode}': {e}")
+        return False
+    except Exception as e:
+        log.exception(f"API: Unexpected error during internal apply for mode '{mode}': {e}")
+        return False
+
+def handle_schedule_jobs_command(python_exe_path: str, script_exe_path: str) -> bool:
+    """
+    Called internally by the systemd scheduler service timer.
+    Calculates and schedules the next 'at' jobs. Returns True on success.
+    """
+    log.info("API: Handling schedule-jobs command...")
+    try:
+        # enable_scheduling returns True if >0 jobs scheduled
+        return enable_scheduling(python_exe_path, script_exe_path)
+    except exc.FluxFceError as e:
+        log.error(f"API: Error during schedule-jobs command: {e}")
+        return False
+    except Exception as e:
+        log.exception(f"API: Unexpected error during schedule-jobs command: {e}")
+        return False
+
+def handle_run_login_check() -> bool:
+    """
+    Called internally by the systemd login service.
+    Determines the current period (day/night) and applies the appropriate theme.
+    Returns True on success.
+    """
+    log.info("API: Handling run-login-check command...")
+    try:
+        config = _load_config_with_defaults() # Use internal helper
+        lat_str = config.get('Location', 'LATITUDE')
+        lon_str = config.get('Location', 'LONGITUDE')
+        tz_name = config.get('Location', 'TIMEZONE')
+
+        mode_to_apply = 'night' # Default assumption
+
+        if lat_str and lon_str and tz_name:
+            try:
+                lat = helpers.latlon_str_to_float(lat_str)
+                lon = helpers.latlon_str_to_float(lon_str)
+                tz_info = ZoneInfo(tz_name)
+                now_local = datetime.now(tz_info)
+                today = now_local.date()
+                sun_times = sun.get_sun_times(lat, lon, today, tz_name)
+                if sun_times['sunrise'] <= now_local < sun_times['sunset']:
+                    mode_to_apply = 'day'
+                log.info(f"API: Login check determined current mode: '{mode_to_apply}'")
+            except (exc.ValidationError, exc.CalculationError, ZoneInfoNotFoundError) as e:
+                log.warning(f"API: Could not determine correct mode for login check ({e}). Defaulting to '{mode_to_apply}'.")
+            except Exception as e:
+                log.exception(f"API: Unexpected error determining mode for login check. Defaulting to '{mode_to_apply}'.")
+        else:
+            log.warning("API: Location/Timezone not configured for login check. Defaulting to 'night'.")
+
+        log.info(f"API: Applying mode '{mode_to_apply}' for login check.")
+        # Use the helper which now returns bool indicating if theme succeeded
+        return _apply_settings_for_mode(mode_to_apply)
+
+    except exc.FluxFceError as e:
+        # Includes ConfigError from loading
+        log.error(f"API: Error during run-login-check: {e}")
+        return False
+    except Exception as e:
+        log.exception(f"API: Unexpected error during run-login-check: {e}")
+        return False
+##############
+./fluxfce_core/config.py
+
+# ~/dev/fluxfce-simplified/fluxfce_core/config.py
+
+import configparser
+import logging
+import pathlib
+from typing import Optional, Dict, Any
+
+# Import custom exceptions from within the same package
+from .exceptions import ConfigError, ValidationError
+
+log = logging.getLogger(__name__)
+
+# --- Constants ---
+APP_NAME = "fluxfce"
+CONFIG_DIR = pathlib.Path.home() / ".config" / APP_NAME
+CONFIG_FILE = CONFIG_DIR / "config.ini"
+# PRESETS_FILE removed
+STATE_FILE = CONFIG_DIR / "state" # Tracks last *auto* applied state ('day'/'night')
+
+# Default configuration values
+DEFAULT_CONFIG: Dict[str, Dict[str, str]] = {
+    'Location': {
+        'LATITUDE': "43.65N",    # Toronto Latitude (Example)
+        'LONGITUDE': "79.38W",   # Toronto Longitude (Example)
+        'TIMEZONE': "America/Toronto", # IANA Timezone Name
+    },
+    'Themes': {
+        'LIGHT_THEME': "Adwaita",
+        'DARK_THEME': "Adwaita-dark",
+    },
+    'BackgroundDay': {
+        'BG_HEX1': "ADD8E6",
+        'BG_HEX2': "87CEEB",
+        'BG_DIR': "v",
+    },
+    'ScreenDay': {
+        'XSCT_TEMP': "6500", # Typically reset, but provide a default value
+        'XSCT_BRIGHT': "1.0", # Typically reset, but provide a default value
+    },
+    'BackgroundNight': {
+        'BG_HEX1': "1E1E2E",
+        'BG_HEX2': "000000",
+        'BG_DIR': "v",
+    },
+    'ScreenNight': {
+        'XSCT_TEMP': "4500",
+        'XSCT_BRIGHT': "0.85",
+    }
+}
+
+
+# --- Configuration Manager ---
+
+class ConfigManager:
+    """Handles reading/writing config.ini and state file."""
+
+    def __init__(self):
+        """Ensures the configuration directory exists."""
+        try:
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            log.debug(f"Configuration directory ensured: {CONFIG_DIR}")
+        except OSError as e:
+            # This is potentially serious, raise it.
+            raise ConfigError(f"Failed to create configuration directory {CONFIG_DIR}: {e}") from e
+
+    def _load_ini(self, file_path: pathlib.Path) -> configparser.ConfigParser:
+        """Loads an INI file, returning a ConfigParser object."""
+        parser = configparser.ConfigParser()
+        if file_path.exists():
+            try:
+                # Handle potential empty file
+                if file_path.stat().st_size > 0:
+                    read_files = parser.read(file_path, encoding='utf-8')
+                    if not read_files:
+                        log.warning(f"Config file {file_path} was reported as read, but might be empty or unparseable by configparser.")
+                    else:
+                         log.debug(f"Loaded config from {file_path}")
+                else:
+                     log.warning(f"Config file {file_path} is empty.")
+            except configparser.Error as e:
+                 # Raise specific error for parsing issues
+                 raise ConfigError(f"Could not parse config file {file_path}: {e}") from e
+            except IOError as e:
+                 raise ConfigError(f"Could not read config file {file_path}: {e}") from e
+        else:
+            log.debug(f"Config file {file_path} not found. Returning empty parser.")
+
+        return parser
+
+    def _save_ini(self, parser: configparser.ConfigParser, file_path: pathlib.Path) -> bool:
+        """Saves a ConfigParser object to an INI file."""
+        try:
+            with file_path.open('w', encoding='utf-8') as f:
+                parser.write(f)
+            log.debug(f"Saved configuration to {file_path}")
+            return True
+        except IOError as e:
+            raise ConfigError(f"Failed to write configuration to {file_path}: {e}") from e
+
+    def load_config(self) -> configparser.ConfigParser:
+        """
+        Loads the main config.ini (config.CONFIG_FILE).
+
+        Applies default values (from config.DEFAULT_CONFIG) for any missing
+        sections or keys directly to the returned ConfigParser object.
+        It does *not* automatically save the file after applying defaults;
+        the caller can modify further and then call save_config.
+
+        Returns:
+            A ConfigParser object representing the configuration.
+
+        Raises:
+            ConfigError: If the file cannot be read or parsed.
+        """
+        parser = self._load_ini(CONFIG_FILE)
+        # Apply defaults in memory without saving immediately
+        made_changes = False
+        for section, defaults in DEFAULT_CONFIG.items():
+            if not parser.has_section(section):
+                parser.add_section(section)
+                made_changes = True
+                log.debug(f"Added missing section [{section}] to config object")
+            for key, value in defaults.items():
+                if not parser.has_option(section, key):
+                    parser.set(section, key, value)
+                    made_changes = True
+                    log.debug(f"Added missing key '{key}' = '{value}' to section [{section}] in config object")
+
+        if made_changes:
+            log.info("Default values applied in memory to the loaded configuration.")
+            # Caller must call save_config explicitly if they want to persist these defaults
+
+        return parser
+
+    def save_config(self, config: configparser.ConfigParser) -> bool:
+        """
+        Saves the provided ConfigParser object to the main config.ini file.
+
+        Args:
+            config: The ConfigParser object to save.
+
+        Returns:
+            True if saving was successful.
+
+        Raises:
+            ConfigError: If the file cannot be written.
+        """
+        log.info(f"Saving configuration to {CONFIG_FILE}")
+        return self._save_ini(config, CONFIG_FILE)
+
+    # --- Presets Removed ---
+
+    def get_setting(self, config: configparser.ConfigParser, section: str, key: str, default: Optional[str] = None) -> Optional[str]:
+        """Gets a setting value from a ConfigParser object."""
+        # Uses configparser's fallback mechanism
+        return config.get(section, key, fallback=default)
+
+    def set_setting(self, config: configparser.ConfigParser, section: str, key: str, value: str):
+        """
+        Sets a setting value in a ConfigParser object.
+        Creates the section if it doesn't exist.
+        """
+        if not config.has_section(section):
+            log.debug(f"Adding section [{section}] to config object for setting key '{key}'")
+            config.add_section(section)
+        log.debug(f"Setting [{section}] {key} = '{value}' in config object")
+        config.set(section, key, value)
+
+    def read_state(self) -> Optional[str]:
+        """
+        Reads the last known auto-applied state ('day' or 'night') from the state file.
+
+        Returns:
+            'day', 'night', or None if the file doesn't exist, is empty,
+            contains invalid data, or cannot be read.
+        """
+        if STATE_FILE.exists():
+            try:
+                # Handle empty state file
+                if STATE_FILE.stat().st_size == 0:
+                    log.warning(f"State file {STATE_FILE} is empty. Returning None.")
+                    return None
+
+                state = STATE_FILE.read_text(encoding='utf-8').strip()
+                if state in ('day', 'night'):
+                    log.debug(f"Read state: {state}")
+                    return state
+                else:
+                    log.warning(f"Invalid content '{state}' in state file {STATE_FILE}. Attempting to remove.")
+                    # --- Attempt to remove invalid state file ---
+                    try:
+                        STATE_FILE.unlink()
+                        log.debug(f"Removed invalid state file: {STATE_FILE}")
+                    except OSError as e:
+                        log.warning(f"Could not remove invalid state file {STATE_FILE}: {e}")
+                    # --- End Attempt ---
+                    return None # Return None as state is invalid/unknown
+            except IOError as e:
+                # Raise specific error for read issues
+                raise ConfigError(f"Could not read state file {STATE_FILE}: {e}") from e
+        else:
+            log.debug("State file not found.")
+            return None
+
+    def write_state(self, state: str) -> bool:
+        """
+        Writes the current auto-applied state ('day' or 'night') to the state file.
+
+        Args:
+            state: The state to write ('day' or 'night').
+
+        Returns:
+            True on success.
+
+        Raises:
+            ValidationError: If the provided state is not 'day' or 'night'.
+            ConfigError: If the state file cannot be written.
+        """
+        if state not in ('day', 'night'):
+            raise ValidationError(f"Attempted to write invalid state: {state}. Must be 'day' or 'night'.")
+        try:
+            STATE_FILE.write_text(state, encoding='utf-8')
+            log.info(f"State successfully written to {STATE_FILE}: {state}")
+            return True
+        except IOError as e:
+            raise ConfigError(f"Failed to write state file {STATE_FILE}: {e}") from e
+##############
+./fluxfce_core/exceptions.py
+
+# fluxfce_core/exceptions.py
+class FluxFceError(Exception):
+    """Base exception for fluxfce core errors."""
+    pass
+
+class ConfigError(FluxFceError):
+    """Errors related to configuration loading, saving, or validation."""
+    pass
+
+class CalculationError(FluxFceError):
+    """Errors during sunrise/sunset calculation."""
+    pass
+
+class XfceError(FluxFceError):
+    """Errors interacting with xfconf-query or xsct."""
+    pass
+
+class SchedulerError(FluxFceError):
+    """Errors interacting with atd (at, atq, atrm)."""
+    pass
+
+class SystemdError(FluxFceError):
+    """Errors interacting with systemctl."""
+    pass
+
+class DependencyError(FluxFceError):
+    """Errors due to missing external command dependencies."""
+    pass
+
+class ValidationError(FluxFceError):
+     """Errors for invalid user input or data formats."""
+     pass
+##############
+./fluxfce_core/helpers.py
+
+# ~/dev/fluxfce-simplified/fluxfce_core/helpers.py
+
+import os
+import pathlib
+import logging
+import re
+import shutil
+import subprocess
+from typing import List, Tuple, Optional
+
+try:
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+except ImportError:
+    raise ImportError("Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+.")
+# Import custom exceptions from within the same package
+from .exceptions import DependencyError, ValidationError, FluxFceError
+
+# Setup a logger specific to this module for internal debugging
+log = logging.getLogger(__name__)
+
+# --- Command Execution ---
+
+def run_command(
+    cmd_list: List[str], check: bool = False, capture: bool = True, input_str: Optional[str] = None
+) -> Tuple[int, str, str]:
+    """
+    Runs an external command and returns its status, stdout, and stderr.
+
+    Args:
+        cmd_list: The command and its arguments as a list of strings.
+        check: If True, raise CalledProcessError if the command returns non-zero.
+               (Note: Generally, we'll use check=False and handle errors based
+               on the return code in the calling function for more specific
+               exception types).
+        capture: If True (default), capture stdout and stderr. If False, they are
+                 not captured (sent to system stdout/stderr).
+        input_str: Optional string to pass as standard input to the command.
+
+    Returns:
+        A tuple containing: (return_code, stdout_str, stderr_str).
+        stdout_str and stderr_str will be empty if capture=False.
+
+    Raises:
+        FileNotFoundError: If the command executable is not found.
+        subprocess.CalledProcessError: If check=True and the command fails.
+        Exception: For other unexpected subprocess errors.
+    """
+    log.debug(f"Running command: {' '.join(cmd_list)}")
+    stdin_pipe = subprocess.PIPE if input_str is not None else None
+    stdout_pipe = subprocess.PIPE if capture else None
+    stderr_pipe = subprocess.PIPE if capture else None
+
+    try:
+        process = subprocess.run(
+            cmd_list,
+            check=check,  # Let CalledProcessError be raised if check is True
+            input=input_str,
+            stdout=stdout_pipe,
+            stderr=stderr_pipe,
+            text=True,
+            encoding='utf-8'
+        )
+        stdout = process.stdout.strip() if process.stdout and capture else ""
+        stderr = process.stderr.strip() if process.stderr and capture else ""
+        log.debug(f"Command '{cmd_list[0]}' finished with code {process.returncode}")
+        if stdout and capture: log.debug(f"stdout: {stdout[:200]}...") # Log truncated stdout
+        if stderr and capture: log.debug(f"stderr: {stderr[:200]}...") # Log truncated stderr
+        return process.returncode, stdout, stderr
+    except FileNotFoundError as e:
+        # This specific error is often critical and worth propagating
+        log.error(f"Command not found: {cmd_list[0]} - {e}")
+        raise FileNotFoundError(f"Required command '{cmd_list[0]}' not found in PATH.") from e
+    except subprocess.CalledProcessError as e:
+        # Log details if check=True caused the exception
+        # The caller should handle this if check=True was intentional
+        stdout = e.stdout.strip() if e.stdout and capture else ""
+        stderr = e.stderr.strip() if e.stderr and capture else ""
+        log.warning(f"Command failed with exit code {e.returncode}: {' '.join(cmd_list)}")
+        if stdout: log.warning(f"stdout: {stdout[:200]}...")
+        if stderr: log.warning(f"stderr: {stderr[:200]}...")
+        raise # Re-raise the original exception if check=True
+    except Exception as e:
+        log.exception(f"An unexpected error occurred running command: {' '.join(cmd_list)} - {e}")
+        # Wrap unexpected errors in our base exception type
+        raise FluxFceError(f"Unexpected error running command '{cmd_list[0]}': {e}") from e
+
+
+# --- Dependency Checks ---
+
+def check_dependencies(deps: List[str]) -> bool:
+    """
+    Checks if required external commands exist in PATH using shutil.which.
+
+    Args:
+        deps: A list of command names to check (e.g., ['xfconf-query', 'xsct']).
+
+    Returns:
+        True if all dependencies are found.
+
+    Raises:
+        DependencyError: If one or more dependencies are not found.
+    """
+    log.debug(f"Checking for dependencies: {', '.join(deps)}")
+    missing = []
+    for dep in deps:
+        if shutil.which(dep) is None: # shutil.which returns None if not found
+            missing.append(dep)
+
+    if missing:
+        error_msg = f"Missing required command(s): {', '.join(missing)}. Please install them."
+        log.error(error_msg)
+        raise DependencyError(error_msg)
+
+    log.debug(f"All dependencies checked successfully: {', '.join(deps)}")
+    return True
+
+def check_atd_service() -> bool:
+    """
+    Checks if the 'atd' service appears to be running via systemctl.
+
+    Returns:
+        True if the service is detected as active.
+
+    Raises:
+        DependencyError: If 'systemctl' command is not found.
+        FluxFceError: For unexpected errors during the check or if the
+                      service is confirmed not to be active.
+    """
+    log.debug("Checking if atd service is active...")
+    # Ensure systemctl exists first
+    check_dependencies(['systemctl'])
+
+    try:
+        # Check system service first
+        code_sys, _, err_sys = run_command(['systemctl', 'is-active', '--quiet', 'atd.service'])
+        # --quiet: return code 0 for active, non-zero otherwise (usually 3 for inactive)
+
+        if code_sys == 0:
+            log.debug("System 'atd' service reported as active.")
+            return True
+
+        log.debug(f"System 'atd' not active (code: {code_sys}). Checking user service...")
+        # Check user service as fallback (less common for atd)
+        code_user, _, err_user = run_command(['systemctl', '--user', 'is-active', '--quiet', 'atd.service'])
+
+        if code_user == 0:
+            log.debug("User 'atd' service reported as active.")
+            return True
+
+        # If neither is active
+        error_msg = "The 'atd' service (system or user) is not active. Automatic scheduling requires 'atd'. Please install and enable it (e.g., 'sudo systemctl enable --now atd')."
+        log.error(error_msg)
+        # Use FluxFceError as it's a runtime state issue, not a missing binary
+        raise FluxFceError(error_msg)
+
+    except FileNotFoundError: # Should be caught by check_dependencies, but belts and suspenders
+        raise DependencyError("The 'systemctl' command was not found, cannot check 'atd' status.")
+    except Exception as e:
+        # Catch potential errors from run_command itself or re-raised CalledProcessError
+        log.exception(f"Failed to check 'atd' status: {e}")
+        raise FluxFceError(f"Failed to check 'atd' status: {e}") from e
+
+# --- Detect timezone ---
+def detect_system_timezone() -> Optional[str]:
+    """
+    Attempts to detect the system's configured IANA timezone name.
+
+    Tries methods in order: TZ env var, timedatectl, /etc/localtime symlink, /etc/timezone file.
+
+    Returns:
+        The detected IANA timezone name (str) if found and valid, otherwise None.
+    """
+    log.debug("Attempting to detect system timezone...")
+
+    def _is_valid_timezone(tz_name: Optional[str]) -> bool:
+        """Helper to validate a potential timezone name."""
+        if not tz_name or not isinstance(tz_name, str):
+            return False
+        try:
+            ZoneInfo(tz_name)
+            log.debug(f"Validated timezone '{tz_name}' successfully.")
+            return True
+        except ZoneInfoNotFoundError:
+            log.debug(f"ZoneInfoNotFoundError for '{tz_name}'.")
+            return False
+        except Exception as e:
+            log.warning(f"Error validating timezone '{tz_name}' with ZoneInfo: {e}")
+            return False
+
+    # 1. Check TZ environment variable first (overrides system settings)
+    tz_env = os.environ.get('TZ')
+    if tz_env:
+        tz_env_cleaned = tz_env.lstrip(':')
+        log.debug(f"Found TZ environment variable: '{tz_env}' (cleaned: '{tz_env_cleaned}')")
+        if _is_valid_timezone(tz_env_cleaned):
+            log.info(f"Using timezone from TZ environment variable: {tz_env_cleaned}")
+            return tz_env_cleaned
+        else:
+            log.warning(f"TZ environment variable ('{tz_env}') is set but not a valid timezone name.")
+
+    # 2. Try timedatectl (systemd)
+    try:
+        check_dependencies(['timedatectl']) # Check if command exists
+        cmd = ['timedatectl', 'show', '--property=Timezone', '--value']
+        code, stdout, stderr = run_command(cmd)
+        if code == 0 and stdout:
+            tz_name = stdout.strip()
+            log.debug(f"timedatectl returned: '{tz_name}'")
+            if _is_valid_timezone(tz_name):
+                log.info(f"Detected timezone via timedatectl: {tz_name}")
+                return tz_name
+            else:
+                log.warning(f"timedatectl returned invalid timezone: '{tz_name}'")
+        else:
+             log.debug(f"timedatectl command failed or returned empty (code: {code})")
+    except DependencyError:
+        log.debug("timedatectl command not found, skipping.")
+    except Exception as e:
+        log.warning(f"Error running timedatectl: {e}")
+
+    # 3. Try /etc/localtime symlink
+    localtime_path = pathlib.Path('/etc/localtime')
+    if localtime_path.is_symlink():
+        try:
+            target = localtime_path.readlink() # Read the target path object
+            zoneinfo_dir = pathlib.Path('/usr/share/zoneinfo')
+            if not target.is_absolute():
+                 target = (localtime_path.parent / target).resolve()
+            if zoneinfo_dir in target.parents or str(target).startswith(str(zoneinfo_dir)):
+                 try:
+                     tz_name = str(target.relative_to(zoneinfo_dir))
+                     log.debug(f"/etc/localtime points to '{target}', relative zoneinfo path: '{tz_name}'")
+                     if _is_valid_timezone(tz_name):
+                         log.info(f"Detected timezone via /etc/localtime symlink: {tz_name}")
+                         return tz_name
+                     else:
+                         log.warning(f"Extracted path '{tz_name}' from /etc/localtime link is not a valid timezone.")
+                 except ValueError:
+                      log.warning(f"Could not determine relative path for localtime target '{target}' within '{zoneinfo_dir}'.")
+            else:
+                 log.debug(f"/etc/localtime target '{target}' is outside standard zoneinfo directory.")
+        except OSError as e:
+            log.warning(f"Could not read /etc/localtime symlink: {e}")
+        except Exception as e:
+            log.exception(f"Unexpected error processing /etc/localtime link: {e}")
+
+    # 4. Try /etc/timezone file (Debian/Ubuntu)
+    timezone_path = pathlib.Path('/etc/timezone')
+    if timezone_path.is_file():
+        try:
+            content = timezone_path.read_text(encoding='utf-8').strip()
+            if content:
+                 tz_name = content.splitlines()[0].split()[0]
+                 log.debug(f"Read from /etc/timezone: '{tz_name}'")
+                 if _is_valid_timezone(tz_name):
+                     log.info(f"Detected timezone via /etc/timezone file: {tz_name}")
+                     return tz_name
+                 else:
+                      log.warning(f"Content of /etc/timezone ('{tz_name}') is not a valid timezone.")
+            else:
+                 log.debug("/etc/timezone file is empty.")
+        except IOError as e:
+            log.warning(f"Could not read /etc/timezone: {e}")
+        except Exception as e:
+             log.exception(f"Unexpected error processing /etc/timezone: {e}")
+
+    # 5. Fallback - Could not detect
+    log.warning("Failed to detect system timezone using common methods.")
+    return None
+
+# --- Data Validation ---
+
+def latlon_str_to_float(coord_str: str) -> float:
+    """
+    Converts Lat/Lon string (e.g., '43.65N', '79.38W') to float degrees.
+
+    Args:
+        coord_str: The coordinate string to parse.
+
+    Returns:
+        The coordinate as a float value.
+
+    Raises:
+        ValidationError: If the format is invalid or the value is out of range.
+    """
+    if not isinstance(coord_str, str):
+        raise ValidationError(f"Invalid input type for coordinate: expected string, got {type(coord_str)}")
+
+    coord_strip = coord_str.strip().upper()
+    match = re.match(r'^(\d+(\.\d+)?)([NSEW])$', coord_strip)
+    if not match:
+        raise ValidationError(f"Invalid coordinate format: '{coord_str}'. Use format like '43.65N' or '79.38W'.")
+
+    try:
+        value = float(match.group(1))
+    except ValueError:
+         # Should not happen with the regex, but safeguard
+         raise ValidationError(f"Could not convert value part '{match.group(1)}' to float.")
+
+    direction = match.group(3)
+    if direction in ('S', 'W'):
+        value = -value
+
+    # Range check
+    if direction in ('N', 'S') and not (-90 <= value <= 90):
+         raise ValidationError(f"Latitude out of range (-90 to 90): {value} ({coord_str})")
+    if direction in ('E', 'W') and not (-180 <= value <= 180):
+         raise ValidationError(f"Longitude out of range (-180 to 180): {value} ({coord_str})")
+
+    log.debug(f"Converted coordinate '{coord_str}' to {value}")
+    return value
+
+def hex_to_rgba_doubles(hex_color: str) -> List[float]:
+    """
+    Converts a 6-digit hex color string (#RRGGBB or RRGGBB) to RGBA doubles
+    [R, G, B, A] (0.0-1.0), with Alpha always 1.0.
+
+    Args:
+        hex_color: The 6-digit hex color string.
+
+    Returns:
+        A list of four floats [R, G, B, A] between 0.0 and 1.0.
+
+    Raises:
+        ValidationError: If the hex string format is invalid.
+    """
+    if not isinstance(hex_color, str):
+        raise ValidationError(f"Invalid input type for hex color: expected string, got {type(hex_color)}")
+
+    hex_strip = hex_color.lstrip('#')
+    if not re.match(r'^[0-9a-fA-F]{6}$', hex_strip):
+        raise ValidationError(f"Invalid 6-digit hex color format: '{hex_color}'")
+
+    try:
+        r = int(hex_strip[0:2], 16) / 255.0
+        g = int(hex_strip[2:4], 16) / 255.0
+        b = int(hex_strip[4:6], 16) / 255.0
+        rgba = [r, g, b, 1.0] # R, G, B, Alpha
+        log.debug(f"Converted hex '{hex_color}' to RGBA {rgba}")
+        return rgba
+    except ValueError as e:
+        # Should not happen with regex, but safeguard
+        raise ValidationError(f"Could not convert hex components to integer: '{hex_color}' - {e}") from e
+
+# --- Logging Setup (Simplified for Core Library) ---
+
+def setup_library_logging(level=logging.WARNING):
+    """
+    Configures basic logging for the fluxfce_core library components.
+    This is primarily intended for internal debugging and might be overridden
+    by the calling application (GUI/CLI). By default, sets a higher level
+    to avoid polluting the output of the consuming application unless
+    debugging is explicitly enabled.
+    """
+    # Configure logging for the entire 'fluxfce_core' package namespace
+    package_logger = logging.getLogger('fluxfce_core')
+
+    # Avoid adding multiple handlers if called repeatedly
+    if not package_logger.handlers:
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        package_logger.addHandler(handler)
+
+    package_logger.setLevel(level)
+    log.info(f"fluxfce_core logging configured to level: {logging.getLevelName(level)}")
+
+# Example of how to potentially enable debug logging from outside:
+# import logging
+# from fluxfce_core import helpers
+# helpers.setup_library_logging(level=logging.DEBUG)
+##############
+./fluxfce_core/__init__.py
+
+# ~/dev/fluxfce-simplified/fluxfce_core/__init__.py
+
+# Make exceptions available directly via fluxfce_core.FluxFceError etc.
+from .exceptions import *
+
+# --- Make core constants accessible ---
+from .config import CONFIG_DIR, CONFIG_FILE
+# --- ADD SYSTEMD CONSTANTS ---
+from .systemd import ( # Import specific names
+    SCHEDULER_TIMER_NAME,
+    SCHEDULER_SERVICE_NAME,
+    LOGIN_SERVICE_NAME,
+    RESUME_SERVICE_NAME # <--- ADD THIS LINE
+)
+
+# --- Make selected helper functions accessible ---
+from .helpers import detect_system_timezone
+
+# Make public API functions available directly via fluxfce_core.get_status etc.
+from .api import (
+    install_fluxfce,
+    uninstall_fluxfce,
+    enable_scheduling,
+    disable_scheduling,
+    apply_manual_mode,
+    set_default_from_current,
+    get_status,
+    save_configuration,
+    get_current_config,
+    # Internal handlers needed by the CLI/script entry point
+    handle_internal_apply,
+    handle_schedule_jobs_command,
+    handle_run_login_check,
+)
+
+# Optionally define __all__ to control wildcard imports and document public interface
+__all__ = [
+    # Constants
+    'CONFIG_DIR', 'CONFIG_FILE',
+    'SCHEDULER_TIMER_NAME',
+    'SCHEDULER_SERVICE_NAME',
+    'LOGIN_SERVICE_NAME',
+    'RESUME_SERVICE_NAME', # <--- ADD THIS LINE
+    # Exceptions
+    'FluxFceError', 'ConfigError', 'CalculationError', 'XfceError',
+    'SchedulerError', 'SystemdError', 'DependencyError', 'ValidationError',
+    # Helper Functions
+    'detect_system_timezone',
+    # API Functions
+    'install_fluxfce', 'uninstall_fluxfce', 'enable_scheduling',
+    'disable_scheduling', 'apply_manual_mode', 'set_default_from_current',
+    'get_status', 'save_configuration', 'get_current_config',
+    'handle_internal_apply', 'handle_schedule_jobs_command',
+    'handle_run_login_check',
+]
+##############
+./fluxfce_core/scheduler.py
+
+# ~/dev/fluxfce-simplified/fluxfce_core/scheduler.py
+
+import logging
+import pathlib
+import re
+import shlex
+from datetime import date, datetime, timedelta
+from typing import List, Tuple, Optional, Dict
+
+# zoneinfo needed for datetime comparison within scheduling logic
+try:
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+except ImportError:
+    raise ImportError("Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+.")
+
+# Import helpers, sun calculation, and exceptions
+from . import helpers
+from . import sun
+from .exceptions import SchedulerError, CalculationError, ValidationError, DependencyError
+
+log = logging.getLogger(__name__)
+
+# --- Constants ---
+# Tag used to identify jobs scheduled by this application in the 'at' queue
+AT_JOB_TAG = f"# fluxfce_marker"
+# Name used for systemd-cat logging identifier
+SYSTEMD_CAT_TAG = "fluxfce-atjob"
+
+
+class AtdScheduler:
+    """Handles scheduling and clearing of theme transition jobs via 'at'. """
+
+    def __init__(self):
+        """Check for essential dependencies."""
+        try:
+            # Core `at` commands needed for scheduling/clearing
+            helpers.check_dependencies(['at', 'atq', 'atrm'])
+            # systemd-cat needed for logging scheduled job output
+            # systemctl needed for getting user environment
+            helpers.check_dependencies(['systemd-cat', 'systemctl']) # <--- ADDED systemctl check
+        except DependencyError as e:
+            raise SchedulerError(f"Cannot initialize AtdScheduler: {e}") from e
+        # Ensure atd service itself is running
+        try:
+             helpers.check_atd_service()
+        except Exception as e: # Catch DependencyError or FluxFceError from check_atd_service
+             raise SchedulerError(f"Cannot initialize AtdScheduler: 'atd' service check failed: {e}") from e
+
+
+    def _get_pending_jobs(self) -> List[Dict[str, str]]:
+        """
+        Gets list of pending 'at' jobs created by fluxfce.
+
+        Returns:
+            A list of dictionaries, where each dict represents a job:
+            [{'id': str, 'time_str': str, 'command': str, 'mode': 'day'|'night'|'unknown'}, ...]
+
+        Raises:
+            SchedulerError: If `atq` or `at -c` commands fail unexpectedly.
+        """
+        # This method remains unchanged from your provided version
+        log.debug("Getting pending fluxfce 'at' jobs...")
+        pending_jobs = []
+        try:
+            code, stdout, stderr = helpers.run_command(['atq'])
+            if code != 0 and "queue is empty" not in stderr.lower():
+                raise SchedulerError(f"atq command failed (code {code}): {stderr}")
+            if not stdout:
+                log.debug("atq: Queue is empty.")
+                return []
+
+            job_id_pattern = re.compile(r'^(\d+)\s+.*')
+            job_ids_found = []
+            for line in stdout.splitlines():
+                match = job_id_pattern.match(line.strip())
+                if match:
+                    job_ids_found.append(match.group(1))
+
+            for job_id in job_ids_found:
+                 log.debug(f"Checking job ID {job_id} for marker '{AT_JOB_TAG}'...")
+                 code_show, stdout_show, stderr_show = helpers.run_command(['at', '-c', job_id])
+                 if code_show != 0:
+                      log.warning(f"Failed to get content of 'at' job {job_id}: {stderr_show}")
+                      continue
+                 if AT_JOB_TAG in stdout_show:
+                      log.debug(f"Found fluxfce marker in job {job_id}")
+                      time_str = "Unknown Time"
+                      for line in stdout.splitlines():
+                          if line.strip().startswith(job_id):
+                              time_match = re.search(r'^\d+\s+([\w\s\d:.-]+)\s+[a-z]\s+\w+', line.strip())
+                              if time_match:
+                                   time_str = time_match.group(1).strip()
+                              break
+                      command = "unknown command"
+                      mode = "unknown"
+                      cmd_match = re.search(r'internal-apply\s+--mode\s+(\w+)', stdout_show)
+                      if cmd_match:
+                           command = f"internal-apply --mode {cmd_match.group(1)}"
+                           mode = cmd_match.group(1) if cmd_match.group(1) in ['day', 'night'] else 'unknown'
+                      pending_jobs.append({
+                          'id': job_id, 'time_str': time_str, 'command': command, 'mode': mode
+                      })
+                      log.debug(f"Found relevant pending job: {pending_jobs[-1]}")
+            return pending_jobs
+        except Exception as e:
+            if isinstance(e, SchedulerError): raise
+            log.exception(f"Error getting pending 'at' jobs: {e}")
+            raise SchedulerError(f"An unexpected error occurred getting pending 'at' jobs: {e}") from e
+
+
+    def clear_scheduled_transitions(self) -> bool:
+        """
+        Removes all pending 'at' jobs created by this script (identified by AT_JOB_TAG).
+
+        Returns:
+            True if all identified jobs were successfully removed or no jobs were found.
+            False if errors occurred during removal of one or more jobs.
+
+        Raises:
+            SchedulerError: If listing jobs fails or unexpected errors occur.
+        """
+        # This method remains unchanged from your provided version
+        log.info("Clearing previously scheduled fluxfce transitions...")
+        jobs_to_clear = self._get_pending_jobs()
+        if not jobs_to_clear:
+            log.info("No relevant 'at' jobs found to clear.")
+            return True
+        all_cleared = True
+        cleared_count = 0
+        for job in jobs_to_clear:
+            job_id = job['id']
+            log.debug(f"Removing 'at' job {job_id}...")
+            try:
+                code, _, stderr = helpers.run_command(['atrm', job_id])
+                if code == 0:
+                    log.info(f"Removed scheduled job {job_id} ({job['command']} at {job['time_str']})")
+                    cleared_count += 1
+                else:
+                    log.error(f"Failed to remove 'at' job {job_id}: {stderr} (code: {code})")
+                    all_cleared = False
+            except Exception as e:
+                 log.exception(f"Error removing 'at' job {job_id}: {e}")
+                 all_cleared = False
+        log.info(f"Finished clearing jobs ({cleared_count} removed). Success: {all_cleared}")
+        return all_cleared
+
+    def schedule_transitions(
+        self,
+        lat: float,
+        lon: float,
+        tz_name: str,
+        python_exe_path: str,
+        script_exe_path: str,
+        days_to_schedule: int = 7 # <-- Added parameter with default
+        ) -> bool:
+        """
+        Calculates sunrise/sunset for the next N days, clears old jobs, and
+        schedules new 'at' jobs for all future transitions within that window.
+        Attempts to inject DISPLAY and XAUTHORITY environment variables into the job.
+
+        Args:
+            lat: Latitude for sun calculation.
+            lon: Longitude for sun calculation.
+            tz_name: IANA timezone name.
+            python_exe_path: Absolute path to the Python interpreter.
+            script_exe_path: Absolute path to the fluxfce script.
+            days_to_schedule: Number of days ahead to calculate and schedule (default: 7).
+
+        Returns:
+            True if at least one transition was successfully scheduled.
+            False if no future transitions could be determined or scheduling failed.
+
+        Raises:
+            SchedulerError, CalculationError, ValidationError, FileNotFoundError, Exception
+        """
+        if not isinstance(days_to_schedule, int) or days_to_schedule <= 0:
+             log.warning(f"Invalid days_to_schedule value ({days_to_schedule}), using default 7.")
+             days_to_schedule = 7
+
+        log.info(f"Calculating and scheduling transitions for next {days_to_schedule} days for {lat}, {lon} (TZ: {tz_name})...")
+
+        # Validate paths
+        if not pathlib.Path(python_exe_path).is_file():
+            raise FileNotFoundError(f"Python executable not found: {python_exe_path}")
+        if not pathlib.Path(script_exe_path).is_file():
+             raise FileNotFoundError(f"Target script not found: {script_exe_path}")
+
+        # 1. Clear existing jobs first
+        self.clear_scheduled_transitions() # Raises SchedulerError on failure
+
+        # 2. Get current time and timezone info
+        try:
+            tz_info = ZoneInfo(tz_name)
+            now_local = datetime.now(tz_info)
+            today = now_local.date()
+        except ZoneInfoNotFoundError:
+             raise ValidationError(f"Invalid Timezone '{tz_name}' during scheduling.")
+        except Exception as e:
+             raise SchedulerError(f"Error getting current time/date for timezone '{tz_name}': {e}") from e
+
+        # 3. Get Environment Injection Logic
+        env_prefix = ""
+        try:
+            log.debug("Attempting to get user environment via systemctl show-environment")
+            code_env, stdout_env, stderr_env = helpers.run_command(['systemctl', '--user', 'show-environment'])
+            if code_env == 0 and stdout_env:
+                display_var = None
+                xauthority_var = None
+                for line in stdout_env.splitlines():
+                    if line.startswith("DISPLAY="):
+                        display_val = line.split("=", 1)[1]
+                        display_var = shlex.quote(display_val)
+                    elif line.startswith("XAUTHORITY="):
+                        xauth_val = line.split("=", 1)[1]
+                        xauthority_var = shlex.quote(xauth_val)
+                if display_var:
+                    env_prefix += f"export DISPLAY={display_var}; "
+                    log.debug(f"Found DISPLAY variable (quoted): {display_var}")
+                    if xauthority_var:
+                        env_prefix += f"export XAUTHORITY={xauthority_var}; "
+                        log.debug(f"Found XAUTHORITY variable (quoted): {xauthority_var}")
+                    else: log.warning("Found DISPLAY but not XAUTHORITY in user environment. xsct might still fail if XAUTHORITY is required.")
+                else: log.warning("Could not find DISPLAY variable in systemctl user environment. xsct calls in 'at' jobs will likely fail.")
+            else: log.warning(f"systemctl show-environment failed (code {code_env}) or returned empty. Cannot inject environment for 'at' jobs. Stderr: {stderr_env}")
+        except Exception as e: log.warning(f"Failed to get or parse user environment: {e}. Cannot inject environment for 'at' jobs.")
+
+        # 4. Collect potential future events for the next N days
+        potential_events: Dict[datetime, str] = {}
+        for i in range(days_to_schedule): # <-- Loop N days
+            target_date = today + timedelta(days=i)
+            try:
+                sun_times = sun.get_sun_times(lat, lon, target_date, tz_name) # Raises CalculationError/ValidationError
+                # Only consider events strictly in the future relative to 'now'
+                if sun_times['sunrise'] > now_local:
+                    potential_events[sun_times['sunrise']] = 'day'
+                if sun_times['sunset'] > now_local:
+                    potential_events[sun_times['sunset']] = 'night'
+            except CalculationError as e:
+                log.warning(f"Could not calculate sun times for {target_date} ({lat},{lon}): {e}. Skipping date.")
+            except ValidationError as e: # Should only happen once if TZ is bad
+                 log.error(f"Invalid timezone '{tz_name}' during sun time calculation: {e}")
+                 raise # Propagate validation error
+
+        if not potential_events:
+            log.warning(f"No future sunrise/sunset events found to schedule in the next {days_to_schedule} days.")
+            return False # Nothing to schedule
+
+        # 5. Sort events chronologically
+        final_events_to_schedule = dict(sorted(potential_events.items()))
+        log.info(f"Found {len(final_events_to_schedule)} events to schedule in the next {days_to_schedule} days.")
+
+        # 6. Proceed with scheduling ALL selected events
+        scheduled_count = 0
+        schedule_failed = False
+        safe_python_exe = shlex.quote(python_exe_path)
+        safe_script_path = shlex.quote(script_exe_path)
+
+        for event_time, mode in final_events_to_schedule.items():
+            at_time_str = event_time.strftime('%H:%M %Y-%m-%d')
+            systemd_cat_command_list = [
+                'systemd-cat', '-t', SYSTEMD_CAT_TAG, '--level-prefix=false',
+                safe_python_exe, safe_script_path, 'internal-apply', '--mode', mode
+            ]
+            command_to_pipe_to_at = f"{env_prefix}{' '.join(systemd_cat_command_list)} {AT_JOB_TAG}"
+            log.debug(f"Scheduling '{mode}' for {at_time_str}...")
+
+            try:
+                code, stdout, stderr = helpers.run_command(['at', at_time_str], input_str=command_to_pipe_to_at)
+                if code == 0:
+                    log.info(f"Successfully scheduled '{mode}' transition for {event_time.isoformat()} via 'at'.")
+                    if stderr: log.debug(f"'at' command output: {stderr}")
+                    scheduled_count += 1
+                else:
+                    log.error(f"Failed to schedule '{mode}' transition for {at_time_str} using 'at': {stderr} (code: {code})")
+                    schedule_failed = True
+            except Exception as e:
+                 log.exception(f"Error running 'at' command for {mode} at {at_time_str}: {e}")
+                 schedule_failed = True
+
+        log.info(f"Scheduling complete ({scheduled_count} / {len(final_events_to_schedule)} jobs successfully scheduled).")
+
+        if schedule_failed:
+             raise SchedulerError(f"One or more 'at' commands failed during scheduling ({scheduled_count} succeeded). Check logs.")
+
+        return scheduled_count > 0
+    
+    def list_scheduled_transitions(self) -> List[Dict[str, str]]:
+        """
+        Returns a list of pending fluxfce transition jobs.
+
+        Returns:
+            A list of job dictionaries: [{'id': str, 'time_str': str, 'command': str, 'mode': str}, ...]
+
+        Raises:
+            SchedulerError: If listing jobs fails.
+        """
+        return self._get_pending_jobs()
+##############
+./fluxfce_core/sun.py
+
+# ~/dev/fluxfce-simplified/fluxfce_core/sun.py
+
+import logging
+import math
+from datetime import date, datetime, timedelta, timezone
+from typing import Optional, Dict
+
+# zoneinfo is standard library in Python 3.9+
+try:
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+except ImportError:
+    # This is a critical dependency failure if zoneinfo is expected
+    raise ImportError("Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+.")
+
+# Import custom exceptions from within the same package
+from .exceptions import CalculationError, ValidationError
+
+log = logging.getLogger(__name__)
+
+
+# --- Internal Sun Calculation Algorithm ---
+
+def _noaa_sunrise_sunset(
+    *, lat: float, lon: float, target_date: date
+) -> tuple[float, float]:
+    """
+    Internal NOAA algorithm to calculate UTC sunrise/sunset times in minutes past midnight.
+
+    Based on NOAA Javascript: www.esrl.noaa.gov/gmd/grad/solcalc/calcdetails.html
+
+    Args:
+        lat: Latitude in decimal degrees (-90 to 90).
+        lon: Longitude in decimal degrees (-180 to 180).
+        target_date: The specific date for calculation.
+
+    Returns:
+        A tuple (sunrise_utc_minutes, sunset_utc_minutes).
+
+    Raises:
+        CalculationError: If latitude/longitude are out of range, or for
+                          polar day/night conditions where calculation fails.
+    """
+    log.debug(f"Calculating NOAA sun times for lat={lat}, lon={lon}, date={target_date}")
+    # Validate latitude/longitude ranges (redundant if called via get_sun_times which validates input strings, but good practice)
+    if not (-90 <= lat <= 90):
+        raise CalculationError(f"Invalid latitude for calculation: {lat}. Must be between -90 and 90.")
+    if not (-180 <= lon <= 180):
+         raise CalculationError(f"Invalid longitude for calculation: {lon}. Must be between -180 and 180.")
+
+    n = target_date.timetuple().tm_yday # Day of year
+    longitude = lon # Use validated input directly
+
+    # Equation of Time and Declination (approximation)
+    gamma = (2 * math.pi / 365) * (n - 1 + (12 - (longitude / 15)) / 24) # Fractional year
+    eqtime = 229.18 * (0.000075 + 0.001868 * math.cos(gamma) - 0.032077 * math.sin(gamma) \
+                       - 0.014615 * math.cos(2 * gamma) - 0.040849 * math.sin(2 * gamma))
+    decl = 0.006918 - 0.399912 * math.cos(gamma) + 0.070257 * math.sin(gamma) \
+           - 0.006758 * math.cos(2 * gamma) + 0.000907 * math.sin(2 * gamma) \
+           - 0.002697 * math.cos(3 * gamma) + 0.00148 * math.sin(3 * gamma)
+
+    # Hour Angle Calculation
+    lat_rad = math.radians(lat)
+    # Zenith for sunrise/sunset (geometric center of sun) - 90.833 degrees
+    # includes refraction and sun radius adjustment
+    cos_zenith = math.cos(math.radians(90.833))
+    try:
+        # Argument for arccos to find hour angle
+        cos_h_arg = (cos_zenith - math.sin(lat_rad) * math.sin(decl)) / (math.cos(lat_rad) * math.cos(decl))
+    except ZeroDivisionError:
+        # This can happen near the poles if cos(decl) is near zero
+        raise CalculationError("Division by zero encountered during hour angle calculation (likely near poles).")
+
+    # Check for polar day/night conditions
+    if cos_h_arg > 1.0:
+        # Sun never rises (polar night)
+        raise CalculationError(f"Sun never rises on {target_date} at lat {lat} (polar night).")
+    if cos_h_arg < -1.0:
+        # Sun never sets (polar day)
+        raise CalculationError(f"Sun never sets on {target_date} at lat {lat} (polar day).")
+
+    try:
+        ha_rad = math.acos(cos_h_arg) # Hour angle in radians
+        ha_minutes = 4 * math.degrees(ha_rad) # Convert hour angle to minutes (15 deg/hour * 4 min/deg)
+    except ValueError as e:
+        # Should not happen due to checks above, but safeguard
+        raise CalculationError(f"Error calculating arccos for hour angle: {e}") from e
+
+    # Solar noon (in minutes from UTC midnight)
+    solar_noon_utc_min = 720 - 4 * longitude - eqtime # 720 = 12 * 60
+
+    sunrise_utc_min = solar_noon_utc_min - ha_minutes
+    sunset_utc_min = solar_noon_utc_min + ha_minutes
+
+    log.debug(f"Calculated UTC times (minutes from midnight): sunrise={sunrise_utc_min:.2f}, sunset={sunset_utc_min:.2f}")
+    return sunrise_utc_min, sunset_utc_min
+
+
+# --- Public API for Sun Times ---
+
+def get_sun_times(
+    lat: float, lon: float, target_date: date, tz_name: str
+) -> Dict[str, datetime]:
+    """
+    Calculates sunrise and sunset times, returning them as timezone-aware datetimes.
+
+    Args:
+        lat: Latitude in decimal degrees (-90 to 90).
+        lon: Longitude in decimal degrees (-180 to 180).
+        target_date: The date for which to calculate times.
+        tz_name: The IANA timezone name (e.g., 'America/Toronto').
+
+    Returns:
+        A dictionary {'sunrise': datetime_obj, 'sunset': datetime_obj} where
+        datetime objects are timezone-aware for the specified tz_name.
+
+    Raises:
+        ValidationError: If the timezone name is invalid or not found by zoneinfo.
+        CalculationError: If the underlying NOAA calculation fails (e.g., invalid
+                          lat/lon passed internally, polar day/night).
+    """
+    log.debug(f"Getting sun times for lat={lat}, lon={lon}, date={target_date}, timezone={tz_name}")
+    try:
+        tz_info = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        log.error(f"Invalid or unknown IANA Timezone Name: '{tz_name}'")
+        raise ValidationError(f"Invalid or unknown IANA Timezone Name: '{tz_name}'")
+    except Exception as e: # Catch other potential zoneinfo errors
+        log.error(f"Error loading timezone '{tz_name}': {e}")
+        raise ValidationError(f"Error loading timezone '{tz_name}': {e}") from e
+
+    try:
+        # Call the internal algorithm
+        sunrise_min, sunset_min = _noaa_sunrise_sunset(
+            lat=lat, lon=lon, target_date=target_date
+        )
+    except CalculationError as e:
+        # Propagate calculation errors (like polar day/night)
+        log.error(f"Sun time calculation failed: {e}")
+        raise # Re-raise the specific CalculationError
+
+    # Convert minutes from UTC midnight to datetime objects
+    # Create a UTC midnight datetime for the target date
+    utc_midnight = datetime(target_date.year, target_date.month, target_date.day, tzinfo=timezone.utc)
+
+    # Add the calculated minutes to get the UTC event times
+    sunrise_utc_dt = utc_midnight + timedelta(minutes=sunrise_min)
+    sunset_utc_dt = utc_midnight + timedelta(minutes=sunset_min)
+
+    # Convert to the target local timezone
+    try:
+        sunrise_local = sunrise_utc_dt.astimezone(tz_info)
+        sunset_local = sunset_utc_dt.astimezone(tz_info)
+    except Exception as e:
+        # Handle potential errors during timezone conversion (less likely)
+        log.exception(f"Failed to convert calculated UTC times to timezone '{tz_name}': {e}")
+        raise CalculationError(f"Failed timezone conversion for '{tz_name}': {e}") from e
+
+    log.debug(f"Calculated local times: sunrise={sunrise_local.isoformat()}, sunset={sunset_local.isoformat()}")
+    return {"sunrise": sunrise_local, "sunset": sunset_local}
+##############
+./fluxfce_core/systemd.py
+
+# ~/dev/fluxfce-simplified/fluxfce_core/systemd.py
+
+import logging
+import pathlib
+import sys
+from typing import List, Tuple, Optional
+
+# Import helpers and exceptions from within the same package
+from . import helpers
+from .exceptions import SystemdError, DependencyError
+
+log = logging.getLogger(__name__)
+
+# --- Constants ---
+_APP_NAME = "fluxfce"
+SYSTEMD_USER_DIR = pathlib.Path.home() / ".config" / "systemd" / "user"
+
+# Systemd Unit Names
+LOGIN_SERVICE_NAME = f"{_APP_NAME}-login.service"
+SCHEDULER_SERVICE_NAME = f"{_APP_NAME}-scheduler.service"
+SCHEDULER_TIMER_NAME = f"{_APP_NAME}-scheduler.timer"
+RESUME_SERVICE_NAME = f"{_APP_NAME}-resume.service" # <-- ADDED
+
+# Systemd Unit File Paths
+LOGIN_SERVICE_FILE = SYSTEMD_USER_DIR / LOGIN_SERVICE_NAME
+SCHEDULER_SERVICE_FILE = SYSTEMD_USER_DIR / SCHEDULER_SERVICE_NAME
+SCHEDULER_TIMER_FILE = SYSTEMD_USER_DIR / SCHEDULER_TIMER_NAME
+RESUME_SERVICE_FILE = SYSTEMD_USER_DIR / RESUME_SERVICE_NAME # <-- ADDED
+
+# List of units managed by this module
+MANAGED_UNITS = [
+    SCHEDULER_TIMER_NAME, SCHEDULER_SERVICE_NAME, LOGIN_SERVICE_NAME,
+    RESUME_SERVICE_NAME # <-- ADDED
+]
+MANAGED_UNIT_FILES = [
+    SCHEDULER_TIMER_FILE, SCHEDULER_SERVICE_FILE, LOGIN_SERVICE_FILE,
+    RESUME_SERVICE_FILE # <-- ADDED
+]
+
+
+# --- Unit File Templates ---
+
+# (Keep _SCHEDULER_SERVICE_TEMPLATE as is)
+_SCHEDULER_SERVICE_TEMPLATE = """\
+[Unit]
+Description={app_name} - Daily Job Scheduler
+After=timers.target network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+ExecStart={python_executable} "{script_path}" schedule-jobs
+StandardError=journal
+[Install]
+WantedBy=default.target
+"""
+
+# (Keep _SCHEDULER_TIMER_TEMPLATE as is)
+_SCHEDULER_TIMER_TEMPLATE = """\
+[Unit]
+Description={app_name} - Trigger daily calculation of sunrise/sunset jobs
+Requires={scheduler_service_name}
+[Timer]
+Unit={scheduler_service_name}
+OnCalendar=daily
+AccuracySec=1h
+RandomizedDelaySec=15min
+Persistent=true
+[Install]
+WantedBy=timers.target
+"""
+
+# (Keep _LOGIN_SERVICE_TEMPLATE as is)
+_LOGIN_SERVICE_TEMPLATE = """\
+[Unit]
+Description={app_name} - Apply theme on login
+After=graphical-session.target plasma-workspace.target gnome-session.target
+Requires=graphical-session.target
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 20
+ExecStart={python_executable} "{script_path}" run-login-check
+StandardError=journal
+[Install]
+WantedBy=graphical-session.target
+"""
+
+# --- ADDED RESUME SERVICE TEMPLATE ---
+_RESUME_SERVICE_TEMPLATE = """\
+[Unit]
+Description={app_name} - Apply theme after system resume
+# Ensure this runs after returning from sleep/hibernate
+After=sleep.target
+
+[Service]
+Type=oneshot
+# Add a delay to allow desktop environment to fully resume
+ExecStartPre=/bin/sleep 5
+ExecStart={python_executable} "{script_path}" run-login-check
+StandardError=journal
+
+[Install]
+# This service should be started by the sleep target upon resume
+WantedBy=sleep.target
+"""
+# --- END ADDED TEMPLATE ---
+
+
+class SystemdManager:
+    """Handles creation, installation, and removal of systemd user units."""
+
+    def __init__(self):
+        """Check for systemctl dependency."""
+        try:
+            helpers.check_dependencies(['systemctl'])
+        except DependencyError as e:
+            raise SystemdError(f"Cannot initialize SystemdManager: {e}") from e
+
+    def _run_systemctl(self, args: List[str], check_errors: bool = True) -> Tuple[int, str, str]:
+        """Runs a systemctl --user command."""
+        # This method remains unchanged
+        cmd = ['systemctl', '--user'] + args
+        try:
+            code, stdout, stderr = helpers.run_command(cmd, check=False)
+            if code != 0 and check_errors:
+                log.error(f"systemctl --user {' '.join(args)} failed (code {code}): {stderr}")
+            return code, stdout, stderr
+        except FileNotFoundError:
+            raise DependencyError("systemctl command not found.")
+        except Exception as e:
+            log.exception(f"Unexpected error running systemctl command: {e}")
+            raise SystemdError(f"Unexpected error running systemctl command: {e}") from e
+
+    def check_user_instance(self) -> bool:
+        """Checks if the systemd user instance appears active enough."""
+        # This method remains unchanged
+        log.debug("Checking systemd user instance status...")
+        code, stdout, stderr = self._run_systemctl(['is-system-running'], check_errors=False)
+        if code == 0:
+            status = stdout.strip() if stdout.strip() else "running"
+            log.info(f"Systemd user instance status: {status}")
+            return True
+        elif code == 1:
+            status = stdout.strip() if stdout.strip() else "degraded/other"
+            log.warning(f"Systemd user instance status: {status}. Proceeding cautiously.")
+            return True
+        else:
+            status = stdout.strip() if stdout.strip() else "failed/unknown"
+            error_msg = f"Systemd user instance is not running or degraded (code: {code}, status: '{status}'). Systemd setup cannot proceed. Stderr: {stderr}"
+            log.error(error_msg)
+            raise SystemdError(error_msg)
+
+    # --- UPDATED install_units ---
+    def install_units(self, script_path: str, python_executable: Optional[str] = None) -> bool:
+        """
+        Creates and enables the systemd user units for scheduler, login, and resume.
+
+        Args:
+            script_path: Absolute path to the fluxfce script.
+            python_executable: Absolute path to the python interpreter. Defaults to sys.executable.
+
+        Returns: True if all units were written and enabled successfully.
+        Raises: SystemdError, FileNotFoundError
+        """
+        log.info("Installing systemd user units...")
+        if not self.check_user_instance():
+             raise SystemdError("Systemd user instance check failed. Cannot install units.")
+
+        py_exe = python_executable or sys.executable
+        script_abs_path = str(pathlib.Path(script_path).resolve())
+
+        # Validate paths
+        if not pathlib.Path(py_exe).is_file():
+             raise FileNotFoundError(f"Python executable not found: {py_exe}")
+        if not pathlib.Path(script_abs_path).is_file():
+             raise FileNotFoundError(f"Target script not found: {script_abs_path}")
+
+        units_content = {
+            LOGIN_SERVICE_FILE: _LOGIN_SERVICE_TEMPLATE.format(
+                app_name=_APP_NAME, python_executable=py_exe, script_path=script_abs_path
+            ),
+            SCHEDULER_SERVICE_FILE: _SCHEDULER_SERVICE_TEMPLATE.format(
+                app_name=_APP_NAME, python_executable=py_exe, script_path=script_abs_path
+            ),
+            SCHEDULER_TIMER_FILE: _SCHEDULER_TIMER_TEMPLATE.format(
+                app_name=_APP_NAME, scheduler_service_name=SCHEDULER_SERVICE_NAME,
+            ),
+            # --- ADD RESUME SERVICE CONTENT ---
+            RESUME_SERVICE_FILE: _RESUME_SERVICE_TEMPLATE.format(
+                app_name=_APP_NAME, python_executable=py_exe, script_path=script_abs_path
+            ),
+            # --- END ADD ---
+        }
+
+        # Create directory
+        try:
+            SYSTEMD_USER_DIR.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            raise SystemdError(f"Failed to create systemd user directory {SYSTEMD_USER_DIR}: {e}") from e
+
+        # Write unit files
+        for file_path, content in units_content.items():
+            try:
+                file_path.write_text(content, encoding='utf-8')
+                log.debug(f"Created systemd unit file: {file_path}")
+            except IOError as e:
+                raise SystemdError(f"Failed to write systemd unit file {file_path}: {e}") from e
+
+        # Reload daemon, enable units
+        try:
+            code_reload, _, err_reload = self._run_systemctl(['daemon-reload'])
+            if code_reload != 0:
+                 raise SystemdError(f"systemctl daemon-reload failed: {err_reload}")
+
+            # Enable and start the timer
+            code_enable_timer, _, err_enable_timer = self._run_systemctl(['enable', '--now', SCHEDULER_TIMER_NAME])
+            if code_enable_timer != 0:
+                 raise SystemdError(f"Failed to enable/start {SCHEDULER_TIMER_NAME}: {err_enable_timer}")
+
+            # Enable the login service
+            code_enable_login, _, err_enable_login = self._run_systemctl(['enable', LOGIN_SERVICE_NAME])
+            if code_enable_login != 0:
+                 raise SystemdError(f"Failed to enable {LOGIN_SERVICE_NAME}: {err_enable_login}")
+
+            # --- ADD ENABLE FOR RESUME SERVICE ---
+            code_enable_resume, _, err_enable_resume = self._run_systemctl(['enable', RESUME_SERVICE_NAME])
+            if code_enable_resume != 0:
+                 raise SystemdError(f"Failed to enable {RESUME_SERVICE_NAME}: {err_enable_resume}")
+            # --- END ADD ---
+
+            log.info("Systemd units (scheduler, login, resume) installed and enabled successfully.")
+            return True
+        except Exception as e:
+            if isinstance(e, (SystemdError, FileNotFoundError)): raise
+            log.exception(f"Unexpected error during systemd unit enabling: {e}")
+            raise SystemdError(f"Unexpected error during systemd unit enabling: {e}") from e
+    # --- END UPDATED install_units ---
+
+
+    # --- UPDATED remove_units ---
+    def remove_units(self) -> bool:
+        """
+        Stops, disables, and removes all managed systemd user units.
+
+        Returns: True if the process completed without critical errors.
+        Raises: SystemdError for critical failures.
+        """
+        log.info("Removing fluxfce systemd user units...")
+        # Uses the updated MANAGED_UNIT_FILES and MANAGED_UNITS constants
+        units_exist = any(f.exists() for f in MANAGED_UNIT_FILES)
+        overall_success = True
+
+        try:
+            # Stop and disable units first. Use check_errors=False.
+            log.debug(f"Disabling/stopping {SCHEDULER_TIMER_NAME}...")
+            code_stop_timer, _, err_stop_timer = self._run_systemctl(['disable', '--now', SCHEDULER_TIMER_NAME], check_errors=False)
+            if code_stop_timer != 0: log.warning(f"Failed to disable/stop {SCHEDULER_TIMER_NAME}...")
+
+            log.debug(f"Disabling {LOGIN_SERVICE_NAME}...")
+            code_disable_login, _, err_disable_login = self._run_systemctl(['disable', LOGIN_SERVICE_NAME], check_errors=False)
+            if code_disable_login != 0: log.warning(f"Failed to disable {LOGIN_SERVICE_NAME}...")
+
+            # --- ADD DISABLE FOR RESUME SERVICE ---
+            log.debug(f"Disabling {RESUME_SERVICE_NAME}...")
+            code_disable_resume, _, err_disable_resume = self._run_systemctl(['disable', RESUME_SERVICE_NAME], check_errors=False)
+            if code_disable_resume != 0: log.warning(f"Failed to disable {RESUME_SERVICE_NAME}...")
+            # --- END ADD ---
+
+            # Attempt to remove files
+            removed_files = False
+            for f in MANAGED_UNIT_FILES:
+                if f.exists():
+                    try:
+                        f.unlink()
+                        log.info(f"Removed {f}")
+                        removed_files = True
+                    except OSError as e:
+                        log.warning(f"Failed to remove unit file {f}: {e}")
+
+            # Reload daemon if units existed or we removed files
+            if removed_files or units_exist:
+                log.debug("Reloading systemd user daemon...")
+                code_reload, _, err_reload = self._run_systemctl(['daemon-reload'])
+                if code_reload != 0:
+                     log.error(f"systemctl daemon-reload failed: {err_reload}")
+                     overall_success = False
+                else:
+                     log.debug("Daemon reloaded.")
+
+                # Use the updated MANAGED_UNITS constant
+                log.debug("Resetting failed state for managed units...")
+                self._run_systemctl(['reset-failed'] + MANAGED_UNITS, check_errors=False)
+
+            log.info(f"Systemd unit removal process finished. Success: {overall_success}")
+            return overall_success
+        except Exception as e:
+            if isinstance(e, SystemdError): raise
+            log.exception(f"Unexpected error during systemd unit removal: {e}")
+            raise SystemdError(f"Unexpected error during systemd unit removal: {e}") from e
+    # --- END UPDATED remove_units ---
+##############
+./fluxfce_core/xfce.py
+
+# ~/dev/fluxfce-simplified/fluxfce_core/xfce.py
+
+import logging
+import re
+import subprocess
+import time
+from typing import List, Tuple, Optional, Dict, Any
+
+# Import helpers and exceptions from within the same package
+from . import helpers
+from .exceptions import XfceError, DependencyError, ValidationError
+
+log = logging.getLogger(__name__)
+
+# --- XFCE Constants ---
+XFCONF_CHANNEL = "xfce4-desktop"
+XFCONF_THEME_CHANNEL = "xsettings"
+XFCONF_THEME_PROPERTY = "/Net/ThemeName"
+
+
+class XfceHandler:
+    """Handles interactions with XFCE settings via xfconf-query and xsct."""
+
+    def __init__(self):
+        """Check for essential dependencies."""
+        # Check dependencies needed by most methods during instantiation
+        try:
+            helpers.check_dependencies(['xfconf-query', 'xsct'])
+            # xfdesktop is checked only when reload is called
+        except DependencyError as e:
+            # Make dependency issues during init fatal for this handler
+            raise XfceError(f"Cannot initialize XfceHandler: {e}") from e
+
+    def find_desktop_paths(self) -> List[str]:
+        """
+        Finds relevant XFCE desktop property base paths for background settings.
+
+        These paths usually correspond to specific monitor/workspace combinations.
+
+        Returns:
+            A sorted list of base property paths (e.g., '/backdrop/screen0/monitorDP-1/workspace0').
+
+        Raises:
+            XfceError: If xfconf-query fails or no background paths can be found.
+        """
+        log.debug(f"Querying {XFCONF_CHANNEL} for background property paths...")
+        cmd = ['xfconf-query', '-c', XFCONF_CHANNEL, '-l']
+        try:
+            code, stdout, stderr = helpers.run_command(cmd)
+            if code != 0:
+                raise XfceError(f"Failed to list xfconf properties in channel {XFCONF_CHANNEL}: {stderr} (code: {code})")
+
+            paths = set()
+            # Prioritize monitor + workspace combo paths
+            prop_pattern = re.compile(r'(/backdrop/screen\d+/[\w-]+/workspace\d+)/last-image$')
+            for line in stdout.splitlines():
+                match = prop_pattern.match(line.strip())
+                if match:
+                    paths.add(match.group(1))
+
+            # Fallback to monitor level only if no workspace paths found
+            if not paths:
+                log.debug("No workspace-specific paths found, checking monitor-level paths.")
+                monitor_pattern = re.compile(r'(/backdrop/screen\d+/[\w-]+)/last-image$')
+                for line in stdout.splitlines():
+                     match = monitor_pattern.match(line.strip())
+                     # Ensure it's not a parent of an already found workspace path
+                     if match and match.group(1) not in [p.rsplit('/', 1)[0] for p in paths if '/' in p]:
+                         paths.add(match.group(1))
+
+            if not paths:
+                # Last resort default check (less reliable) - adapted from original
+                default_path_guess = "/backdrop/screen0/monitorHDMI-0/workspace0" # Example
+                cmd_check = ['xfconf-query', '-c', XFCONF_CHANNEL, '-p', f"{default_path_guess}/last-image"]
+                code_check, _, _ = helpers.run_command(cmd_check, capture=False) # Don't capture, just check exit code
+                if code_check == 0:
+                     log.warning(f"Could not detect specific paths, using default guess: {default_path_guess}")
+                     paths.add(default_path_guess)
+                else:
+                     raise XfceError("Could not find any XFCE background property paths (checked workspace, monitor, and default guess).")
+
+            sorted_paths = sorted(list(paths))
+            log.info(f"Found {len(sorted_paths)} potential background paths: {sorted_paths}")
+            return sorted_paths
+
+        except Exception as e:
+            if isinstance(e, XfceError): raise # Re-raise our specific errors
+            log.exception(f"Error finding desktop paths: {e}")
+            raise XfceError(f"An unexpected error occurred while finding desktop paths: {e}") from e
+
+    def get_gtk_theme(self) -> str:
+        """
+        Gets the current GTK theme name using xfconf-query.
+
+        Returns:
+            The current GTK theme name.
+
+        Raises:
+            XfceError: If the xfconf-query command fails.
+        """
+        log.debug(f"Getting GTK theme from {XFCONF_THEME_CHANNEL} {XFCONF_THEME_PROPERTY}")
+        cmd = ['xfconf-query', '-c', XFCONF_THEME_CHANNEL, '-p', XFCONF_THEME_PROPERTY]
+        try:
+            code, stdout, stderr = helpers.run_command(cmd)
+            if code != 0:
+                raise XfceError(f"Failed to query GTK theme: {stderr} (code: {code})")
+            if not stdout:
+                 raise XfceError("GTK theme query returned success code but empty output.")
+            log.info(f"Current GTK theme: {stdout}")
+            return stdout
+        except Exception as e:
+             if isinstance(e, XfceError): raise
+             log.exception(f"Error getting GTK theme: {e}")
+             raise XfceError(f"An unexpected error occurred while getting GTK theme: {e}") from e
+
+    def set_gtk_theme(self, theme_name: str) -> bool:
+        """
+        Sets the GTK theme using xfconf-query.
+
+        Args:
+            theme_name: The name of the theme to set.
+
+        Returns:
+            True if the command executes successfully (code 0).
+
+        Raises:
+            XfceError: If the xfconf-query command fails (returns non-zero).
+            ValidationError: If theme_name is empty.
+        """
+        if not theme_name:
+            raise ValidationError("Theme name cannot be empty.")
+
+        log.info(f"Setting GTK theme to: {theme_name}")
+        cmd = ['xfconf-query', '-c', XFCONF_THEME_CHANNEL, '-p', XFCONF_THEME_PROPERTY, '-s', theme_name]
+        try:
+            code, _, stderr = helpers.run_command(cmd)
+            if code != 0:
+                raise XfceError(f"Failed to set GTK theme to '{theme_name}': {stderr} (code: {code})")
+            log.debug(f"Successfully set GTK theme to '{theme_name}'")
+            return True
+        except Exception as e:
+            if isinstance(e, (XfceError, ValidationError)): raise
+            log.exception(f"Error setting GTK theme: {e}")
+            raise XfceError(f"An unexpected error occurred while setting GTK theme: {e}") from e
+
+    def get_background_settings(self) -> Dict[str, Any]:
+        """
+        Gets background settings (style, colors) from the first detected path.
+
+        Returns:
+            A dictionary containing:
+            {'hex1': str, 'hex2': str|None, 'dir': 's'|'h'|'v'}
+            'hex2' is None for solid colors ('s').
+            Returns None only if background is not set to 'Color' mode.
+
+        Raises:
+            XfceError: If paths cannot be found, essential properties cannot be read,
+                       or parsing fails critically.
+        """
+        paths = self.find_desktop_paths() # Raises XfceError if none found
+        base_path = paths[0] # Use the first path for consistency
+        log.debug(f"Getting background settings from primary path: {base_path}")
+
+        settings = {'hex1': None, 'hex2': None, 'dir': None}
+
+        def _get_xfconf_prop(prop_name: str) -> Optional[str]:
+            """Internal helper to get a single string property value."""
+            prop_path = f"{base_path}/{prop_name}"
+            cmd = ['xfconf-query', '-c', XFCONF_CHANNEL, '-p', prop_path]
+            try:
+                code, stdout, stderr = helpers.run_command(cmd)
+                if code != 0:
+                    # Don't raise if property simply doesn't exist, just return None
+                    if "does not exist" in stderr.lower():
+                        log.debug(f"Property {prop_path} does not exist.")
+                        return None
+                    raise XfceError(f"xfconf-query failed for '{prop_path}': {stderr} (code: {code})")
+                return stdout.strip()
+            except Exception as e:
+                if isinstance(e, XfceError): raise
+                log.exception(f"Unexpected error getting property {prop_path}: {e}")
+                raise XfceError(f"Unexpected error getting property {prop_path}: {e}") from e
+
+        def _parse_rgba_output(prop_name: str) -> Optional[List[float]]:
+            """Parses multi-line xfconf-query output for rgba arrays."""
+            prop_path = f"{base_path}/{prop_name}"
+            cmd = ['xfconf-query', '-c', XFCONF_CHANNEL, '-p', prop_path]
+            code, stdout, stderr = helpers.run_command(cmd)
+            if code != 0:
+                if "does not exist" in stderr.lower():
+                    log.warning(f"RGBA property {prop_path} does not exist.")
+                    return None
+                log.warning(f"Could not query {prop_name} from {base_path}: {stderr} (code: {code})")
+                return None # Non-critical if rgba isn't set, maybe
+
+            float_values = []
+            # Match lines containing only a float/int number (more robust)
+            num_pattern = re.compile(r'^\s*(-?\d+(\.\d+)?)\s*$')
+            for line in stdout.splitlines():
+                match = num_pattern.match(line)
+                if match:
+                    try:
+                        float_values.append(float(match.group(1)))
+                    except ValueError: # Should not happen with regex
+                        continue
+            if len(float_values) == 4:
+                 log.debug(f"Parsed {prop_name} values: {float_values}")
+                 return float_values
+            else:
+                 log.warning(f"Could not parse 4 float values from {prop_name} output ({len(float_values)} found). Output:\n{stdout}")
+                 return None
+
+        def _floats_to_hex(rgba_floats: Optional[List[float]]) -> Optional[str]:
+             """Converts list of [r,g,b,a] floats (0.0-1.0) to 6-digit Hex."""
+             if not rgba_floats or len(rgba_floats) != 4:
+                 return None
+             try:
+                 r = int(rgba_floats[0] * 255 + 0.5)
+                 g = int(rgba_floats[1] * 255 + 0.5)
+                 b = int(rgba_floats[2] * 255 + 0.5)
+                 # Clamp values to 0-255 range
+                 r = max(0, min(255, r))
+                 g = max(0, min(255, g))
+                 b = max(0, min(255, b))
+                 hex_str = f"{r:02X}{g:02X}{b:02X}"
+                 log.debug(f"Converted floats {rgba_floats} to hex '{hex_str}'")
+                 return hex_str
+             except (ValueError, TypeError, IndexError) as e:
+                 log.error(f"Error converting float list {rgba_floats} to hex: {e}")
+                 return None # Conversion error
+
+        # --- Main Logic ---
+        try:
+            image_style = _get_xfconf_prop("image-style")
+            color_style = _get_xfconf_prop("color-style")
+
+            # Check if background is set to 'Color' mode (image-style = 1)
+            if image_style != '1':
+                 log.info(f"Background image-style is not 'Color' (value: {image_style}). Cannot get color settings.")
+                 # Return an empty dict or specific indicator? Let's raise.
+                 raise XfceError(f"Background mode is not 'Color' (image-style={image_style}).")
+
+            if color_style is None:
+                 raise XfceError(f"Could not retrieve essential 'color-style' property from {base_path}.")
+
+            # Get RGBA1 and convert to Hex1
+            rgba1_floats = _parse_rgba_output("rgba1")
+            settings['hex1'] = _floats_to_hex(rgba1_floats)
+            if not settings['hex1']:
+                 raise XfceError("Failed to parse or convert primary background color (rgba1).")
+
+            # Determine direction and get secondary color if needed
+            if color_style == '0': # Solid
+                settings['dir'] = 's'
+                settings['hex2'] = None # Explicitly None
+            elif color_style in ('1', '2'): # Horizontal or Vertical gradient
+                settings['dir'] = 'h' if color_style == '1' else 'v'
+                rgba2_floats = _parse_rgba_output("rgba2")
+                settings['hex2'] = _floats_to_hex(rgba2_floats)
+                if not settings['hex2']:
+                     # Don't fail if secondary fails, just log and set hex2 to None
+                     log.warning("Failed to parse or convert secondary gradient color (rgba2). Treating as solid.")
+                     settings['hex2'] = None # Fallback, might mismatch 'dir' but safer than error
+                     # Or should we try to make hex2 = hex1? Maybe just None is better.
+            else:
+                raise XfceError(f"Unknown background color-style found: {color_style}")
+
+            log.info(f"Retrieved background: Dir={settings['dir']}, Hex1={settings['hex1']}, Hex2={settings.get('hex2', 'N/A')}")
+            return settings
+
+        except Exception as e:
+            if isinstance(e, XfceError): raise
+            log.exception(f"Error getting background settings: {e}")
+            raise XfceError(f"An unexpected error occurred getting background settings: {e}") from e
+
+
+    def set_background(self, hex1: str, hex2: Optional[str], direction: str) -> bool:
+        """
+        Sets the background to solid or gradient color across all detected paths.
+
+        Args:
+            hex1: The primary hex color string (6 digits).
+            hex2: The secondary hex color string (6 digits), or None for solid.
+            direction: 's' (solid), 'h' (horizontal), or 'v' (vertical).
+
+        Returns:
+            True if settings were applied successfully to all paths.
+
+        Raises:
+            XfceError: If paths cannot be found or critical xfconf-query commands fail.
+            ValidationError: If hex formats are invalid or inputs are inconsistent
+                             (e.g., gradient dir without hex2).
+        """
+        log.info(f"Setting background: Dir={direction}, Hex1={hex1}, Hex2={hex2}")
+        paths = self.find_desktop_paths() # Raises XfceError if none found
+
+        # --- Validate Inputs ---
+        try:
+            rgba1_list = helpers.hex_to_rgba_doubles(hex1)
+        except ValidationError as e:
+            raise ValidationError(f"Invalid format for hex1 '{hex1}': {e}") from e
+
+        rgba2_list = None
+        if direction in ('h', 'v'):
+            if not hex2:
+                raise ValidationError("Gradient direction specified but hex2 is missing.")
+            try:
+                rgba2_list = helpers.hex_to_rgba_doubles(hex2)
+            except ValidationError as e:
+                raise ValidationError(f"Invalid format for hex2 '{hex2}': {e}") from e
+        elif direction == 's':
+            if hex2 is not None:
+                 log.warning(f"Ignoring hex2='{hex2}' because direction='s' (solid) was specified.")
+                 hex2 = None # Ensure hex2 is None internally for solid
+        else:
+            raise ValidationError(f"Invalid background direction: '{direction}'. Must be 's', 'h', or 'v'.")
+
+        # Determine xfconf style values
+        image_style = '1' # Color mode
+        if direction == 's': color_style = '0'
+        elif direction == 'h': color_style = '1'
+        else: color_style = '2' # 'v'
+
+        overall_success = True
+        for base_path in paths:
+            log.debug(f"Applying background settings to path: {base_path}")
+            path_success = True
+
+            try:
+                # Set styles using --create (-n) and type (-t)
+                style_cmds = [
+                    ['xfconf-query', '-c', XFCONF_CHANNEL, '-p', f"{base_path}/image-style", '-n', '-t', 'int', '-s', image_style],
+                    ['xfconf-query', '-c', XFCONF_CHANNEL, '-p', f"{base_path}/color-style", '-n', '-t', 'int', '-s', color_style],
+                ]
+                # Command for rgba1 (always set)
+                rgba1_cmd = ['xfconf-query', '-c', XFCONF_CHANNEL, '-p', f"{base_path}/rgba1", '-n']
+                for val in rgba1_list: rgba1_cmd.extend(['-t', 'double', '-s', f"{val:.6f}"])
+
+                # Command for rgba2 (set if gradient, reset if solid)
+                if rgba2_list:
+                    rgba2_cmd = ['xfconf-query', '-c', XFCONF_CHANNEL, '-p', f"{base_path}/rgba2", '-n']
+                    for val in rgba2_list: rgba2_cmd.extend(['-t', 'double', '-s', f"{val:.6f}"])
+                else:
+                    # Reset rgba2 property if switching to solid color
+                    rgba2_cmd = ['xfconf-query', '-c', XFCONF_CHANNEL, '-p', f"{base_path}/rgba2", '-r']
+
+                # Command to reset last-image (forces reload of solid/gradient)
+                reset_img_cmd = ['xfconf-query', '-c', XFCONF_CHANNEL, '-p', f"{base_path}/last-image", '-n', '-t', 'string', '-s', '']
+
+                # Execute commands for this path
+                all_cmds = style_cmds + [rgba1_cmd, rgba2_cmd, reset_img_cmd]
+                for cmd in all_cmds:
+                    code, _, stderr = helpers.run_command(cmd, check=False) # Don't check, handle code manually
+                    if code != 0:
+                        # Reset failures (-r or last-image) are often non-fatal warnings
+                        is_reset_cmd = '-r' in cmd or '/last-image' in cmd[4]
+                        if is_reset_cmd and "does not exist" in stderr.lower():
+                             log.debug(f"Ignoring non-existent property reset for {' '.join(cmd)}: {stderr}")
+                        elif is_reset_cmd:
+                             log.warning(f"Non-critical failure for {base_path}: {' '.join(cmd)} - {stderr}")
+                        else:
+                             # Critical failure setting style or color
+                             log.error(f"Failed command for {base_path}: {' '.join(cmd)} - {stderr}")
+                             path_success = False
+                             overall_success = False # Mark overall failure
+                             # Continue to next command/path? Or break? Let's continue for now.
+
+            except Exception as e:
+                 # Catch unexpected errors during command construction/execution for this path
+                 log.exception(f"Error applying background settings to path {base_path}: {e}")
+                 path_success = False
+                 overall_success = False
+
+        # Reload desktop once after trying all paths
+        self.reload_xfdesktop()
+
+        if not overall_success:
+             # Raise error if any critical command failed for any path
+             raise XfceError("Background settings failed for one or more properties/paths. Check logs.")
+
+        log.info("Background settings applied successfully to all detected paths.")
+        return True
+
+    def get_screen_settings(self) -> Dict[str, Any]:
+        """
+        Gets screen temperature and brightness via xsct. Attempts different parsing
+        strategies based on common xsct output formats.
+
+        Returns:
+            A dictionary {'temperature': int|None, 'brightness': float|None}.
+            Returns None for values if xsct is off, fails to report, or output
+            cannot be parsed.
+
+        Raises:
+            XfceError: If the xsct command fails unexpectedly.
+        """
+        log.debug("Getting screen settings via xsct")
+        cmd = ['xsct']
+        try:
+            code, stdout, stderr = helpers.run_command(cmd)
+
+            if code != 0:
+                # Check if stderr indicates expected "off" states or usage errors
+                if "unknown" in stderr.lower() or "usage:" in stderr.lower() or "failed" in stderr.lower():
+                     log.info("xsct appears off or failed to query. Assuming default screen settings.")
+                     return {'temperature': None, 'brightness': None}
+                else:
+                     # Unexpected error from xsct
+                     raise XfceError(f"xsct command failed unexpectedly (code {code}): {stderr}")
+
+            temp = None
+            brightness = None
+
+            # --- Strategy 1: Combined Regex (Handles 'temp ~ TTTT B.BB') ---
+            # Match pattern like: Screen #: temperature ~ <temp_digits> <brightness_float>
+            combined_match = re.search(r'temperature\s+~\s+(\d+)\s+([\d.]+)', stdout, re.IGNORECASE)
+            if combined_match:
+                log.debug("xsct output matched combined regex pattern.")
+                try:
+                    temp = int(combined_match.group(1))
+                    brightness = float(combined_match.group(2))
+                    log.info(f"Retrieved screen settings (combined): Temp={temp}, Brightness={brightness:.2f}")
+                    return {'temperature': temp, 'brightness': brightness}
+                except (ValueError, IndexError) as e:
+                    log.warning(f"Could not parse values from combined xsct regex match: {e}. Output: '{stdout}'")
+                    # Fall through to Strategy 2 if parsing combined match failed
+
+            # --- Strategy 2: Separate Regexes (Handles 'Temp: TTTTK\nBright: B.BB') ---
+            if temp is None or brightness is None: # Only proceed if Strategy 1 failed
+                 log.debug("Combined regex failed or produced invalid values, trying separate regexes.")
+                 temp_match = re.search(r'(?:temperature|temp)\s*[:~]?\s*(\d+)K?', stdout, re.IGNORECASE)
+                 bright_match = re.search(r'(?:brightness|bright)\s*[:~]?\s*([\d.]+)', stdout, re.IGNORECASE)
+
+                 if temp_match:
+                     try:
+                         temp = int(temp_match.group(1))
+                     except (ValueError, IndexError):
+                         log.warning(f"Could not parse temperature from separate xsct regex match: '{stdout}'")
+                 else:
+                      log.warning(f"Could not find temperature pattern using separate regex: '{stdout}'")
+
+                 if bright_match:
+                     try:
+                         brightness = float(bright_match.group(1))
+                     except (ValueError, IndexError):
+                         log.warning(f"Could not parse brightness from separate xsct regex match: '{stdout}'")
+                 else:
+                      # This is the warning you were seeing previously
+                      log.warning(f"Could not find brightness pattern using separate regex: '{stdout}'")
+
+                 # Return values only if *both* were successfully parsed separately
+                 if temp is not None and brightness is not None:
+                      log.info(f"Retrieved screen settings (separate): Temp={temp}, Brightness={brightness:.2f}")
+                      return {'temperature': temp, 'brightness': brightness}
+
+            # --- Fallback: Parsing failed ---
+            log.info(f"Could not parse both temp/brightness from xsct output using known patterns. Assuming default. Output: '{stdout}'")
+            return {'temperature': None, 'brightness': None}
+
+        except XfceError:
+             raise # Re-raise specific XfceErrors
+        except Exception as e:
+             log.exception(f"Error getting screen settings: {e}")
+             raise XfceError(f"An unexpected error occurred getting screen settings: {e}") from e
+
+    def set_screen_temp(self, temp: Optional[int], brightness: Optional[float]) -> bool:
+        """
+        Sets screen temperature/brightness using xsct.
+
+        Args:
+            temp: Temperature in Kelvin (e.g., 4500), or None to reset.
+            brightness: Brightness (e.g., 0.85), or None to reset.
+                        If one is None, both are treated as None for reset.
+
+        Returns:
+            True if the command executes successfully.
+
+        Raises:
+            XfceError: If the xsct command fails.
+            ValidationError: If temp/brightness values are unreasonable (basic check).
+        """
+        if temp is not None and brightness is not None:
+            # Basic sanity checks
+            if not (1000 <= temp <= 10000):
+                 # Raise validation error for clearly bad values
+                 raise ValidationError(f"Temperature value {temp}K is outside the typical range (1000-10000).")
+            if not (0.1 <= brightness <= 2.0):
+                 # Warn for brightness as it's sometimes allowed outside 0-1
+                 log.warning(f"Brightness value {brightness} is outside the typical range (0.1-2.0).")
+                 # raise ValidationError(f"Brightness value {brightness} is outside the typical range (0.1-2.0).")
+
+            log.info(f"Setting screen: Temp={temp}, Brightness={brightness:.2f}")
+            cmd = ['xsct', str(temp), f"{brightness:.2f}"]
+        else:
+            log.info("Resetting screen temperature/brightness (xsct -x)")
+            cmd = ['xsct', '-x']
+
+        try:
+            code, _, stderr = helpers.run_command(cmd)
+            if code != 0:
+                raise XfceError(f"Failed to set screen temperature/brightness via xsct: {stderr} (code: {code})")
+            log.debug("Successfully set screen temperature/brightness.")
+            return True
+        except Exception as e:
+            if isinstance(e, (XfceError, ValidationError)): raise
+            log.exception(f"Error setting screen temperature/brightness: {e}")
+            raise XfceError(f"An unexpected error occurred setting screen temperature/brightness: {e}") from e
+
+    def reload_xfdesktop(self):
+        """Reloads the xfdesktop process to apply potential background changes."""
+        log.debug("Reloading xfdesktop...")
+        cmd = ['xfdesktop', '--reload']
+        try:
+             # Check if command exists first
+             helpers.check_dependencies(['xfdesktop'])
+             # Run in background, don't wait, ignore output/errors as it's best-effort
+             subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+             time.sleep(0.5) # Brief pause allow process to start
+             log.debug("xfdesktop --reload command issued.")
+        except DependencyError:
+             log.warning("xfdesktop command not found, skipping reload.")
+        except Exception as e:
+             log.warning(f"Exception trying to reload xfdesktop: {e}")
+##############
+./fluxfce_gui.py
+
+
+##############
+##############
+./readme.md
+
+# fluxfce v0.1 - XFCE auto-theming utility
+
+**Fluxfce** automates switching XFCE desktop appearance (GTK Theme, Background, Screen Temperature) between configured Day and Night modes based on local sunrise and sunset times. It uses an adapted NOAA algorithm to calculate transition times. systemd and `atd` scheduler are used for precise, low-resource scheduling.
+
+This is **v0.1**, a refactored and simplified version focusing on core functionality and maintainability.
+
+<p align="center">
+  <img src="logo.png" alt="fluxfce Logo Placeholder" width="150">
+</p>
+
+---
+
+## Features (v0.1)
+
+- **Automatic Switching:** Automatically transitions between Day and Night modes at local sunrise and sunset. 
+- **Component Control:** Adjusts:
+  - GTK Theme (`Net/ThemeName`)
+  - Desktop Background (Solid color or vertical/horizontal gradient via `xfce4-desktop` properties)
+  - Screen Temperature & Brightness (via `xsct`
+  - Background image switching to be added 
+- **Location Aware:** Calculates sunrise/sunset times based on user-configured latitude, longitude, and IANA timezone.
+- **Timezone Detection:** Attempts to automatically detect system timezone during initial install.
+- **Low Resource Usage:** Uses the system `atd` service for scheduling transitions, avoiding a persistent background daemon.
+- **Systemd Integration:** Installs systemd user units (`.timer`, `.service`) for reliable daily rescheduling and applying the correct theme on login.
+- **Manual Overrides:** Easily force Day or Night mode (`force-day`, `force-night`). Manual overrides temporarily disable automatic scheduling.
+- **Simple Configuration:** Uses a clear INI file (`~/.config/fluxfce/config.ini`).
+- **Easy Default Setting:** Save your current desktop look as the new default for Day or Night mode (`set-default`).
+- **Status Reporting:** Check current configuration, calculated times, and scheduled jobs (`status`).
+
+*(Features removed from the original script for simplicity: presets, direct `set` commands for individual components, `config` command for editing, `toggle` command.)*
+
+## Requirements
+
+- **Linux Distribution:** Tested on systemd-based distributions (e.g., Ubuntu, Fedora, Debian, Arch).
+- **Desktop Environment:** XFCE 4.x
+- **Python:** Python 3.9+ (due to `zoneinfo` usage)
+- **External Commands (Dependencies):**
+  - `atd` service (install package `at`, enable with `sudo systemctl enable --now atd`)
+  - `xfconf-query` (installed with XFCE)
+  - `xsct` (install package `xsct`)
+  - `systemctl` (part of systemd)
+  - `at`, `atq`, `atrm` (part of the `at` package)
+  - `xfdesktop` (for background reloads)
+  - `shutil.which` (provided by Python)
+
+## Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/camdoherty/fluxfce-simplified.git fluxfce
+   cd fluxfce
+   ```
+2. **Run the install command:**
+   ```bash
+   python3 fluxfce_cli.py install
+   ```
+   _You might need to run `sudo systemctl enable --now atd` separately if the `atd` service isn't running._
+
+3. **Make the command accessible:**
+
+   Ensure `~/.local/bin` is in your `PATH`:
+   ```bash
+   mkdir -p ~/.local/bin
+   echo $PATH
+   # If ~/.local/bin is not listed, add the following to your ~/.bashrc or ~/.zshrc:
+   export PATH="$HOME/.local/bin:$PATH"
+   source ~/.bashrc
+   ```
+
+   Make the script executable:
+   ```bash
+   chmod +x ./fluxfce_cli.py
+   ```
+
+   Create a symbolic link:
+   ```bash
+   SCRIPT_ABS_PATH=$(readlink -f ./fluxfce_cli.py)
+   ln -s "$SCRIPT_ABS_PATH" ~/.local/bin/fluxfce
+   ```
+
+4. **(Optional but recommended) Configure appearance:**
+
+   - Set your desired XFCE theme, background color/gradient, and screen temperature/brightness for Daytime, then run:
+     ```bash
+     fluxfce set-default --mode day
+     ```
+   - Set your desired look for Nighttime, then run:
+     ```bash
+     fluxfce set-default --mode night
+     ```
+
+## Usage
+
+```bash
+fluxfce <command> [options]
+```
+
+**Commands:**
+- `install` — Install systemd units and enable automatic scheduling.
+- `uninstall` — Remove systemd units and clear schedule (prompts to remove config).
+- `enable` — Enable automatic scheduling (schedules transitions).
+- `disable` — Disable automatic scheduling (clears scheduled transitions).
+- `status` — Show config, calculated times, and schedule status.
+- `force-day` — Apply Day Mode settings now (disables automatic scheduling).
+- `force-night` — Apply Night Mode settings now (disables automatic scheduling).
+- `set-default --mode {day,night}` — Save current desktop look as the new default for Day or Night mode.
+
+**Options:**
+- `-h`, `--help` — Show this help message and exit.
+- `-v`, `--verbose` — Enable detailed logging output.
+
+## Configuration
+
+Fluxfce uses an INI file located at `~/.config/fluxfce/config.ini`. Example:
+
+```ini
+[Location]
+latitude = 43.65N
+longitude = 79.38W
+timezone = America/Toronto
+
+[Themes]
+light_theme = Adwaita
+dark_theme = Adwaita-dark
+
+[BackgroundDay]
+bg_dir = v
+bg_hex1 = ADD8E6
+bg_hex2 = 87CEEB
+
+[ScreenDay]
+xsct_temp = 6500
+xsct_bright = 1.0
+
+[BackgroundNight]
+bg_dir = v
+bg_hex1 = 1E1E2E
+bg_hex2 = 000000
+
+[ScreenNight]
+xsct_temp = 4500
+xsct_bright = 0.85
+```
+
+- **Background (`bg_dir`):** `s` = Solid, `h` = Horizontal gradient, `v` = Vertical gradient.
+- **Screen Temperature/Brightness:** Defaults reset during Day if left empty.
+
+## Troubleshooting
+
+Use verbose logging:
+```bash
+fluxfce -v <command>
+```
+
+Check systemd user units:
+```bash
+systemctl --user status fluxfce-scheduler.timer \
+    fluxfce-scheduler.service fluxfce-login.service
+```
+
+View journal logs:
+```bash
+journalctl --user -u fluxfce-scheduler.timer
+journalctl --user -u fluxfce-scheduler.service
+journalctl --user -u fluxfce-login.service
+journalctl --user -t fluxfce-atjob
+```
+
+Check `at` queue:
+```bash
+atq
+```
+
+Verify dependencies and `atd` service:
+```bash
+sudo systemctl status atd
+```
+
+Verify config path: `~/.config/fluxfce/config.ini`
+
+
+## License
+
+MIT
+
+##############
+./srss.py
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+srss.py - Calculate and print sunrise/sunset times for N days.
+
+Reads location and timezone configuration from the fluxfce config file
+and calculates times using the fluxfce_core library.
+
+Usage:
+  python3 srss.py <number_of_days>
+  Example: python3 srss.py 60
+"""
+
+import argparse
+import sys
+import logging
+import time
+from datetime import date, timedelta
+
+# --- Import fluxfce_core ---
+# This assumes srss.py is run from the project root (fluxfce-simplified)
+# or that fluxfce_core is installed in the Python environment.
+try:
+    from fluxfce_core import api as fluxfce_api
+    from fluxfce_core import helpers as fluxfce_helpers
+    from fluxfce_core import sun as fluxfce_sun # Direct access needed
+    from fluxfce_core import exceptions as fluxfce_exc
+    from fluxfce_core import CONFIG_FILE # Import config path constant
+except ImportError as e:
+    print(f"Error: Failed to import fluxfce_core: {e}", file=sys.stderr)
+    print("Please run this script from the project root directory", file=sys.stderr)
+    print("or ensure fluxfce_core is installed.", file=sys.stderr)
+    sys.exit(1)
+
+# --- Basic Logging ---
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+log = logging.getLogger('srss')
+
+# --- Main Function ---
+def main():
+    parser = argparse.ArgumentParser(
+        description="Calculate sunrise/sunset times for N days using fluxfce config.",
+        epilog="Example: python3 srss.py 60"
+    )
+    parser.add_argument(
+        'days',
+        type=int,
+        metavar='N',
+        help='Number of days (starting from today) to calculate times for.'
+    )
+    parser.add_argument(
+        '-q', '--quiet',
+        action='store_true',
+        help='Suppress informational messages, only output times or errors.'
+    )
+
+    args = parser.parse_args()
+    num_days = args.days
+
+    if num_days <= 0:
+        log.error("Number of days must be a positive integer.")
+        sys.exit(1)
+
+    if args.quiet:
+        log.setLevel(logging.WARNING) # Suppress INFO messages
+
+    log.info(f"Calculating sunrise/sunset for {num_days} days...")
+    log.info(f"Using configuration file: {CONFIG_FILE}")
+
+    start_time = time.monotonic()
+
+    try:
+        # 1. Load Configuration
+        config = fluxfce_api.get_current_config()
+        lat_str = config.get('Location', 'LATITUDE')
+        lon_str = config.get('Location', 'LONGITUDE')
+        tz_name = config.get('Location', 'TIMEZONE')
+
+        # 2. Validate Location/Timezone
+        if not (lat_str and lon_str and tz_name):
+            raise fluxfce_exc.ConfigError("Latitude, Longitude, or Timezone missing in config.")
+
+        lat = fluxfce_helpers.latlon_str_to_float(lat_str)
+        lon = fluxfce_helpers.latlon_str_to_float(lon_str)
+        # Timezone validity checked by get_sun_times, but basic check here
+        if not tz_name:
+             raise fluxfce_exc.ValidationError("Timezone value is empty in config.")
+
+        log.info(f"Using Location: Lat={lat_str}, Lon={lon_str}, TZ={tz_name}")
+
+        # 3. Loop and Calculate
+        today = date.today()
+        calculation_errors = 0
+        output_count = 0
+
+        print("Type\tDate\tTime") # Header
+        print("----\t----\t----")
+
+        for i in range(num_days):
+            target_date = today + timedelta(days=i)
+            try:
+                sun_times = fluxfce_sun.get_sun_times(lat, lon, target_date, tz_name)
+                # Format Output (ISO-like, tab-separated)
+                date_str = target_date.isoformat()
+                sunrise_time_str = sun_times['sunrise'].strftime('%H:%M:%S%z')
+                sunset_time_str = sun_times['sunset'].strftime('%H:%M:%S%z')
+
+                print(f"Sunrise\t{date_str}\t{sunrise_time_str}")
+                print(f"Sunset\t{date_str}\t{sunset_time_str}")
+                output_count += 2
+
+            except fluxfce_exc.CalculationError as e:
+                # Handle errors like polar day/night for specific dates
+                log.warning(f"Could not calculate times for {target_date}: {e}")
+                calculation_errors += 1
+            except fluxfce_exc.ValidationError as e:
+                # Handle invalid timezone error once if it occurs
+                log.error(f"Invalid Timezone Configuration: {e}")
+                sys.exit(1)
+
+        end_time = time.monotonic()
+        duration = end_time - start_time
+
+        log.info("-" * 30)
+        log.info(f"Calculation complete.")
+        log.info(f"Total output lines: {output_count}")
+        if calculation_errors > 0:
+             log.warning(f"Dates with calculation errors (e.g., polar day/night): {calculation_errors}")
+        log.info(f"Duration: {duration:.4f} seconds")
+
+    except fluxfce_exc.FluxFceError as e:
+        log.error(f"Error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        log.exception(f"An unexpected error occurred: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+##############
