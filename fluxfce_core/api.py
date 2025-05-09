@@ -1,26 +1,27 @@
 # ~/dev/fluxfce-simplified/fluxfce_core/api.py
 
-import configparser # Ensure this is imported
+import configparser  # Ensure this is imported
 import logging
-import pathlib
-import sys
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, Optional
 
 # Import core components and exceptions
 from . import config as cfg
 from . import exceptions as exc
-from . import helpers
+from . import helpers, sun, xfce
 from . import scheduler as sched
-from . import sun
 from . import systemd as sysd
-from . import xfce
 
 # zoneinfo needed here for status/period calculation
 try:
-    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError # Corrected import location for check
+    from zoneinfo import (
+        ZoneInfo,
+        ZoneInfoNotFoundError,
+    )  # Corrected import location for check
 except ImportError:
-    raise ImportError("Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+.")
+    raise ImportError(
+        "Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+."
+    )
 
 
 log = logging.getLogger(__name__)
@@ -29,7 +30,8 @@ log = logging.getLogger(__name__)
 
 # Instantiate managers that are reused across API calls
 _cfg_mgr = cfg.ConfigManager()
-_xfce_handler = xfce.XfceHandler() # Checks xfconf-query, xsct on init
+_xfce_handler = xfce.XfceHandler()  # Checks xfconf-query, xsct on init
+
 
 # RENAMED Internal Helper
 def _load_config_with_defaults() -> configparser.ConfigParser:
@@ -44,23 +46,24 @@ def _load_config_with_defaults() -> configparser.ConfigParser:
         log.exception(f"API Helper: Unexpected error loading configuration: {e}")
         raise exc.FluxFceError(f"Unexpected error loading configuration: {e}") from e
 
+
 # Updated internal helper to use the renamed config loader
 def _apply_settings_for_mode(mode: str) -> bool:
     """Internal helper to apply all settings for 'day' or 'night'."""
-    if mode not in ['day', 'night']:
+    if mode not in ["day", "night"]:
         raise exc.ValidationError(f"Invalid mode specified for apply: {mode}")
 
-    config = _load_config_with_defaults() # UPDATED Call to renamed helper
-    theme_key = 'LIGHT_THEME' if mode == 'day' else 'DARK_THEME'
-    bg_section = 'BackgroundDay' if mode == 'day' else 'BackgroundNight'
-    screen_section = 'ScreenDay' if mode == 'day' else 'ScreenNight'
+    config = _load_config_with_defaults()  # UPDATED Call to renamed helper
+    theme_key = "LIGHT_THEME" if mode == "day" else "DARK_THEME"
+    bg_section = "BackgroundDay" if mode == "day" else "BackgroundNight"
+    screen_section = "ScreenDay" if mode == "day" else "ScreenNight"
 
-    theme = config.get('Themes', theme_key, fallback=None)
-    bg_hex1 = config.get(bg_section, 'BG_HEX1', fallback=None)
-    bg_hex2 = config.get(bg_section, 'BG_HEX2', fallback=None)
-    bg_dir = config.get(bg_section, 'BG_DIR', fallback=None)
-    temp_str = config.get(screen_section, 'XSCT_TEMP', fallback=None)
-    bright_str = config.get(screen_section, 'XSCT_BRIGHT', fallback=None)
+    theme = config.get("Themes", theme_key, fallback=None)
+    bg_hex1 = config.get(bg_section, "BG_HEX1", fallback=None)
+    bg_hex2 = config.get(bg_section, "BG_HEX2", fallback=None)
+    bg_dir = config.get(bg_section, "BG_DIR", fallback=None)
+    temp_str = config.get(screen_section, "XSCT_TEMP", fallback=None)
+    bright_str = config.get(screen_section, "XSCT_BRIGHT", fallback=None)
 
     if not theme:
         # Ensure the section name is correct in the error message
@@ -70,24 +73,31 @@ def _apply_settings_for_mode(mode: str) -> bool:
     xsct_bright: Optional[float] = None
     try:
         # Correct logic for Day mode reset (empty string signifies reset)
-        if mode == 'day' and (temp_str == '' or bright_str == ''):
-             log.info("Day mode specifies resetting screen temperature/brightness.")
-             # Ensure xsct_temp and xsct_bright remain None for reset call
+        if mode == "day" and (temp_str == "" or bright_str == ""):
+            log.info("Day mode specifies resetting screen temperature/brightness.")
+            # Ensure xsct_temp and xsct_bright remain None for reset call
         # Check for Night mode or non-empty Day mode values
-        elif temp_str is not None and bright_str is not None and temp_str != '' and bright_str != '':
-             xsct_temp = int(temp_str)
-             xsct_bright = float(bright_str)
+        elif (
+            temp_str is not None
+            and bright_str is not None
+            and temp_str != ""
+            and bright_str != ""
+        ):
+            xsct_temp = int(temp_str)
+            xsct_bright = float(bright_str)
         # Else: Leave as None if not configured or partially configured
     except (ValueError, TypeError) as e:
-         log.warning(f"Could not parse screen settings from [{screen_section}]: {e}. Screen settings skipped.")
+        log.warning(
+            f"Could not parse screen settings from [{screen_section}]: {e}. Screen settings skipped."
+        )
 
-    theme_ok, bg_ok, screen_ok = True, True, True # Assume success unless failed
+    theme_ok, bg_ok, screen_ok = True, True, True  # Assume success unless failed
 
     # Apply Theme
     try:
         log.info(f"API: Applying theme '{theme}' for mode '{mode}'")
         _xfce_handler.set_gtk_theme(theme)
-    except (exc.XfceError, exc.ValidationError) as e: # Catch validation error too
+    except (exc.XfceError, exc.ValidationError) as e:  # Catch validation error too
         log.error(f"API: Failed to set theme: {e}")
         theme_ok = False
         raise exc.FluxFceError(f"Critical failure setting theme '{theme}': {e}") from e
@@ -95,17 +105,23 @@ def _apply_settings_for_mode(mode: str) -> bool:
     # Apply Background (if configured)
     if bg_hex1 and bg_dir:
         try:
-            log.info(f"API: Applying background (Dir={bg_dir}, Hex1={bg_hex1}, Hex2={bg_hex2}) for mode '{mode}'")
+            log.info(
+                f"API: Applying background (Dir={bg_dir}, Hex1={bg_hex1}, Hex2={bg_hex2}) for mode '{mode}'"
+            )
             _xfce_handler.set_background(bg_hex1, bg_hex2, bg_dir)
         except (exc.XfceError, exc.ValidationError) as e:
             log.error(f"API: Failed to set background: {e}")
             bg_ok = False
     else:
-        log.info("API: Background not fully configured in config, skipping background set.")
+        log.info(
+            "API: Background not fully configured in config, skipping background set."
+        )
 
     # Apply Screen Settings
     try:
-        log.info(f"API: Applying screen settings (Temp={xsct_temp}, Bright={xsct_bright}) for mode '{mode}'")
+        log.info(
+            f"API: Applying screen settings (Temp={xsct_temp}, Bright={xsct_bright}) for mode '{mode}'"
+        )
         _xfce_handler.set_screen_temp(xsct_temp, xsct_bright)
     except (exc.XfceError, exc.ValidationError) as e:
         log.error(f"API: Failed to set screen settings: {e}")
@@ -113,13 +129,13 @@ def _apply_settings_for_mode(mode: str) -> bool:
 
     # Only return True if critical theme step succeeded. BG/Screen are optional.
     # Return theme_ok # Decide if partial success is okay
-    if not theme_ok: # If theme failed, it's a failure
-         return False
+    if not theme_ok:  # If theme failed, it's a failure
+        return False
     if not bg_ok:
         log.warning(f"Mode '{mode}' applied, but background setting failed.")
     if not screen_ok:
         log.warning(f"Mode '{mode}' applied, but screen setting failed.")
-    return True # Return True if theme succeeded, even if bg/screen failed
+    return True  # Return True if theme succeeded, even if bg/screen failed
 
 
 # --- NEW Public API Functions for Config ---
@@ -138,6 +154,7 @@ def get_current_config() -> configparser.ConfigParser:
     log.debug("API: get_current_config called")
     # Call the renamed internal helper
     return _load_config_with_defaults()
+
 
 def save_configuration(config_obj: configparser.ConfigParser) -> bool:
     """
@@ -159,13 +176,14 @@ def save_configuration(config_obj: configparser.ConfigParser) -> bool:
         return _cfg_mgr.save_config(config_obj)
     except exc.ConfigError as e:
         log.error(f"API: Failed to save configuration: {e}")
-        raise # Re-raise the specific error
+        raise  # Re-raise the specific error
     except Exception as e:
         log.exception(f"API: Unexpected error saving configuration: {e}")
         raise exc.FluxFceError(f"Unexpected error saving configuration: {e}") from e
 
 
 # --- Existing Public API Functions ---
+
 
 def install_fluxfce(script_path: str, python_executable: Optional[str] = None) -> bool:
     """
@@ -188,18 +206,26 @@ def install_fluxfce(script_path: str, python_executable: Optional[str] = None) -
 
     try:
         sysd_mgr = sysd.SystemdManager()
-        success = sysd_mgr.install_units(script_path=script_path, python_executable=python_executable)
+        success = sysd_mgr.install_units(
+            script_path=script_path, python_executable=python_executable
+        )
         if success:
-             log.info("API: Systemd units installed successfully.")
-             return True
+            log.info("API: Systemd units installed successfully.")
+            return True
         else:
-             raise exc.SystemdError("SystemdManager install_units returned False or failed.")
-    except (exc.SystemdError, FileNotFoundError, exc.DependencyError) as e: # Add DepError
-         log.error(f"API: Systemd unit installation failed: {e}")
-         raise
+            raise exc.SystemdError(
+                "SystemdManager install_units returned False or failed."
+            )
+    except (
+        exc.SystemdError,
+        FileNotFoundError,
+        exc.DependencyError,
+    ) as e:  # Add DepError
+        log.error(f"API: Systemd unit installation failed: {e}")
+        raise
     except Exception as e:
-         log.exception(f"API: Unexpected error during installation: {e}")
-         raise exc.FluxFceError(f"Unexpected error during installation: {e}") from e
+        log.exception(f"API: Unexpected error during installation: {e}")
+        raise exc.FluxFceError(f"Unexpected error during installation: {e}") from e
 
 
 def uninstall_fluxfce() -> bool:
@@ -214,49 +240,59 @@ def uninstall_fluxfce() -> bool:
         exc.FluxFceError: If a critical part of the uninstall fails.
     """
     log.info("API: Starting fluxfce uninstallation (systemd units, schedule).")
-    schedule_clear_ok = True # Assume success unless error occurs
-    systemd_remove_ok = True # Assume success unless error occurs
+    schedule_clear_ok = True  # Assume success unless error occurs
+    systemd_remove_ok = True  # Assume success unless error occurs
     critical_error = None
 
     # 1. Clear schedule
     try:
         scheduler = sched.AtdScheduler()
         if not scheduler.clear_scheduled_transitions():
-             # Log warning, maybe not critical? Depends on definition. Let's log warning.
-             log.warning("API: clear_scheduled_transitions reported failure (some jobs might remain).")
-             # schedule_clear_ok = False # Don't mark as overall failure for this
+            # Log warning, maybe not critical? Depends on definition. Let's log warning.
+            log.warning(
+                "API: clear_scheduled_transitions reported failure (some jobs might remain)."
+            )
+            # schedule_clear_ok = False # Don't mark as overall failure for this
     except (exc.SchedulerError, exc.DependencyError) as e:
-         log.error(f"API: Failed to clear schedule during uninstall: {e}")
-         schedule_clear_ok = False
-         critical_error = critical_error or e # Keep first critical error
+        log.error(f"API: Failed to clear schedule during uninstall: {e}")
+        schedule_clear_ok = False
+        critical_error = critical_error or e  # Keep first critical error
     except Exception as e:
-         log.exception(f"API: Unexpected error clearing schedule during uninstall: {e}")
-         schedule_clear_ok = False
-         critical_error = critical_error or e
+        log.exception(f"API: Unexpected error clearing schedule during uninstall: {e}")
+        schedule_clear_ok = False
+        critical_error = critical_error or e
 
     # 2. Remove systemd units
     try:
         sysd_mgr = sysd.SystemdManager()
         if not sysd_mgr.remove_units():
-             log.error("API: Systemd unit removal reported failure.")
-             systemd_remove_ok = False
-             # Treat systemd removal failure as critical
-             critical_error = critical_error or exc.SystemdError("Systemd unit removal failed.")
+            log.error("API: Systemd unit removal reported failure.")
+            systemd_remove_ok = False
+            # Treat systemd removal failure as critical
+            critical_error = critical_error or exc.SystemdError(
+                "Systemd unit removal failed."
+            )
     except (exc.SystemdError, exc.DependencyError) as e:
-         log.error(f"API: Failed to remove systemd units during uninstall: {e}")
-         systemd_remove_ok = False
-         critical_error = critical_error or e
+        log.error(f"API: Failed to remove systemd units during uninstall: {e}")
+        systemd_remove_ok = False
+        critical_error = critical_error or e
     except Exception as e:
-         log.exception(f"API: Unexpected error removing systemd units during uninstall: {e}")
-         systemd_remove_ok = False
-         critical_error = critical_error or e
+        log.exception(
+            f"API: Unexpected error removing systemd units during uninstall: {e}"
+        )
+        systemd_remove_ok = False
+        critical_error = critical_error or e
 
     overall_success = schedule_clear_ok and systemd_remove_ok
-    log.info(f"API: Uninstallation process completed. Overall success: {overall_success}")
+    log.info(
+        f"API: Uninstallation process completed. Overall success: {overall_success}"
+    )
     if critical_error:
         # Raise the first critical error encountered
-        raise exc.FluxFceError(f"Uninstallation failed: {critical_error}") from critical_error
-    return True # Return true if no critical errors occurred
+        raise exc.FluxFceError(
+            f"Uninstallation failed: {critical_error}"
+        ) from critical_error
+    return True  # Return true if no critical errors occurred
 
 
 def enable_scheduling(python_exe_path: str, script_exe_path: str) -> bool:
@@ -275,14 +311,14 @@ def enable_scheduling(python_exe_path: str, script_exe_path: str) -> bool:
         exc.SchedulerError, FileNotFoundError, exc.DependencyError, exc.FluxFceError
     """
     log.info("API: Enabling automatic scheduling...")
-    config = _load_config_with_defaults() # Use internal helper
+    config = _load_config_with_defaults()  # Use internal helper
     try:
-        lat_str = config.get('Location', 'LATITUDE')
-        lon_str = config.get('Location', 'LONGITUDE')
-        tz_name = config.get('Location', 'TIMEZONE')
+        lat_str = config.get("Location", "LATITUDE")
+        lon_str = config.get("Location", "LONGITUDE")
+        tz_name = config.get("Location", "TIMEZONE")
 
-        lat = helpers.latlon_str_to_float(lat_str) # Raises ValidationError
-        lon = helpers.latlon_str_to_float(lon_str) # Raises ValidationError
+        lat = helpers.latlon_str_to_float(lat_str)  # Raises ValidationError
+        lon = helpers.latlon_str_to_float(lon_str)  # Raises ValidationError
 
         if not tz_name:
             raise exc.ValidationError("Timezone is not configured.")
@@ -290,21 +326,31 @@ def enable_scheduling(python_exe_path: str, script_exe_path: str) -> bool:
         try:
             ZoneInfo(tz_name)
         except Exception as tz_err:
-            raise exc.ValidationError(f"Invalid timezone '{tz_name}': {tz_err}") from tz_err
+            raise exc.ValidationError(
+                f"Invalid timezone '{tz_name}': {tz_err}"
+            ) from tz_err
 
-        scheduler = sched.AtdScheduler() # Raises SchedulerError/DepError on init fail
-        success = scheduler.schedule_transitions(lat, lon, tz_name, python_exe_path, script_exe_path)
+        scheduler = sched.AtdScheduler()  # Raises SchedulerError/DepError on init fail
+        success = scheduler.schedule_transitions(
+            lat, lon, tz_name, python_exe_path, script_exe_path
+        )
         log.info(f"API: Scheduling completed. Success: {success}")
         return success
 
     except (configparser.NoSectionError, configparser.NoOptionError) as e:
-         raise exc.ConfigError(f"Location settings missing in configuration: {e}") from e
-    except (exc.ValidationError, exc.CalculationError, exc.SchedulerError, FileNotFoundError, exc.DependencyError) as e:
-         log.error(f"API: Failed to enable scheduling: {e}")
-         raise
+        raise exc.ConfigError(f"Location settings missing in configuration: {e}") from e
+    except (
+        exc.ValidationError,
+        exc.CalculationError,
+        exc.SchedulerError,
+        FileNotFoundError,
+        exc.DependencyError,
+    ) as e:
+        log.error(f"API: Failed to enable scheduling: {e}")
+        raise
     except Exception as e:
-         log.exception(f"API: Unexpected error enabling scheduling: {e}")
-         raise exc.FluxFceError(f"Unexpected error enabling scheduling: {e}") from e
+        log.exception(f"API: Unexpected error enabling scheduling: {e}")
+        raise exc.FluxFceError(f"Unexpected error enabling scheduling: {e}") from e
 
 
 def disable_scheduling() -> bool:
@@ -319,7 +365,7 @@ def disable_scheduling() -> bool:
     """
     log.info("API: Disabling automatic scheduling...")
     try:
-        scheduler = sched.AtdScheduler() # Raises SchedulerError/DepError on init fail
+        scheduler = sched.AtdScheduler()  # Raises SchedulerError/DepError on init fail
         success = scheduler.clear_scheduled_transitions()
         log.info(f"API: Clearing scheduled jobs completed. Success: {success}")
         return success
@@ -329,6 +375,7 @@ def disable_scheduling() -> bool:
     except Exception as e:
         log.exception(f"API: Unexpected error disabling scheduling: {e}")
         raise exc.FluxFceError(f"Unexpected error disabling scheduling: {e}") from e
+
 
 def apply_manual_mode(mode: str) -> bool:
     """
@@ -349,23 +396,30 @@ def apply_manual_mode(mode: str) -> bool:
     apply_ok = False
     try:
         # 1. Apply settings for the mode
-        apply_ok = _apply_settings_for_mode(mode) # Raises FluxFceError on critical theme fail
+        apply_ok = _apply_settings_for_mode(
+            mode
+        )  # Raises FluxFceError on critical theme fail
     except exc.FluxFceError as e:
         log.error(f"API: Failed critical apply step for mode '{mode}': {e}")
-        raise # Re-raise critical failure
+        raise  # Re-raise critical failure
 
     # 2. Disable scheduling (clear jobs) - attempt even if non-critical apply failed
     try:
         disable_ok = disable_scheduling()
         if not disable_ok:
-             log.warning("API: Applied settings, but failed to disable schedule (clear jobs).")
-             # Don't raise, just warn. The main action (apply) might have succeeded.
+            log.warning(
+                "API: Applied settings, but failed to disable schedule (clear jobs)."
+            )
+            # Don't raise, just warn. The main action (apply) might have succeeded.
     except exc.SchedulerError as e:
-         log.warning(f"API: Applied settings, but failed to disable schedule: {e}")
+        log.warning(f"API: Applied settings, but failed to disable schedule: {e}")
     except Exception as e:
-         log.exception(f"API: Applied settings, but unexpected error disabling schedule: {e}")
+        log.exception(
+            f"API: Applied settings, but unexpected error disabling schedule: {e}"
+        )
 
-    return apply_ok # Return success of the apply step (primarily theme success)
+    return apply_ok  # Return success of the apply step (primarily theme success)
+
 
 def set_default_from_current(mode: str) -> bool:
     """
@@ -381,95 +435,125 @@ def set_default_from_current(mode: str) -> bool:
     Raises:
         exc.ValidationError, exc.XfceError, exc.ConfigError, exc.FluxFceError
     """
-    if mode not in ['day', 'night']:
+    if mode not in ["day", "night"]:
         raise exc.ValidationError(f"Invalid mode for set-default: {mode}")
 
     log.info(f"API: Saving current desktop settings as default for mode '{mode}'...")
 
     try:
         # 1. Get Current Settings
-        current_theme = _xfce_handler.get_gtk_theme() # Raises XfceError if fail
+        current_theme = _xfce_handler.get_gtk_theme()  # Raises XfceError if fail
         current_bg = None
         try:
-             # Handle background get failure gracefully - don't fail whole operation
-             current_bg = _xfce_handler.get_background_settings()
+            # Handle background get failure gracefully - don't fail whole operation
+            current_bg = _xfce_handler.get_background_settings()
         except exc.XfceError as bg_e:
-             log.warning(f"API: Could not get current background settings: {bg_e}. Skipping background save.")
+            log.warning(
+                f"API: Could not get current background settings: {bg_e}. Skipping background save."
+            )
 
-        current_screen = _xfce_handler.get_screen_settings() # Doesn't usually raise
+        current_screen = _xfce_handler.get_screen_settings()  # Doesn't usually raise
 
         # 2. Load Config
-        config = _load_config_with_defaults() # Use internal helper
+        config = _load_config_with_defaults()  # Use internal helper
         config_changed = False
 
         # 3. Update Theme Setting
-        theme_key = 'LIGHT_THEME' if mode == 'day' else 'DARK_THEME'
-        if config.get('Themes', theme_key, fallback=None) != current_theme:
-             _cfg_mgr.set_setting(config, 'Themes', theme_key, current_theme)
-             log.debug(f"API: Updating [{mode} Theme] to '{current_theme}'")
-             config_changed = True
+        theme_key = "LIGHT_THEME" if mode == "day" else "DARK_THEME"
+        if config.get("Themes", theme_key, fallback=None) != current_theme:
+            _cfg_mgr.set_setting(config, "Themes", theme_key, current_theme)
+            log.debug(f"API: Updating [{mode} Theme] to '{current_theme}'")
+            config_changed = True
 
         # 4. Update Background Settings
-        bg_section = 'BackgroundDay' if mode == 'day' else 'BackgroundNight'
-        if current_bg: # Only update if successfully retrieved
-             for key, config_key in [('dir', 'BG_DIR'), ('hex1', 'BG_HEX1'), ('hex2', 'BG_HEX2')]:
-                 new_value = current_bg.get(key)
-                 current_value = config.get(bg_section, config_key, fallback=None)
-                 new_value_str = str(new_value) if new_value is not None else ''
-                 current_value_str = str(current_value) if current_value is not None else ''
-                 if new_value_str != current_value_str:
-                      _cfg_mgr.set_setting(config, bg_section, config_key, new_value_str)
-                      log.debug(f"API: Updating [{bg_section} {config_key}] to '{new_value_str}'")
-                      config_changed = True
+        bg_section = "BackgroundDay" if mode == "day" else "BackgroundNight"
+        if current_bg:  # Only update if successfully retrieved
+            for key, config_key in [
+                ("dir", "BG_DIR"),
+                ("hex1", "BG_HEX1"),
+                ("hex2", "BG_HEX2"),
+            ]:
+                new_value = current_bg.get(key)
+                current_value = config.get(bg_section, config_key, fallback=None)
+                new_value_str = str(new_value) if new_value is not None else ""
+                current_value_str = (
+                    str(current_value) if current_value is not None else ""
+                )
+                if new_value_str != current_value_str:
+                    _cfg_mgr.set_setting(config, bg_section, config_key, new_value_str)
+                    log.debug(
+                        f"API: Updating [{bg_section} {config_key}] to '{new_value_str}'"
+                    )
+                    config_changed = True
         # No else needed, warning logged above if current_bg is None
 
         # 5. Update Screen Settings
-        screen_section = 'ScreenDay' if mode == 'day' else 'ScreenNight'
+        screen_section = "ScreenDay" if mode == "day" else "ScreenNight"
         temp_to_save: Optional[str] = None
         bright_to_save: Optional[str] = None
 
         if current_screen:
-            cur_temp = current_screen.get('temperature')
-            cur_bright = current_screen.get('brightness')
+            cur_temp = current_screen.get("temperature")
+            cur_bright = current_screen.get("brightness")
             if cur_temp is None and cur_bright is None:
-                temp_to_save = ''
-                bright_to_save = ''
-                log.debug("API: Current screen state is off/default; saving reset values ('')")
+                temp_to_save = ""
+                bright_to_save = ""
+                log.debug(
+                    "API: Current screen state is off/default; saving reset values ('')"
+                )
             elif cur_temp is not None and cur_bright is not None:
                 temp_to_save = str(cur_temp)
                 bright_to_save = f"{cur_bright:.2f}"
-                log.debug(f"API: Current screen state: Temp={temp_to_save}, Bright={bright_to_save}")
+                log.debug(
+                    f"API: Current screen state: Temp={temp_to_save}, Bright={bright_to_save}"
+                )
             else:
-                 log.warning("API: Inconsistent screen settings read; not updating defaults.")
+                log.warning(
+                    "API: Inconsistent screen settings read; not updating defaults."
+                )
 
         if temp_to_save is not None and bright_to_save is not None:
-            if config.get(screen_section, 'XSCT_TEMP', fallback=None) != temp_to_save:
-                _cfg_mgr.set_setting(config, screen_section, 'XSCT_TEMP', temp_to_save)
-                log.debug(f"API: Updating [{screen_section} XSCT_TEMP] to '{temp_to_save}'")
+            if config.get(screen_section, "XSCT_TEMP", fallback=None) != temp_to_save:
+                _cfg_mgr.set_setting(config, screen_section, "XSCT_TEMP", temp_to_save)
+                log.debug(
+                    f"API: Updating [{screen_section} XSCT_TEMP] to '{temp_to_save}'"
+                )
                 config_changed = True
-            if config.get(screen_section, 'XSCT_BRIGHT', fallback=None) != bright_to_save:
-                _cfg_mgr.set_setting(config, screen_section, 'XSCT_BRIGHT', bright_to_save)
-                log.debug(f"API: Updating [{screen_section} XSCT_BRIGHT] to '{bright_to_save}'")
+            if (
+                config.get(screen_section, "XSCT_BRIGHT", fallback=None)
+                != bright_to_save
+            ):
+                _cfg_mgr.set_setting(
+                    config, screen_section, "XSCT_BRIGHT", bright_to_save
+                )
+                log.debug(
+                    f"API: Updating [{screen_section} XSCT_BRIGHT] to '{bright_to_save}'"
+                )
                 config_changed = True
 
         # 6. Save Config if Changed
         if config_changed:
-            if save_configuration(config): # Use the public API save function
-                 log.info(f"API: Successfully saved updated defaults for mode '{mode}'.")
-                 return True
+            if save_configuration(config):  # Use the public API save function
+                log.info(f"API: Successfully saved updated defaults for mode '{mode}'.")
+                return True
             else:
-                 # save_configuration should raise on failure, this is fallback
-                 return False
+                # save_configuration should raise on failure, this is fallback
+                return False
         else:
-            log.info(f"API: Current settings already match defaults for mode '{mode}'. No changes made.")
-            return True # Success even if no changes
+            log.info(
+                f"API: Current settings already match defaults for mode '{mode}'. No changes made."
+            )
+            return True  # Success even if no changes
 
     except (exc.ValidationError, exc.XfceError, exc.ConfigError) as e:
         log.error(f"API: Failed to set default from current: {e}")
         raise
     except Exception as e:
         log.exception(f"API: Unexpected error setting default from current: {e}")
-        raise exc.FluxFceError(f"Unexpected error setting default from current: {e}") from e
+        raise exc.FluxFceError(
+            f"Unexpected error setting default from current: {e}"
+        ) from e
+
 
 def get_status() -> Dict[str, Any]:
     """
@@ -484,125 +568,178 @@ def get_status() -> Dict[str, Any]:
     """
     log.debug("API: Getting status...")
     status: Dict[str, Any] = {
-        'config': {},
-        'state': {'last_auto_applied': None}, # Keep placeholder if state removal not done
-        'sun_times': {'sunrise': None, 'sunset': None, 'error': None},
-        'current_period': 'unknown',
-        'schedule': {'enabled': False, 'jobs': [], 'error': None},
+        "config": {},
+        "state": {
+            "last_auto_applied": None
+        },  # Keep placeholder if state removal not done
+        "sun_times": {"sunrise": None, "sunset": None, "error": None},
+        "current_period": "unknown",
+        "schedule": {"enabled": False, "jobs": [], "error": None},
         # systemd statuses will be added dynamically below
-        'systemd': {'error': None}
+        "systemd": {"error": None},
     }
 
     # 1. Get Config (Keep as before)
     try:
-        config = get_current_config() # Use public API call now
-        status['config']['latitude'] = config.get('Location', 'LATITUDE', fallback='Not Set')
-        status['config']['longitude'] = config.get('Location', 'LONGITUDE', fallback='Not Set')
-        status['config']['timezone'] = config.get('Location', 'TIMEZONE', fallback='Not Set')
-        status['config']['light_theme'] = config.get('Themes', 'LIGHT_THEME', fallback='Not Set')
-        status['config']['dark_theme'] = config.get('Themes', 'DARK_THEME', fallback='Not Set')
+        config = get_current_config()  # Use public API call now
+        status["config"]["latitude"] = config.get(
+            "Location", "LATITUDE", fallback="Not Set"
+        )
+        status["config"]["longitude"] = config.get(
+            "Location", "LONGITUDE", fallback="Not Set"
+        )
+        status["config"]["timezone"] = config.get(
+            "Location", "TIMEZONE", fallback="Not Set"
+        )
+        status["config"]["light_theme"] = config.get(
+            "Themes", "LIGHT_THEME", fallback="Not Set"
+        )
+        status["config"]["dark_theme"] = config.get(
+            "Themes", "DARK_THEME", fallback="Not Set"
+        )
     except exc.FluxFceError as e:
-         status['config']['error'] = str(e)
+        status["config"]["error"] = str(e)
 
     # 2. Calculate Sun Times & Current Period (Keep as before)
-    lat_str = status['config'].get('latitude')
-    lon_str = status['config'].get('longitude')
-    tz_name = status['config'].get('timezone')
+    lat_str = status["config"].get("latitude")
+    lon_str = status["config"].get("longitude")
+    tz_name = status["config"].get("timezone")
     lat, lon = None, None
-    if 'error' not in status['config'] and lat_str and lon_str and tz_name and tz_name != 'Not Set':
+    if (
+        "error" not in status["config"]
+        and lat_str
+        and lon_str
+        and tz_name
+        and tz_name != "Not Set"
+    ):
         try:
             lat = helpers.latlon_str_to_float(lat_str)
             lon = helpers.latlon_str_to_float(lon_str)
-            try: tz_info = ZoneInfo(tz_name)
-            except Exception as tz_err: raise exc.ValidationError(f"Invalid timezone '{tz_name}': {tz_err}") from tz_err
+            try:
+                tz_info = ZoneInfo(tz_name)
+            except Exception as tz_err:
+                raise exc.ValidationError(
+                    f"Invalid timezone '{tz_name}': {tz_err}"
+                ) from tz_err
             today = datetime.now(tz_info).date()
             sun_times_today = sun.get_sun_times(lat, lon, today, tz_name)
-            status['sun_times']['sunrise'] = sun_times_today['sunrise']
-            status['sun_times']['sunset'] = sun_times_today['sunset']
+            status["sun_times"]["sunrise"] = sun_times_today["sunrise"]
+            status["sun_times"]["sunset"] = sun_times_today["sunset"]
             now_local = datetime.now(tz_info)
-            if sun_times_today['sunrise'] <= now_local < sun_times_today['sunset']: status['current_period'] = 'day'
-            else: status['current_period'] = 'night'
+            if sun_times_today["sunrise"] <= now_local < sun_times_today["sunset"]:
+                status["current_period"] = "day"
+            else:
+                status["current_period"] = "night"
         except (exc.ValidationError, exc.CalculationError) as e:
-             status['sun_times']['error'] = str(e); status['current_period'] = 'error'
+            status["sun_times"]["error"] = str(e)
+            status["current_period"] = "error"
         except Exception as e:
-             log.exception("API: Unexpected error calculating sun times for status."); status['sun_times']['error'] = f"Unexpected: {e}"; status['current_period'] = 'error'
-    elif 'error' not in status['config']:
-        status['sun_times']['error'] = "Location/Timezone not configured or invalid."; status['current_period'] = 'unknown'
-
+            log.exception("API: Unexpected error calculating sun times for status.")
+            status["sun_times"]["error"] = f"Unexpected: {e}"
+            status["current_period"] = "error"
+    elif "error" not in status["config"]:
+        status["sun_times"]["error"] = "Location/Timezone not configured or invalid."
+        status["current_period"] = "unknown"
 
     # 3. Get Schedule Status (Keep as before)
     try:
         scheduler = sched.AtdScheduler()
-        status['schedule']['jobs'] = scheduler.list_scheduled_transitions()
-        status['schedule']['enabled'] = bool(status['schedule']['jobs'])
+        status["schedule"]["jobs"] = scheduler.list_scheduled_transitions()
+        status["schedule"]["enabled"] = bool(status["schedule"]["jobs"])
     except (exc.SchedulerError, exc.DependencyError) as e:
-         status['schedule']['error'] = str(e); status['schedule']['enabled'] = False
+        status["schedule"]["error"] = str(e)
+        status["schedule"]["enabled"] = False
     except Exception as e:
-         log.exception("API: Unexpected error getting schedule status."); status['schedule']['error'] = f"Unexpected: {e}"; status['schedule']['enabled'] = False
-
+        log.exception("API: Unexpected error getting schedule status.")
+        status["schedule"]["error"] = f"Unexpected: {e}"
+        status["schedule"]["enabled"] = False
 
     # 4. Get Systemd Status (FINAL CORRECTED KEY GENERATION)
     try:
         sysd_mgr = sysd.SystemdManager()
         for unit_name in sysd.MANAGED_UNITS:
             # --- FINAL CORRECTED KEY GENERATION ---
-            unit_key = None # Reset key for each iteration
-            if sysd.SCHEDULER_TIMER_NAME == unit_name:
-                unit_key = 'scheduler_timer'
-            elif sysd.SCHEDULER_SERVICE_NAME == unit_name:
-                unit_key = 'scheduler_service'
-            elif sysd.LOGIN_SERVICE_NAME == unit_name:
-                unit_key = 'login_service'
-            elif sysd.RESUME_SERVICE_NAME == unit_name: # <-- ADDED THIS CASE
-                 unit_key = 'resume_service'
+            unit_key = None  # Reset key for each iteration
+            if unit_name == sysd.SCHEDULER_TIMER_NAME:
+                unit_key = "scheduler_timer"
+            elif unit_name == sysd.SCHEDULER_SERVICE_NAME:
+                unit_key = "scheduler_service"
+            elif unit_name == sysd.LOGIN_SERVICE_NAME:
+                unit_key = "login_service"
+            elif unit_name == sysd.RESUME_SERVICE_NAME:  # <-- ADDED THIS CASE
+                unit_key = "resume_service"
             # --- END CORRECTION ---
 
-            if unit_key is None: # Safety check / handle unrecognized units
-                 log.warning(f"API: Unrecognized or skipped managed unit name '{unit_name}' during status check.")
-                 continue
+            if unit_key is None:  # Safety check / handle unrecognized units
+                log.warning(
+                    f"API: Unrecognized or skipped managed unit name '{unit_name}' during status check."
+                )
+                continue
 
-            status['systemd'][unit_key] = "Error checking" # Default
+            status["systemd"][unit_key] = "Error checking"  # Default
             enabled_status_str = "Unknown"
             active_status_str = "Unknown"
 
             try:
-                code_enabled, _, err_enabled = sysd_mgr._run_systemctl(['is-enabled', unit_name], check_errors=False)
-                if code_enabled == 0: enabled_status_str = "Enabled"
-                elif code_enabled == 1: enabled_status_str = "Disabled"
-                else: enabled_status_str = f"Error ({code_enabled})"
+                code_enabled, _, err_enabled = sysd_mgr._run_systemctl(
+                    ["is-enabled", unit_name], check_errors=False
+                )
+                if code_enabled == 0:
+                    enabled_status_str = "Enabled"
+                elif code_enabled == 1:
+                    enabled_status_str = "Disabled"
+                else:
+                    enabled_status_str = f"Error ({code_enabled})"
 
-                code_active, _, err_active = sysd_mgr._run_systemctl(['is-active', unit_name], check_errors=False)
+                code_active, _, err_active = sysd_mgr._run_systemctl(
+                    ["is-active", unit_name], check_errors=False
+                )
                 if code_active == 0:
                     active_status_str = "Active"
-                    if unit_name.endswith(".timer"): active_status_str += " (waiting)"
-                elif code_active == 3: active_status_str = "Inactive"
-                else: active_status_str = f"Failed/Error ({code_active})"
+                    if unit_name.endswith(".timer"):
+                        active_status_str += " (waiting)"
+                elif code_active == 3:
+                    active_status_str = "Inactive"
+                else:
+                    active_status_str = f"Failed/Error ({code_active})"
 
                 if "Error" in enabled_status_str or "Failed/Error" in active_status_str:
-                     status['systemd'][unit_key] = f"{enabled_status_str}, {active_status_str}"
+                    status["systemd"][
+                        unit_key
+                    ] = f"{enabled_status_str}, {active_status_str}"
                 elif "Unknown" in enabled_status_str or "Unknown" in active_status_str:
-                     status['systemd'][unit_key] = "Unknown State"
+                    status["systemd"][unit_key] = "Unknown State"
                 else:
-                     status['systemd'][unit_key] = f"{enabled_status_str}, {active_status_str}"
+                    status["systemd"][
+                        unit_key
+                    ] = f"{enabled_status_str}, {active_status_str}"
 
-                log.debug(f"API: Status for systemd unit {unit_name} (key: {unit_key}): {status['systemd'][unit_key]}")
+                log.debug(
+                    f"API: Status for systemd unit {unit_name} (key: {unit_key}): {status['systemd'][unit_key]}"
+                )
 
             except exc.SystemdError as unit_e:
-                 log.error(f"API: Could not get full status for systemd unit {unit_name}: {unit_e}")
-                 status['systemd'][unit_key] = "Error processing"
+                log.error(
+                    f"API: Could not get full status for systemd unit {unit_name}: {unit_e}"
+                )
+                status["systemd"][unit_key] = "Error processing"
             except Exception as unit_e:
-                 log.exception(f"API: Unexpected error getting status for unit {unit_name}: {unit_e}")
-                 status['systemd'][unit_key] = "Unexpected error"
+                log.exception(
+                    f"API: Unexpected error getting status for unit {unit_name}: {unit_e}"
+                )
+                status["systemd"][unit_key] = "Unexpected error"
 
     except (exc.SystemdError, exc.DependencyError) as e:
-         status['systemd']['error'] = f"Systemd check failed: {e}"
+        status["systemd"]["error"] = f"Systemd check failed: {e}"
     except Exception as e:
-         log.exception("API: Unexpected error getting systemd status.")
-         status['systemd']['error'] = f"Unexpected error: {e}"
+        log.exception("API: Unexpected error getting systemd status.")
+        status["systemd"]["error"] = f"Unexpected error: {e}"
 
     return status
 
+
 # --- Internal Command Handlers (Called by Executable Script) ---
+
 
 def handle_internal_apply(mode: str) -> bool:
     """
@@ -617,8 +754,11 @@ def handle_internal_apply(mode: str) -> bool:
         log.error(f"API: Error during internal apply for mode '{mode}': {e}")
         return False
     except Exception as e:
-        log.exception(f"API: Unexpected error during internal apply for mode '{mode}': {e}")
+        log.exception(
+            f"API: Unexpected error during internal apply for mode '{mode}': {e}"
+        )
         return False
+
 
 def handle_schedule_jobs_command(python_exe_path: str, script_exe_path: str) -> bool:
     """
@@ -636,6 +776,7 @@ def handle_schedule_jobs_command(python_exe_path: str, script_exe_path: str) -> 
         log.exception(f"API: Unexpected error during schedule-jobs command: {e}")
         return False
 
+
 def handle_run_login_check() -> bool:
     """
     Called internally by the systemd login service.
@@ -644,12 +785,12 @@ def handle_run_login_check() -> bool:
     """
     log.info("API: Handling run-login-check command...")
     try:
-        config = _load_config_with_defaults() # Use internal helper
-        lat_str = config.get('Location', 'LATITUDE')
-        lon_str = config.get('Location', 'LONGITUDE')
-        tz_name = config.get('Location', 'TIMEZONE')
+        config = _load_config_with_defaults()  # Use internal helper
+        lat_str = config.get("Location", "LATITUDE")
+        lon_str = config.get("Location", "LONGITUDE")
+        tz_name = config.get("Location", "TIMEZONE")
 
-        mode_to_apply = 'night' # Default assumption
+        mode_to_apply = "night"  # Default assumption
 
         if lat_str and lon_str and tz_name:
             try:
@@ -659,15 +800,25 @@ def handle_run_login_check() -> bool:
                 now_local = datetime.now(tz_info)
                 today = now_local.date()
                 sun_times = sun.get_sun_times(lat, lon, today, tz_name)
-                if sun_times['sunrise'] <= now_local < sun_times['sunset']:
-                    mode_to_apply = 'day'
+                if sun_times["sunrise"] <= now_local < sun_times["sunset"]:
+                    mode_to_apply = "day"
                 log.info(f"API: Login check determined current mode: '{mode_to_apply}'")
-            except (exc.ValidationError, exc.CalculationError, ZoneInfoNotFoundError) as e:
-                log.warning(f"API: Could not determine correct mode for login check ({e}). Defaulting to '{mode_to_apply}'.")
-            except Exception as e:
-                log.exception(f"API: Unexpected error determining mode for login check. Defaulting to '{mode_to_apply}'.")
+            except (
+                exc.ValidationError,
+                exc.CalculationError,
+                ZoneInfoNotFoundError,
+            ) as e:
+                log.warning(
+                    f"API: Could not determine correct mode for login check ({e}). Defaulting to '{mode_to_apply}'."
+                )
+            except Exception:
+                log.exception(
+                    f"API: Unexpected error determining mode for login check. Defaulting to '{mode_to_apply}'."
+                )
         else:
-            log.warning("API: Location/Timezone not configured for login check. Defaulting to 'night'.")
+            log.warning(
+                "API: Location/Timezone not configured for login check. Defaulting to 'night'."
+            )
 
         log.info(f"API: Applying mode '{mode_to_apply}' for login check.")
         # Use the helper which now returns bool indicating if theme succeeded

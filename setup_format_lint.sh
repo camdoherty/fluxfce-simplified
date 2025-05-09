@@ -1,5 +1,3 @@
-setup_format_lint.sh
-
 #!/usr/bin/env bash
 
 # Script to initialize Python formatting (black) and linting (ruff) for the fluxfce project.
@@ -11,11 +9,11 @@ set -e
 PROJECT_ROOT_DIR=$(pwd) # Assumes script is run from the project root
 PYTHON_FILES=(
     "fluxfce_cli.py"
-    "fluxfce_dependency_setup.py" # Or your actual requirements checker script name
+    "fluxfce_deps_check.py" # Or your actual requirements checker script name
     "fluxfce_core/"
-    # Add other Python files or directories if necessary
 )
-TARGET_PYTHON_VERSION="py39" # Matches fluxfce requirement
+TARGET_PYTHON_VERSION="py39"
+VENV_NAME=".venv-fluxfce-dev" # Name for the project-specific virtual environment
 
 # --- Helper Functions ---
 print_info() {
@@ -30,38 +28,78 @@ print_warning() {
     echo "WARNING: $1"
 }
 
+print_error() {
+    echo "ERROR: $1"
+}
+
 # --- Main Logic ---
 
-# 1. Check for pip
-if ! command -v pip &> /dev/null && ! command -v pip3 &> /dev/null; then
-    print_warning "pip (or pip3) command not found. Please install pip."
-    print_warning "For Debian/Ubuntu: sudo apt install python3-pip"
+INSTALL_METHOD=""
+
+# Determine installation method for black & ruff
+if command -v pipx &> /dev/null; then
+    print_info "pipx found. Will use pipx to install black and ruff."
+    INSTALL_METHOD="pipx"
+else
+    print_warning "pipx not found."
+    if python3 -m venv --help &> /dev/null; then # Check if venv module is available
+        print_info "Will attempt to use a project-specific Python virtual environment for black and ruff."
+        INSTALL_METHOD="venv"
+    else
+        print_warning "Python's 'venv' module not found. This is unusual."
+        print_info "Attempting to install black and ruff using 'apt' as a fallback."
+        INSTALL_METHOD="apt"
+    fi
+fi
+
+
+# 1. Install black and ruff
+if [ "$INSTALL_METHOD" = "pipx" ]; then
+    print_info "Installing/updating black and ruff using pipx..."
+    pipx install black
+    pipx install ruff
+    pipx ensurepath # Ensures ~/.local/bin (where pipx shims are) is in PATH
+    print_warning "If this is the first time running 'pipx ensurepath', you may need to open a new terminal or source your shell profile."
+elif [ "$INSTALL_METHOD" = "venv" ]; then
+    if [ ! -d "${PROJECT_ROOT_DIR}/${VENV_NAME}" ]; then
+        print_info "Creating virtual environment at ${PROJECT_ROOT_DIR}/${VENV_NAME}..."
+        python3 -m venv "${PROJECT_ROOT_DIR}/${VENV_NAME}"
+        print_success "Virtual environment created."
+    else
+        print_info "Virtual environment ${PROJECT_ROOT_DIR}/${VENV_NAME} already exists."
+    fi
+    print_info "Activating virtual environment and installing/updating black and ruff..."
+    # shellcheck disable=SC1091
+    source "${PROJECT_ROOT_DIR}/${VENV_NAME}/bin/activate"
+    pip install --upgrade black ruff
+    # Note: When the script finishes, the venv will still be active in this script's subshell,
+    # but not in the parent shell unless the user sources it manually.
+    # For running black/ruff *within this script*, this is fine.
+    # User would need to activate venv manually to run them later from terminal.
+    print_info "To use these tools manually later, activate the venv: source ${VENV_NAME}/bin/activate"
+elif [ "$INSTALL_METHOD" = "apt" ]; then
+    print_info "Attempting to install python3-black and python3-ruff using apt..."
+    print_warning "Note: Versions from apt may not be the latest available on PyPI."
+    if sudo apt update && sudo apt install -y python3-black python3-ruff; then
+        print_success "python3-black and python3-ruff installed via apt."
+    else
+        print_error "Failed to install tools via apt. Please install black and ruff manually."
+        exit 1
+    fi
+else
+    print_error "Could not determine an installation method for black and ruff. Please install them manually."
     exit 1
 fi
-PIP_CMD=$(command -v pip3 || command -v pip)
 
-# 2. Install black and ruff
-print_info "Installing/updating black and ruff using $PIP_CMD..."
-$PIP_CMD install --user --upgrade black ruff # --user installs to user's site-packages
+print_success "black and ruff installation step complete."
 
-# Ensure tools installed with --user are in PATH (common issue)
-# This is a simple check; a more robust solution might involve checking Python's sys.path
-if ! command -v black &> /dev/null || ! command -v ruff &> /dev/null; then
-    print_warning "black or ruff not found in PATH after installation."
-    print_warning "This might be because ~/.local/bin is not in your PATH."
-    print_warning "Please add it: export PATH=\"\$HOME/.local/bin:\$PATH\" (add to your ~/.bashrc or ~/.zshrc)"
-    print_warning "Then, try running this script again in a new terminal."
-    # Don't exit immediately, user might have them installed via other means (e.g. system package, pipx)
-    # but it's good to warn. If they aren't found later, the script will fail.
-fi
+# --- Rest of the script (pyproject.toml creation, running tools) remains the same ---
 
-
-# 3. Create pyproject.toml for ruff (if it doesn't exist or is empty/minimal)
+# 2. Create pyproject.toml for ruff
 PYPROJECT_FILE="${PROJECT_ROOT_DIR}/pyproject.toml"
 print_info "Checking for ${PYPROJECT_FILE}..."
-
-# Basic check: if file exists and contains [tool.ruff], assume it's configured.
-# A more sophisticated check could parse TOML, but this is often sufficient for a setup script.
+# ... (pyproject.toml creation logic as before) ...
+# (Ensure you paste the full pyproject.toml creation logic here from the previous script version)
 CREATE_RUFF_CONFIG=true
 if [ -f "$PYPROJECT_FILE" ]; then
     if grep -q "\[tool.ruff\]" "$PYPROJECT_FILE"; then
@@ -74,59 +112,26 @@ fi
 
 if [ "$CREATE_RUFF_CONFIG" = true ]; then
     print_info "Creating/updating ${PYPROJECT_FILE} with ruff configuration..."
-    # Using cat with a HEREDOC to write the TOML content
-    # Append mode (>>) in case other [tool.*] sections exist but not [tool.ruff]
     cat << EOF >> "$PYPROJECT_FILE"
 
 [tool.ruff]
 select = [
-    "E",  # pycodestyle errors
-    "F",  # Pyflakes
-    "W",  # pycodestyle warnings
-    "I",  # isort (import sorting)
-    "UP", # pyupgrade (upgrade syntax to newer Python versions)
-    "B",  # flake8-bugbear (potential bugs/design problems)
-    "C90",# flake8-comprehensions (for more Pythonic comprehensions)
-    "SIM",# flake8-simplify
-    "TID",# flake8-tidy-imports
-    # "PLC", "PLE", "PLR", "PLW", # Pylint conventions, errors, refactoring, warnings (can be noisy, add selectively)
-    "RUF", # Ruff-specific rules
+    "E", "F", "W", "I", "UP", "B", "C90", "SIM", "TID", "RUF",
 ]
-ignore = [
-    "B008", # Do not perform function calls in argument defaults (sometimes intended)
-    "E501", # Line too long (black will handle this, or ruff format) - can be useful to keep for ruff check if not using ruff format
-]
+ignore = ["B008", "E501"]
 line-length = 88
 indent-width = 4
 target-version = "${TARGET_PYTHON_VERSION}"
-# If your project has a src directory:
-# src = ["src"]
-# exclude = [
-#     ".git",
-#     ".venv",
-#     "__pycache__",
-#     "build",
-#     "dist",
-#     "*.egg-info",
-# ]
 
 [tool.ruff.lint]
-# Provide a fix for all supported rules.
 fixable = ["ALL"]
 unfixable = []
-
-# Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.lint.isort]
-# Assuming fluxfce_core is your main first-party library
-known-first-party = ["fluxfce_core", "fluxfce_dependency_setup"] # Add other top-level local modules
+known-first-party = ["fluxfce_core", "fluxfce_dependency_setup"]
 
 [tool.ruff.format]
-# To make ruff's formatter behave like black (or close to it)
-# Use this if you intend to use `ruff format .` as your primary formatter
-# If you only use `black`, this section might not be strictly necessary
-# unless ruff's linting phase needs to know about formatting choices.
 quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
@@ -139,38 +144,51 @@ else
     print_info "Please ensure your existing [tool.ruff] configuration in ${PYPROJECT_FILE} is appropriate."
 fi
 
-# 4. Run black to format code
+# 3. Run black to format code
 print_info "Running black to format Python files..."
+if [ "$INSTALL_METHOD" = "venv" ]; then
+    # shellcheck disable=SC1091
+    source "${PROJECT_ROOT_DIR}/${VENV_NAME}/bin/activate" # Ensure venv is active
+fi
 if command -v black &> /dev/null; then
     black "${PYTHON_FILES[@]}"
     print_success "black formatting complete."
 else
     print_warning "black command not found. Please ensure it's installed and in your PATH."
+    print_warning "If using a virtual environment, make sure it's activated."
 fi
 
 
-# 5. Run ruff to check and autofix
+# 4. Run ruff to check and autofix
 print_info "Running ruff to check and autofix Python files..."
+if [ "$INSTALL_METHOD" = "venv" ]; then
+    # shellcheck disable=SC1091
+    source "${PROJECT_ROOT_DIR}/${VENV_NAME}/bin/activate" # Ensure venv is active
+fi
 if command -v ruff &> /dev/null; then
-    ruff check --fix --exit-non-zero-on-fix "${PYTHON_FILES[@]}" || true # Allow to continue even if some fixes remain after --exit-non-zero-on-fix
+    ruff check --fix --exit-non-zero-on-fix "${PYTHON_FILES[@]}" || true
     print_info "Ruff autofix attempt complete."
     print_info "Running ruff check again to show remaining issues (if any)..."
     ruff check "${PYTHON_FILES[@]}" || print_warning "Ruff found issues. Please review the output above."
     print_success "Ruff check complete."
 else
     print_warning "ruff command not found. Please ensure it's installed and in your PATH."
+    print_warning "If using a virtual environment, make sure it's activated."
 fi
 
-# 6. (Optional) Run ruff format if you want ruff to be the primary formatter
-# print_info "Running ruff to format Python files..."
-# if command -v ruff &> /dev/null; then
-#    ruff format "${PYTHON_FILES[@]}"
-#    print_success "Ruff formatting complete."
-# else
-#    print_warning "ruff command not found."
-# fi
+# Deactivate venv if we sourced it (optional, as script subshell will exit anyway)
+if [ "$INSTALL_METHOD" = "venv" ] && command -v deactivate &> /dev/null ; then
+    # Check if 'deactivate' function exists (specific to some venv activators)
+    print_info "Deactivating virtual environment (within script scope)."
+    deactivate || true # Squelch error if deactivate isn't a function/alias somehow
+fi
+
 
 print_info "---"
 print_info "Formatting and linting script finished."
+# ... (rest of the final messages) ...
 print_info "Review any changes made by black and ruff, and address any remaining ruff warnings."
 print_info "You might want to commit the changes to pyproject.toml and the formatted/linted files."
+if [ "$INSTALL_METHOD" = "venv" ]; then
+    print_info "To run black/ruff manually later, activate the virtual environment: source ${PROJECT_ROOT_DIR}/${VENV_NAME}/bin/activate"
+fi

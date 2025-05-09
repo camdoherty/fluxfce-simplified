@@ -3,11 +3,11 @@
 import logging
 import pathlib
 import sys
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 # Import helpers and exceptions from within the same package
 from . import helpers
-from .exceptions import SystemdError, DependencyError
+from .exceptions import DependencyError, SystemdError
 
 log = logging.getLogger(__name__)
 
@@ -19,22 +19,26 @@ SYSTEMD_USER_DIR = pathlib.Path.home() / ".config" / "systemd" / "user"
 LOGIN_SERVICE_NAME = f"{_APP_NAME}-login.service"
 SCHEDULER_SERVICE_NAME = f"{_APP_NAME}-scheduler.service"
 SCHEDULER_TIMER_NAME = f"{_APP_NAME}-scheduler.timer"
-RESUME_SERVICE_NAME = f"{_APP_NAME}-resume.service" # <-- ADDED
+RESUME_SERVICE_NAME = f"{_APP_NAME}-resume.service"  # <-- ADDED
 
 # Systemd Unit File Paths
 LOGIN_SERVICE_FILE = SYSTEMD_USER_DIR / LOGIN_SERVICE_NAME
 SCHEDULER_SERVICE_FILE = SYSTEMD_USER_DIR / SCHEDULER_SERVICE_NAME
 SCHEDULER_TIMER_FILE = SYSTEMD_USER_DIR / SCHEDULER_TIMER_NAME
-RESUME_SERVICE_FILE = SYSTEMD_USER_DIR / RESUME_SERVICE_NAME # <-- ADDED
+RESUME_SERVICE_FILE = SYSTEMD_USER_DIR / RESUME_SERVICE_NAME  # <-- ADDED
 
 # List of units managed by this module
 MANAGED_UNITS = [
-    SCHEDULER_TIMER_NAME, SCHEDULER_SERVICE_NAME, LOGIN_SERVICE_NAME,
-    RESUME_SERVICE_NAME # <-- ADDED
+    SCHEDULER_TIMER_NAME,
+    SCHEDULER_SERVICE_NAME,
+    LOGIN_SERVICE_NAME,
+    RESUME_SERVICE_NAME,  # <-- ADDED
 ]
 MANAGED_UNIT_FILES = [
-    SCHEDULER_TIMER_FILE, SCHEDULER_SERVICE_FILE, LOGIN_SERVICE_FILE,
-    RESUME_SERVICE_FILE # <-- ADDED
+    SCHEDULER_TIMER_FILE,
+    SCHEDULER_SERVICE_FILE,
+    LOGIN_SERVICE_FILE,
+    RESUME_SERVICE_FILE,  # <-- ADDED
 ]
 
 
@@ -111,37 +115,47 @@ class SystemdManager:
     def __init__(self):
         """Check for systemctl dependency."""
         try:
-            helpers.check_dependencies(['systemctl'])
+            helpers.check_dependencies(["systemctl"])
         except DependencyError as e:
             raise SystemdError(f"Cannot initialize SystemdManager: {e}") from e
 
-    def _run_systemctl(self, args: List[str], check_errors: bool = True) -> Tuple[int, str, str]:
+    def _run_systemctl(
+        self, args: List[str], check_errors: bool = True
+    ) -> Tuple[int, str, str]:
         """Runs a systemctl --user command."""
         # This method remains unchanged
-        cmd = ['systemctl', '--user'] + args
+        cmd = ["systemctl", "--user"] + args
         try:
             code, stdout, stderr = helpers.run_command(cmd, check=False)
             if code != 0 and check_errors:
-                log.error(f"systemctl --user {' '.join(args)} failed (code {code}): {stderr}")
+                log.error(
+                    f"systemctl --user {' '.join(args)} failed (code {code}): {stderr}"
+                )
             return code, stdout, stderr
         except FileNotFoundError:
             raise DependencyError("systemctl command not found.")
         except Exception as e:
             log.exception(f"Unexpected error running systemctl command: {e}")
-            raise SystemdError(f"Unexpected error running systemctl command: {e}") from e
+            raise SystemdError(
+                f"Unexpected error running systemctl command: {e}"
+            ) from e
 
     def check_user_instance(self) -> bool:
         """Checks if the systemd user instance appears active enough."""
         # This method remains unchanged
         log.debug("Checking systemd user instance status...")
-        code, stdout, stderr = self._run_systemctl(['is-system-running'], check_errors=False)
+        code, stdout, stderr = self._run_systemctl(
+            ["is-system-running"], check_errors=False
+        )
         if code == 0:
             status = stdout.strip() if stdout.strip() else "running"
             log.info(f"Systemd user instance status: {status}")
             return True
         elif code == 1:
             status = stdout.strip() if stdout.strip() else "degraded/other"
-            log.warning(f"Systemd user instance status: {status}. Proceeding cautiously.")
+            log.warning(
+                f"Systemd user instance status: {status}. Proceeding cautiously."
+            )
             return True
         else:
             status = stdout.strip() if stdout.strip() else "failed/unknown"
@@ -150,7 +164,9 @@ class SystemdManager:
             raise SystemdError(error_msg)
 
     # --- UPDATED install_units ---
-    def install_units(self, script_path: str, python_executable: Optional[str] = None) -> bool:
+    def install_units(
+        self, script_path: str, python_executable: Optional[str] = None
+    ) -> bool:
         """
         Creates and enables the systemd user units for scheduler, login, and resume.
 
@@ -163,30 +179,39 @@ class SystemdManager:
         """
         log.info("Installing systemd user units...")
         if not self.check_user_instance():
-             raise SystemdError("Systemd user instance check failed. Cannot install units.")
+            raise SystemdError(
+                "Systemd user instance check failed. Cannot install units."
+            )
 
         py_exe = python_executable or sys.executable
         script_abs_path = str(pathlib.Path(script_path).resolve())
 
         # Validate paths
         if not pathlib.Path(py_exe).is_file():
-             raise FileNotFoundError(f"Python executable not found: {py_exe}")
+            raise FileNotFoundError(f"Python executable not found: {py_exe}")
         if not pathlib.Path(script_abs_path).is_file():
-             raise FileNotFoundError(f"Target script not found: {script_abs_path}")
+            raise FileNotFoundError(f"Target script not found: {script_abs_path}")
 
         units_content = {
             LOGIN_SERVICE_FILE: _LOGIN_SERVICE_TEMPLATE.format(
-                app_name=_APP_NAME, python_executable=py_exe, script_path=script_abs_path
+                app_name=_APP_NAME,
+                python_executable=py_exe,
+                script_path=script_abs_path,
             ),
             SCHEDULER_SERVICE_FILE: _SCHEDULER_SERVICE_TEMPLATE.format(
-                app_name=_APP_NAME, python_executable=py_exe, script_path=script_abs_path
+                app_name=_APP_NAME,
+                python_executable=py_exe,
+                script_path=script_abs_path,
             ),
             SCHEDULER_TIMER_FILE: _SCHEDULER_TIMER_TEMPLATE.format(
-                app_name=_APP_NAME, scheduler_service_name=SCHEDULER_SERVICE_NAME,
+                app_name=_APP_NAME,
+                scheduler_service_name=SCHEDULER_SERVICE_NAME,
             ),
             # --- ADD RESUME SERVICE CONTENT ---
             RESUME_SERVICE_FILE: _RESUME_SERVICE_TEMPLATE.format(
-                app_name=_APP_NAME, python_executable=py_exe, script_path=script_abs_path
+                app_name=_APP_NAME,
+                python_executable=py_exe,
+                script_path=script_abs_path,
             ),
             # --- END ADD ---
         }
@@ -195,46 +220,67 @@ class SystemdManager:
         try:
             SYSTEMD_USER_DIR.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            raise SystemdError(f"Failed to create systemd user directory {SYSTEMD_USER_DIR}: {e}") from e
+            raise SystemdError(
+                f"Failed to create systemd user directory {SYSTEMD_USER_DIR}: {e}"
+            ) from e
 
         # Write unit files
         for file_path, content in units_content.items():
             try:
-                file_path.write_text(content, encoding='utf-8')
+                file_path.write_text(content, encoding="utf-8")
                 log.debug(f"Created systemd unit file: {file_path}")
-            except IOError as e:
-                raise SystemdError(f"Failed to write systemd unit file {file_path}: {e}") from e
+            except OSError as e:
+                raise SystemdError(
+                    f"Failed to write systemd unit file {file_path}: {e}"
+                ) from e
 
         # Reload daemon, enable units
         try:
-            code_reload, _, err_reload = self._run_systemctl(['daemon-reload'])
+            code_reload, _, err_reload = self._run_systemctl(["daemon-reload"])
             if code_reload != 0:
-                 raise SystemdError(f"systemctl daemon-reload failed: {err_reload}")
+                raise SystemdError(f"systemctl daemon-reload failed: {err_reload}")
 
             # Enable and start the timer
-            code_enable_timer, _, err_enable_timer = self._run_systemctl(['enable', '--now', SCHEDULER_TIMER_NAME])
+            code_enable_timer, _, err_enable_timer = self._run_systemctl(
+                ["enable", "--now", SCHEDULER_TIMER_NAME]
+            )
             if code_enable_timer != 0:
-                 raise SystemdError(f"Failed to enable/start {SCHEDULER_TIMER_NAME}: {err_enable_timer}")
+                raise SystemdError(
+                    f"Failed to enable/start {SCHEDULER_TIMER_NAME}: {err_enable_timer}"
+                )
 
             # Enable the login service
-            code_enable_login, _, err_enable_login = self._run_systemctl(['enable', LOGIN_SERVICE_NAME])
+            code_enable_login, _, err_enable_login = self._run_systemctl(
+                ["enable", LOGIN_SERVICE_NAME]
+            )
             if code_enable_login != 0:
-                 raise SystemdError(f"Failed to enable {LOGIN_SERVICE_NAME}: {err_enable_login}")
+                raise SystemdError(
+                    f"Failed to enable {LOGIN_SERVICE_NAME}: {err_enable_login}"
+                )
 
             # --- ADD ENABLE FOR RESUME SERVICE ---
-            code_enable_resume, _, err_enable_resume = self._run_systemctl(['enable', RESUME_SERVICE_NAME])
+            code_enable_resume, _, err_enable_resume = self._run_systemctl(
+                ["enable", RESUME_SERVICE_NAME]
+            )
             if code_enable_resume != 0:
-                 raise SystemdError(f"Failed to enable {RESUME_SERVICE_NAME}: {err_enable_resume}")
+                raise SystemdError(
+                    f"Failed to enable {RESUME_SERVICE_NAME}: {err_enable_resume}"
+                )
             # --- END ADD ---
 
-            log.info("Systemd units (scheduler, login, resume) installed and enabled successfully.")
+            log.info(
+                "Systemd units (scheduler, login, resume) installed and enabled successfully."
+            )
             return True
         except Exception as e:
-            if isinstance(e, (SystemdError, FileNotFoundError)): raise
+            if isinstance(e, (SystemdError, FileNotFoundError)):
+                raise
             log.exception(f"Unexpected error during systemd unit enabling: {e}")
-            raise SystemdError(f"Unexpected error during systemd unit enabling: {e}") from e
-    # --- END UPDATED install_units ---
+            raise SystemdError(
+                f"Unexpected error during systemd unit enabling: {e}"
+            ) from e
 
+    # --- END UPDATED install_units ---
 
     # --- UPDATED remove_units ---
     def remove_units(self) -> bool:
@@ -252,17 +298,26 @@ class SystemdManager:
         try:
             # Stop and disable units first. Use check_errors=False.
             log.debug(f"Disabling/stopping {SCHEDULER_TIMER_NAME}...")
-            code_stop_timer, _, err_stop_timer = self._run_systemctl(['disable', '--now', SCHEDULER_TIMER_NAME], check_errors=False)
-            if code_stop_timer != 0: log.warning(f"Failed to disable/stop {SCHEDULER_TIMER_NAME}...")
+            code_stop_timer, _, err_stop_timer = self._run_systemctl(
+                ["disable", "--now", SCHEDULER_TIMER_NAME], check_errors=False
+            )
+            if code_stop_timer != 0:
+                log.warning(f"Failed to disable/stop {SCHEDULER_TIMER_NAME}...")
 
             log.debug(f"Disabling {LOGIN_SERVICE_NAME}...")
-            code_disable_login, _, err_disable_login = self._run_systemctl(['disable', LOGIN_SERVICE_NAME], check_errors=False)
-            if code_disable_login != 0: log.warning(f"Failed to disable {LOGIN_SERVICE_NAME}...")
+            code_disable_login, _, err_disable_login = self._run_systemctl(
+                ["disable", LOGIN_SERVICE_NAME], check_errors=False
+            )
+            if code_disable_login != 0:
+                log.warning(f"Failed to disable {LOGIN_SERVICE_NAME}...")
 
             # --- ADD DISABLE FOR RESUME SERVICE ---
             log.debug(f"Disabling {RESUME_SERVICE_NAME}...")
-            code_disable_resume, _, err_disable_resume = self._run_systemctl(['disable', RESUME_SERVICE_NAME], check_errors=False)
-            if code_disable_resume != 0: log.warning(f"Failed to disable {RESUME_SERVICE_NAME}...")
+            code_disable_resume, _, err_disable_resume = self._run_systemctl(
+                ["disable", RESUME_SERVICE_NAME], check_errors=False
+            )
+            if code_disable_resume != 0:
+                log.warning(f"Failed to disable {RESUME_SERVICE_NAME}...")
             # --- END ADD ---
 
             # Attempt to remove files
@@ -279,21 +334,29 @@ class SystemdManager:
             # Reload daemon if units existed or we removed files
             if removed_files or units_exist:
                 log.debug("Reloading systemd user daemon...")
-                code_reload, _, err_reload = self._run_systemctl(['daemon-reload'])
+                code_reload, _, err_reload = self._run_systemctl(["daemon-reload"])
                 if code_reload != 0:
-                     log.error(f"systemctl daemon-reload failed: {err_reload}")
-                     overall_success = False
+                    log.error(f"systemctl daemon-reload failed: {err_reload}")
+                    overall_success = False
                 else:
-                     log.debug("Daemon reloaded.")
+                    log.debug("Daemon reloaded.")
 
                 # Use the updated MANAGED_UNITS constant
                 log.debug("Resetting failed state for managed units...")
-                self._run_systemctl(['reset-failed'] + MANAGED_UNITS, check_errors=False)
+                self._run_systemctl(
+                    ["reset-failed"] + MANAGED_UNITS, check_errors=False
+                )
 
-            log.info(f"Systemd unit removal process finished. Success: {overall_success}")
+            log.info(
+                f"Systemd unit removal process finished. Success: {overall_success}"
+            )
             return overall_success
         except Exception as e:
-            if isinstance(e, SystemdError): raise
+            if isinstance(e, SystemdError):
+                raise
             log.exception(f"Unexpected error during systemd unit removal: {e}")
-            raise SystemdError(f"Unexpected error during systemd unit removal: {e}") from e
+            raise SystemdError(
+                f"Unexpected error during systemd unit removal: {e}"
+            ) from e
+
     # --- END UPDATED remove_units ---

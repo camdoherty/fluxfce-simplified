@@ -3,14 +3,16 @@
 import logging
 import math
 from datetime import date, datetime, timedelta, timezone
-from typing import Optional, Dict
+from typing import Dict
 
 # zoneinfo is standard library in Python 3.9+
 try:
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 except ImportError:
     # This is a critical dependency failure if zoneinfo is expected
-    raise ImportError("Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+.")
+    raise ImportError(
+        "Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+."
+    )
 
 # Import custom exceptions from within the same package
 from .exceptions import CalculationError, ValidationError
@@ -19,6 +21,7 @@ log = logging.getLogger(__name__)
 
 
 # --- Internal Sun Calculation Algorithm ---
+
 
 def _noaa_sunrise_sunset(
     *, lat: float, lon: float, target_date: date
@@ -40,23 +43,42 @@ def _noaa_sunrise_sunset(
         CalculationError: If latitude/longitude are out of range, or for
                           polar day/night conditions where calculation fails.
     """
-    log.debug(f"Calculating NOAA sun times for lat={lat}, lon={lon}, date={target_date}")
+    log.debug(
+        f"Calculating NOAA sun times for lat={lat}, lon={lon}, date={target_date}"
+    )
     # Validate latitude/longitude ranges (redundant if called via get_sun_times which validates input strings, but good practice)
     if not (-90 <= lat <= 90):
-        raise CalculationError(f"Invalid latitude for calculation: {lat}. Must be between -90 and 90.")
+        raise CalculationError(
+            f"Invalid latitude for calculation: {lat}. Must be between -90 and 90."
+        )
     if not (-180 <= lon <= 180):
-         raise CalculationError(f"Invalid longitude for calculation: {lon}. Must be between -180 and 180.")
+        raise CalculationError(
+            f"Invalid longitude for calculation: {lon}. Must be between -180 and 180."
+        )
 
-    n = target_date.timetuple().tm_yday # Day of year
-    longitude = lon # Use validated input directly
+    n = target_date.timetuple().tm_yday  # Day of year
+    longitude = lon  # Use validated input directly
 
     # Equation of Time and Declination (approximation)
-    gamma = (2 * math.pi / 365) * (n - 1 + (12 - (longitude / 15)) / 24) # Fractional year
-    eqtime = 229.18 * (0.000075 + 0.001868 * math.cos(gamma) - 0.032077 * math.sin(gamma) \
-                       - 0.014615 * math.cos(2 * gamma) - 0.040849 * math.sin(2 * gamma))
-    decl = 0.006918 - 0.399912 * math.cos(gamma) + 0.070257 * math.sin(gamma) \
-           - 0.006758 * math.cos(2 * gamma) + 0.000907 * math.sin(2 * gamma) \
-           - 0.002697 * math.cos(3 * gamma) + 0.00148 * math.sin(3 * gamma)
+    gamma = (2 * math.pi / 365) * (
+        n - 1 + (12 - (longitude / 15)) / 24
+    )  # Fractional year
+    eqtime = 229.18 * (
+        0.000075
+        + 0.001868 * math.cos(gamma)
+        - 0.032077 * math.sin(gamma)
+        - 0.014615 * math.cos(2 * gamma)
+        - 0.040849 * math.sin(2 * gamma)
+    )
+    decl = (
+        0.006918
+        - 0.399912 * math.cos(gamma)
+        + 0.070257 * math.sin(gamma)
+        - 0.006758 * math.cos(2 * gamma)
+        + 0.000907 * math.sin(2 * gamma)
+        - 0.002697 * math.cos(3 * gamma)
+        + 0.00148 * math.sin(3 * gamma)
+    )
 
     # Hour Angle Calculation
     lat_rad = math.radians(lat)
@@ -65,37 +87,50 @@ def _noaa_sunrise_sunset(
     cos_zenith = math.cos(math.radians(90.833))
     try:
         # Argument for arccos to find hour angle
-        cos_h_arg = (cos_zenith - math.sin(lat_rad) * math.sin(decl)) / (math.cos(lat_rad) * math.cos(decl))
+        cos_h_arg = (cos_zenith - math.sin(lat_rad) * math.sin(decl)) / (
+            math.cos(lat_rad) * math.cos(decl)
+        )
     except ZeroDivisionError:
         # This can happen near the poles if cos(decl) is near zero
-        raise CalculationError("Division by zero encountered during hour angle calculation (likely near poles).")
+        raise CalculationError(
+            "Division by zero encountered during hour angle calculation (likely near poles)."
+        )
 
     # Check for polar day/night conditions
     if cos_h_arg > 1.0:
         # Sun never rises (polar night)
-        raise CalculationError(f"Sun never rises on {target_date} at lat {lat} (polar night).")
+        raise CalculationError(
+            f"Sun never rises on {target_date} at lat {lat} (polar night)."
+        )
     if cos_h_arg < -1.0:
         # Sun never sets (polar day)
-        raise CalculationError(f"Sun never sets on {target_date} at lat {lat} (polar day).")
+        raise CalculationError(
+            f"Sun never sets on {target_date} at lat {lat} (polar day)."
+        )
 
     try:
-        ha_rad = math.acos(cos_h_arg) # Hour angle in radians
-        ha_minutes = 4 * math.degrees(ha_rad) # Convert hour angle to minutes (15 deg/hour * 4 min/deg)
+        ha_rad = math.acos(cos_h_arg)  # Hour angle in radians
+        ha_minutes = 4 * math.degrees(
+            ha_rad
+        )  # Convert hour angle to minutes (15 deg/hour * 4 min/deg)
     except ValueError as e:
         # Should not happen due to checks above, but safeguard
         raise CalculationError(f"Error calculating arccos for hour angle: {e}") from e
 
     # Solar noon (in minutes from UTC midnight)
-    solar_noon_utc_min = 720 - 4 * longitude - eqtime # 720 = 12 * 60
+    solar_noon_utc_min = 720 - 4 * longitude - eqtime  # 720 = 12 * 60
 
     sunrise_utc_min = solar_noon_utc_min - ha_minutes
     sunset_utc_min = solar_noon_utc_min + ha_minutes
 
-    log.debug(f"Calculated UTC times (minutes from midnight): sunrise={sunrise_utc_min:.2f}, sunset={sunset_utc_min:.2f}")
+    log.debug(
+        f"Calculated UTC times (minutes from midnight): sunrise={sunrise_utc_min:.2f}, sunset={sunset_utc_min:.2f}"
+    )
     return sunrise_utc_min, sunset_utc_min
 
 
 # --- Public API for Sun Times ---
+
 
 def get_sun_times(
     lat: float, lon: float, target_date: date, tz_name: str
@@ -118,13 +153,15 @@ def get_sun_times(
         CalculationError: If the underlying NOAA calculation fails (e.g., invalid
                           lat/lon passed internally, polar day/night).
     """
-    log.debug(f"Getting sun times for lat={lat}, lon={lon}, date={target_date}, timezone={tz_name}")
+    log.debug(
+        f"Getting sun times for lat={lat}, lon={lon}, date={target_date}, timezone={tz_name}"
+    )
     try:
         tz_info = ZoneInfo(tz_name)
     except ZoneInfoNotFoundError:
         log.error(f"Invalid or unknown IANA Timezone Name: '{tz_name}'")
         raise ValidationError(f"Invalid or unknown IANA Timezone Name: '{tz_name}'")
-    except Exception as e: # Catch other potential zoneinfo errors
+    except Exception as e:  # Catch other potential zoneinfo errors
         log.error(f"Error loading timezone '{tz_name}': {e}")
         raise ValidationError(f"Error loading timezone '{tz_name}': {e}") from e
 
@@ -136,11 +173,13 @@ def get_sun_times(
     except CalculationError as e:
         # Propagate calculation errors (like polar day/night)
         log.error(f"Sun time calculation failed: {e}")
-        raise # Re-raise the specific CalculationError
+        raise  # Re-raise the specific CalculationError
 
     # Convert minutes from UTC midnight to datetime objects
     # Create a UTC midnight datetime for the target date
-    utc_midnight = datetime(target_date.year, target_date.month, target_date.day, tzinfo=timezone.utc)
+    utc_midnight = datetime(
+        target_date.year, target_date.month, target_date.day, tzinfo=timezone.utc
+    )
 
     # Add the calculated minutes to get the UTC event times
     sunrise_utc_dt = utc_midnight + timedelta(minutes=sunrise_min)
@@ -152,8 +191,14 @@ def get_sun_times(
         sunset_local = sunset_utc_dt.astimezone(tz_info)
     except Exception as e:
         # Handle potential errors during timezone conversion (less likely)
-        log.exception(f"Failed to convert calculated UTC times to timezone '{tz_name}': {e}")
-        raise CalculationError(f"Failed timezone conversion for '{tz_name}': {e}") from e
+        log.exception(
+            f"Failed to convert calculated UTC times to timezone '{tz_name}': {e}"
+        )
+        raise CalculationError(
+            f"Failed timezone conversion for '{tz_name}': {e}"
+        ) from e
 
-    log.debug(f"Calculated local times: sunrise={sunrise_local.isoformat()}, sunset={sunset_local.isoformat()}")
+    log.debug(
+        f"Calculated local times: sunrise={sunrise_local.isoformat()}, sunset={sunset_local.isoformat()}"
+    )
     return {"sunrise": sunrise_local, "sunset": sunset_local}

@@ -1,27 +1,33 @@
 # ~/dev/fluxfce-simplified/fluxfce_core/helpers.py
 
+import logging
 import os
 import pathlib
-import logging
 import re
 import shutil
 import subprocess
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 try:
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 except ImportError:
-    raise ImportError("Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+.")
+    raise ImportError(
+        "Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+."
+    )
 # Import custom exceptions from within the same package
-from .exceptions import DependencyError, ValidationError, FluxFceError
+from .exceptions import DependencyError, FluxFceError, ValidationError
 
 # Setup a logger specific to this module for internal debugging
 log = logging.getLogger(__name__)
 
 # --- Command Execution ---
 
+
 def run_command(
-    cmd_list: List[str], check: bool = False, capture: bool = True, input_str: Optional[str] = None
+    cmd_list: List[str],
+    check: bool = False,
+    capture: bool = True,
+    input_str: Optional[str] = None,
 ) -> Tuple[int, str, str]:
     """
     Runs an external command and returns its status, stdout, and stderr.
@@ -58,34 +64,47 @@ def run_command(
             stdout=stdout_pipe,
             stderr=stderr_pipe,
             text=True,
-            encoding='utf-8'
+            encoding="utf-8",
         )
         stdout = process.stdout.strip() if process.stdout and capture else ""
         stderr = process.stderr.strip() if process.stderr and capture else ""
         log.debug(f"Command '{cmd_list[0]}' finished with code {process.returncode}")
-        if stdout and capture: log.debug(f"stdout: {stdout[:200]}...") # Log truncated stdout
-        if stderr and capture: log.debug(f"stderr: {stderr[:200]}...") # Log truncated stderr
+        if stdout and capture:
+            log.debug(f"stdout: {stdout[:200]}...")  # Log truncated stdout
+        if stderr and capture:
+            log.debug(f"stderr: {stderr[:200]}...")  # Log truncated stderr
         return process.returncode, stdout, stderr
     except FileNotFoundError as e:
         # This specific error is often critical and worth propagating
         log.error(f"Command not found: {cmd_list[0]} - {e}")
-        raise FileNotFoundError(f"Required command '{cmd_list[0]}' not found in PATH.") from e
+        raise FileNotFoundError(
+            f"Required command '{cmd_list[0]}' not found in PATH."
+        ) from e
     except subprocess.CalledProcessError as e:
         # Log details if check=True caused the exception
         # The caller should handle this if check=True was intentional
         stdout = e.stdout.strip() if e.stdout and capture else ""
         stderr = e.stderr.strip() if e.stderr and capture else ""
-        log.warning(f"Command failed with exit code {e.returncode}: {' '.join(cmd_list)}")
-        if stdout: log.warning(f"stdout: {stdout[:200]}...")
-        if stderr: log.warning(f"stderr: {stderr[:200]}...")
-        raise # Re-raise the original exception if check=True
+        log.warning(
+            f"Command failed with exit code {e.returncode}: {' '.join(cmd_list)}"
+        )
+        if stdout:
+            log.warning(f"stdout: {stdout[:200]}...")
+        if stderr:
+            log.warning(f"stderr: {stderr[:200]}...")
+        raise  # Re-raise the original exception if check=True
     except Exception as e:
-        log.exception(f"An unexpected error occurred running command: {' '.join(cmd_list)} - {e}")
+        log.exception(
+            f"An unexpected error occurred running command: {' '.join(cmd_list)} - {e}"
+        )
         # Wrap unexpected errors in our base exception type
-        raise FluxFceError(f"Unexpected error running command '{cmd_list[0]}': {e}") from e
+        raise FluxFceError(
+            f"Unexpected error running command '{cmd_list[0]}': {e}"
+        ) from e
 
 
 # --- Dependency Checks ---
+
 
 def check_dependencies(deps: List[str]) -> bool:
     """
@@ -103,16 +122,19 @@ def check_dependencies(deps: List[str]) -> bool:
     log.debug(f"Checking for dependencies: {', '.join(deps)}")
     missing = []
     for dep in deps:
-        if shutil.which(dep) is None: # shutil.which returns None if not found
+        if shutil.which(dep) is None:  # shutil.which returns None if not found
             missing.append(dep)
 
     if missing:
-        error_msg = f"Missing required command(s): {', '.join(missing)}. Please install them."
+        error_msg = (
+            f"Missing required command(s): {', '.join(missing)}. Please install them."
+        )
         log.error(error_msg)
         raise DependencyError(error_msg)
 
     log.debug(f"All dependencies checked successfully: {', '.join(deps)}")
     return True
+
 
 def check_atd_service() -> bool:
     """
@@ -128,20 +150,26 @@ def check_atd_service() -> bool:
     """
     log.debug("Checking if atd service is active...")
     # Ensure systemctl exists first
-    check_dependencies(['systemctl'])
+    check_dependencies(["systemctl"])
 
     try:
         # Check system service first
-        code_sys, _, err_sys = run_command(['systemctl', 'is-active', '--quiet', 'atd.service'])
+        code_sys, _, err_sys = run_command(
+            ["systemctl", "is-active", "--quiet", "atd.service"]
+        )
         # --quiet: return code 0 for active, non-zero otherwise (usually 3 for inactive)
 
         if code_sys == 0:
             log.debug("System 'atd' service reported as active.")
             return True
 
-        log.debug(f"System 'atd' not active (code: {code_sys}). Checking user service...")
+        log.debug(
+            f"System 'atd' not active (code: {code_sys}). Checking user service..."
+        )
         # Check user service as fallback (less common for atd)
-        code_user, _, err_user = run_command(['systemctl', '--user', 'is-active', '--quiet', 'atd.service'])
+        code_user, _, err_user = run_command(
+            ["systemctl", "--user", "is-active", "--quiet", "atd.service"]
+        )
 
         if code_user == 0:
             log.debug("User 'atd' service reported as active.")
@@ -153,12 +181,17 @@ def check_atd_service() -> bool:
         # Use FluxFceError as it's a runtime state issue, not a missing binary
         raise FluxFceError(error_msg)
 
-    except FileNotFoundError: # Should be caught by check_dependencies, but belts and suspenders
-        raise DependencyError("The 'systemctl' command was not found, cannot check 'atd' status.")
+    except (
+        FileNotFoundError
+    ):  # Should be caught by check_dependencies, but belts and suspenders
+        raise DependencyError(
+            "The 'systemctl' command was not found, cannot check 'atd' status."
+        )
     except Exception as e:
         # Catch potential errors from run_command itself or re-raised CalledProcessError
         log.exception(f"Failed to check 'atd' status: {e}")
         raise FluxFceError(f"Failed to check 'atd' status: {e}") from e
+
 
 # --- Detect timezone ---
 def detect_system_timezone() -> Optional[str]:
@@ -188,20 +221,24 @@ def detect_system_timezone() -> Optional[str]:
             return False
 
     # 1. Check TZ environment variable first (overrides system settings)
-    tz_env = os.environ.get('TZ')
+    tz_env = os.environ.get("TZ")
     if tz_env:
-        tz_env_cleaned = tz_env.lstrip(':')
-        log.debug(f"Found TZ environment variable: '{tz_env}' (cleaned: '{tz_env_cleaned}')")
+        tz_env_cleaned = tz_env.lstrip(":")
+        log.debug(
+            f"Found TZ environment variable: '{tz_env}' (cleaned: '{tz_env_cleaned}')"
+        )
         if _is_valid_timezone(tz_env_cleaned):
             log.info(f"Using timezone from TZ environment variable: {tz_env_cleaned}")
             return tz_env_cleaned
         else:
-            log.warning(f"TZ environment variable ('{tz_env}') is set but not a valid timezone name.")
+            log.warning(
+                f"TZ environment variable ('{tz_env}') is set but not a valid timezone name."
+            )
 
     # 2. Try timedatectl (systemd)
     try:
-        check_dependencies(['timedatectl']) # Check if command exists
-        cmd = ['timedatectl', 'show', '--property=Timezone', '--value']
+        check_dependencies(["timedatectl"])  # Check if command exists
+        cmd = ["timedatectl", "show", "--property=Timezone", "--value"]
         code, stdout, stderr = run_command(cmd)
         if code == 0 and stdout:
             tz_name = stdout.strip()
@@ -212,63 +249,79 @@ def detect_system_timezone() -> Optional[str]:
             else:
                 log.warning(f"timedatectl returned invalid timezone: '{tz_name}'")
         else:
-             log.debug(f"timedatectl command failed or returned empty (code: {code})")
+            log.debug(f"timedatectl command failed or returned empty (code: {code})")
     except DependencyError:
         log.debug("timedatectl command not found, skipping.")
     except Exception as e:
         log.warning(f"Error running timedatectl: {e}")
 
     # 3. Try /etc/localtime symlink
-    localtime_path = pathlib.Path('/etc/localtime')
+    localtime_path = pathlib.Path("/etc/localtime")
     if localtime_path.is_symlink():
         try:
-            target = localtime_path.readlink() # Read the target path object
-            zoneinfo_dir = pathlib.Path('/usr/share/zoneinfo')
+            target = localtime_path.readlink()  # Read the target path object
+            zoneinfo_dir = pathlib.Path("/usr/share/zoneinfo")
             if not target.is_absolute():
-                 target = (localtime_path.parent / target).resolve()
-            if zoneinfo_dir in target.parents or str(target).startswith(str(zoneinfo_dir)):
-                 try:
-                     tz_name = str(target.relative_to(zoneinfo_dir))
-                     log.debug(f"/etc/localtime points to '{target}', relative zoneinfo path: '{tz_name}'")
-                     if _is_valid_timezone(tz_name):
-                         log.info(f"Detected timezone via /etc/localtime symlink: {tz_name}")
-                         return tz_name
-                     else:
-                         log.warning(f"Extracted path '{tz_name}' from /etc/localtime link is not a valid timezone.")
-                 except ValueError:
-                      log.warning(f"Could not determine relative path for localtime target '{target}' within '{zoneinfo_dir}'.")
+                target = (localtime_path.parent / target).resolve()
+            if zoneinfo_dir in target.parents or str(target).startswith(
+                str(zoneinfo_dir)
+            ):
+                try:
+                    tz_name = str(target.relative_to(zoneinfo_dir))
+                    log.debug(
+                        f"/etc/localtime points to '{target}', relative zoneinfo path: '{tz_name}'"
+                    )
+                    if _is_valid_timezone(tz_name):
+                        log.info(
+                            f"Detected timezone via /etc/localtime symlink: {tz_name}"
+                        )
+                        return tz_name
+                    else:
+                        log.warning(
+                            f"Extracted path '{tz_name}' from /etc/localtime link is not a valid timezone."
+                        )
+                except ValueError:
+                    log.warning(
+                        f"Could not determine relative path for localtime target '{target}' within '{zoneinfo_dir}'."
+                    )
             else:
-                 log.debug(f"/etc/localtime target '{target}' is outside standard zoneinfo directory.")
+                log.debug(
+                    f"/etc/localtime target '{target}' is outside standard zoneinfo directory."
+                )
         except OSError as e:
             log.warning(f"Could not read /etc/localtime symlink: {e}")
         except Exception as e:
             log.exception(f"Unexpected error processing /etc/localtime link: {e}")
 
     # 4. Try /etc/timezone file (Debian/Ubuntu)
-    timezone_path = pathlib.Path('/etc/timezone')
+    timezone_path = pathlib.Path("/etc/timezone")
     if timezone_path.is_file():
         try:
-            content = timezone_path.read_text(encoding='utf-8').strip()
+            content = timezone_path.read_text(encoding="utf-8").strip()
             if content:
-                 tz_name = content.splitlines()[0].split()[0]
-                 log.debug(f"Read from /etc/timezone: '{tz_name}'")
-                 if _is_valid_timezone(tz_name):
-                     log.info(f"Detected timezone via /etc/timezone file: {tz_name}")
-                     return tz_name
-                 else:
-                      log.warning(f"Content of /etc/timezone ('{tz_name}') is not a valid timezone.")
+                tz_name = content.splitlines()[0].split()[0]
+                log.debug(f"Read from /etc/timezone: '{tz_name}'")
+                if _is_valid_timezone(tz_name):
+                    log.info(f"Detected timezone via /etc/timezone file: {tz_name}")
+                    return tz_name
+                else:
+                    log.warning(
+                        f"Content of /etc/timezone ('{tz_name}') is not a valid timezone."
+                    )
             else:
-                 log.debug("/etc/timezone file is empty.")
-        except IOError as e:
+                log.debug("/etc/timezone file is empty.")
+        except OSError as e:
             log.warning(f"Could not read /etc/timezone: {e}")
         except Exception as e:
-             log.exception(f"Unexpected error processing /etc/timezone: {e}")
+            log.exception(f"Unexpected error processing /etc/timezone: {e}")
 
     # 5. Fallback - Could not detect
     log.warning("Failed to detect system timezone using common methods.")
     return None
 
+
 # --- Data Validation ---
+
 
 def latlon_str_to_float(coord_str: str) -> float:
     """
@@ -284,31 +337,42 @@ def latlon_str_to_float(coord_str: str) -> float:
         ValidationError: If the format is invalid or the value is out of range.
     """
     if not isinstance(coord_str, str):
-        raise ValidationError(f"Invalid input type for coordinate: expected string, got {type(coord_str)}")
+        raise ValidationError(
+            f"Invalid input type for coordinate: expected string, got {type(coord_str)}"
+        )
 
     coord_strip = coord_str.strip().upper()
-    match = re.match(r'^(\d+(\.\d+)?)([NSEW])$', coord_strip)
+    match = re.match(r"^(\d+(\.\d+)?)([NSEW])$", coord_strip)
     if not match:
-        raise ValidationError(f"Invalid coordinate format: '{coord_str}'. Use format like '43.65N' or '79.38W'.")
+        raise ValidationError(
+            f"Invalid coordinate format: '{coord_str}'. Use format like '43.65N' or '79.38W'."
+        )
 
     try:
         value = float(match.group(1))
     except ValueError:
-         # Should not happen with the regex, but safeguard
-         raise ValidationError(f"Could not convert value part '{match.group(1)}' to float.")
+        # Should not happen with the regex, but safeguard
+        raise ValidationError(
+            f"Could not convert value part '{match.group(1)}' to float."
+        )
 
     direction = match.group(3)
-    if direction in ('S', 'W'):
+    if direction in ("S", "W"):
         value = -value
 
     # Range check
-    if direction in ('N', 'S') and not (-90 <= value <= 90):
-         raise ValidationError(f"Latitude out of range (-90 to 90): {value} ({coord_str})")
-    if direction in ('E', 'W') and not (-180 <= value <= 180):
-         raise ValidationError(f"Longitude out of range (-180 to 180): {value} ({coord_str})")
+    if direction in ("N", "S") and not (-90 <= value <= 90):
+        raise ValidationError(
+            f"Latitude out of range (-90 to 90): {value} ({coord_str})"
+        )
+    if direction in ("E", "W") and not (-180 <= value <= 180):
+        raise ValidationError(
+            f"Longitude out of range (-180 to 180): {value} ({coord_str})"
+        )
 
     log.debug(f"Converted coordinate '{coord_str}' to {value}")
     return value
+
 
 def hex_to_rgba_doubles(hex_color: str) -> List[float]:
     """
@@ -325,24 +389,30 @@ def hex_to_rgba_doubles(hex_color: str) -> List[float]:
         ValidationError: If the hex string format is invalid.
     """
     if not isinstance(hex_color, str):
-        raise ValidationError(f"Invalid input type for hex color: expected string, got {type(hex_color)}")
+        raise ValidationError(
+            f"Invalid input type for hex color: expected string, got {type(hex_color)}"
+        )
 
-    hex_strip = hex_color.lstrip('#')
-    if not re.match(r'^[0-9a-fA-F]{6}$', hex_strip):
+    hex_strip = hex_color.lstrip("#")
+    if not re.match(r"^[0-9a-fA-F]{6}$", hex_strip):
         raise ValidationError(f"Invalid 6-digit hex color format: '{hex_color}'")
 
     try:
         r = int(hex_strip[0:2], 16) / 255.0
         g = int(hex_strip[2:4], 16) / 255.0
         b = int(hex_strip[4:6], 16) / 255.0
-        rgba = [r, g, b, 1.0] # R, G, B, Alpha
+        rgba = [r, g, b, 1.0]  # R, G, B, Alpha
         log.debug(f"Converted hex '{hex_color}' to RGBA {rgba}")
         return rgba
     except ValueError as e:
         # Should not happen with regex, but safeguard
-        raise ValidationError(f"Could not convert hex components to integer: '{hex_color}' - {e}") from e
+        raise ValidationError(
+            f"Could not convert hex components to integer: '{hex_color}' - {e}"
+        ) from e
+
 
 # --- Logging Setup (Simplified for Core Library) ---
+
 
 def setup_library_logging(level=logging.WARNING):
     """
@@ -353,17 +423,20 @@ def setup_library_logging(level=logging.WARNING):
     debugging is explicitly enabled.
     """
     # Configure logging for the entire 'fluxfce_core' package namespace
-    package_logger = logging.getLogger('fluxfce_core')
+    package_logger = logging.getLogger("fluxfce_core")
 
     # Avoid adding multiple handlers if called repeatedly
     if not package_logger.handlers:
         handler = logging.StreamHandler()
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
         handler.setFormatter(formatter)
         package_logger.addHandler(handler)
 
     package_logger.setLevel(level)
     log.info(f"fluxfce_core logging configured to level: {logging.getLevelName(level)}")
+
 
 # Example of how to potentially enable debug logging from outside:
 # import logging
