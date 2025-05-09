@@ -20,7 +20,16 @@ from .api import (
 
 # --- Make core constants accessible ---
 from .config import CONFIG_DIR, CONFIG_FILE
-from .exceptions import *
+from .exceptions import (
+    CalculationError,
+    ConfigError,
+    DependencyError,
+    FluxFceError,
+    SchedulerError,
+    SystemdError,
+    ValidationError,
+    XfceError,
+)
 
 # --- Make selected helper functions accessible ---
 from .helpers import detect_system_timezone

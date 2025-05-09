@@ -3,10 +3,16 @@
 import configparser
 import logging
 import pathlib
+
+# typing.Dict and typing.Optional will be flagged by ruff (UP006/UP007/UP035)
+# and can be changed to dict and | None (or just Optional if Python < 3.10 for return only)
+# For now, keeping them as per original file for direct comparison of state file removal.
 from typing import Dict, Optional
 
 # Import custom exceptions from within the same package
-from .exceptions import ConfigError, ValidationError
+from .exceptions import (
+    ConfigError,
+)  # ValidationError is not used in this file after changes
 
 log = logging.getLogger(__name__)
 
@@ -14,44 +20,47 @@ log = logging.getLogger(__name__)
 APP_NAME = "fluxfce"
 CONFIG_DIR = pathlib.Path.home() / ".config" / APP_NAME
 CONFIG_FILE = CONFIG_DIR / "config.ini"
+# STATE_FILE constant removed
 
 # Default configuration values
-DEFAULT_CONFIG: Dict[str, Dict[str, str]] = {
-    "Location": {
-        "LATITUDE": "43.65N",  # Toronto Latitude (Example)
-        "LONGITUDE": "79.38W",  # Toronto Longitude (Example)
-        "TIMEZONE": "America/Toronto",  # IANA Timezone Name
-    },
-    "Themes": {
-        "LIGHT_THEME": "Arc-Lighter",
-        "DARK_THEME": "Materia-dark-compact",
-    },
-    "BackgroundDay": {
-        "BG_HEX1": "ADD8E6",
-        "BG_HEX2": "87CEEB",
-        "BG_DIR": "v",
-    },
-    "ScreenDay": {
-        "XSCT_TEMP": "6500",  # Typically reset, but provide a default value
-        "XSCT_BRIGHT": "1.0",  # Typically reset, but provide a default value
-    },
-    "BackgroundNight": {
-        "BG_HEX1": "1E1E2E",
-        "BG_HEX2": "000000",
-        "BG_DIR": "v",
-    },
-    "ScreenNight": {
-        "XSCT_TEMP": "4500",
-        "XSCT_BRIGHT": "0.85",
-    },
-}
+DEFAULT_CONFIG: Dict[str, Dict[str, str]] = (
+    {  # Ruff will suggest: dict[str, dict[str, str]]
+        "Location": {
+            "LATITUDE": "43.65N",  # Toronto Latitude (Example)
+            "LONGITUDE": "79.38W",  # Toronto Longitude (Example)
+            "TIMEZONE": "America/Toronto",  # IANA Timezone Name
+        },
+        "Themes": {
+            "LIGHT_THEME": "Arc-Lighter",
+            "DARK_THEME": "Materia-dark-compact",
+        },
+        "BackgroundDay": {
+            "BG_HEX1": "ADD8E6",
+            "BG_HEX2": "87CEEB",
+            "BG_DIR": "v",
+        },
+        "ScreenDay": {
+            "XSCT_TEMP": "6500",  # Typically reset, but provide a default value
+            "XSCT_BRIGHT": "1.0",  # Typically reset, but provide a default value
+        },
+        "BackgroundNight": {
+            "BG_HEX1": "1E1E2E",
+            "BG_HEX2": "000000",
+            "BG_DIR": "v",
+        },
+        "ScreenNight": {
+            "XSCT_TEMP": "4500",
+            "XSCT_BRIGHT": "0.85",
+        },
+    }
+)
 
 
 # --- Configuration Manager ---
 
 
 class ConfigManager:
-    """Handles reading/writing config.ini and state file."""
+    """Handles reading/writing config.ini."""  # Docstring updated: "and state file" removed
 
     def __init__(self):
         """Ensures the configuration directory exists."""
@@ -85,7 +94,9 @@ class ConfigManager:
                 raise ConfigError(
                     f"Could not parse config file {file_path}: {e}"
                 ) from e
-            except OSError as e:
+            except (
+                OSError
+            ) as e:  # Changed from IOError to OSError for broader catch, though read_text uses OSError
                 raise ConfigError(f"Could not read config file {file_path}: {e}") from e
         else:
             log.debug(f"Config file {file_path} not found. Returning empty parser.")
@@ -101,7 +112,7 @@ class ConfigManager:
                 parser.write(f)
             log.debug(f"Saved configuration to {file_path}")
             return True
-        except OSError as e:
+        except OSError as e:  # Changed from IOError to OSError for broader catch
             raise ConfigError(
                 f"Failed to write configuration to {file_path}: {e}"
             ) from e
@@ -166,8 +177,8 @@ class ConfigManager:
         config: configparser.ConfigParser,
         section: str,
         key: str,
-        default: Optional[str] = None,
-    ) -> Optional[str]:
+        default: Optional[str] = None,  # Ruff will suggest: str | None = None
+    ) -> Optional[str]:  # Ruff will suggest: str | None
         """Gets a setting value from a ConfigParser object."""
         # Uses configparser's fallback mechanism
         return config.get(section, key, fallback=default)
@@ -186,68 +197,3 @@ class ConfigManager:
             config.add_section(section)
         log.debug(f"Setting [{section}] {key} = '{value}' in config object")
         config.set(section, key, value)
-
-    def read_state(self) -> Optional[str]:
-        """
-        Reads the last known auto-applied state ('day' or 'night') from the state file.
-
-        Returns:
-            'day', 'night', or None if the file doesn't exist, is empty,
-            contains invalid data, or cannot be read.
-        """
-        if STATE_FILE.exists():
-            try:
-                # Handle empty state file
-                if STATE_FILE.stat().st_size == 0:
-                    log.warning(f"State file {STATE_FILE} is empty. Returning None.")
-                    return None
-
-                state = STATE_FILE.read_text(encoding="utf-8").strip()
-                if state in ("day", "night"):
-                    log.debug(f"Read state: {state}")
-                    return state
-                else:
-                    log.warning(
-                        f"Invalid content '{state}' in state file {STATE_FILE}. Attempting to remove."
-                    )
-                    # --- Attempt to remove invalid state file ---
-                    try:
-                        STATE_FILE.unlink()
-                        log.debug(f"Removed invalid state file: {STATE_FILE}")
-                    except OSError as e:
-                        log.warning(
-                            f"Could not remove invalid state file {STATE_FILE}: {e}"
-                        )
-                    # --- End Attempt ---
-                    return None  # Return None as state is invalid/unknown
-            except OSError as e:
-                # Raise specific error for read issues
-                raise ConfigError(f"Could not read state file {STATE_FILE}: {e}") from e
-        else:
-            log.debug("State file not found.")
-            return None
-
-    def write_state(self, state: str) -> bool:
-        """
-        Writes the current auto-applied state ('day' or 'night') to the state file.
-
-        Args:
-            state: The state to write ('day' or 'night').
-
-        Returns:
-            True on success.
-
-        Raises:
-            ValidationError: If the provided state is not 'day' or 'night'.
-            ConfigError: If the state file cannot be written.
-        """
-        if state not in ("day", "night"):
-            raise ValidationError(
-                f"Attempted to write invalid state: {state}. Must be 'day' or 'night'."
-            )
-        try:
-            STATE_FILE.write_text(state, encoding="utf-8")
-            log.info(f"State successfully written to {STATE_FILE}: {state}")
-            return True
-        except OSError as e:
-            raise ConfigError(f"Failed to write state file {STATE_FILE}: {e}") from e
