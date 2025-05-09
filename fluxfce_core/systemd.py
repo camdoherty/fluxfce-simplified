@@ -44,7 +44,7 @@ MANAGED_UNIT_FILES = [
 _SCHEDULER_SERVICE_TEMPLATE = """\
 [Unit]
 Description={app_name} - Daily Job Scheduler
-After=timers.target network-online.target
+After=timers.target
 Wants=network-online.target
 [Service]
 Type=oneshot

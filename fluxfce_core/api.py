@@ -111,13 +111,6 @@ def _apply_settings_for_mode(mode: str) -> bool:
         log.error(f"API: Failed to set screen settings: {e}")
         screen_ok = False
 
-    # Update state file only if theme applied successfully
-    if theme_ok:
-        try:
-            _cfg_mgr.write_state(mode)
-        except (exc.ConfigError, exc.ValidationError) as e: # Catch validation error too
-             log.error(f"API: Failed to write state file after applying mode '{mode}': {e}")
-
     # Only return True if critical theme step succeeded. BG/Screen are optional.
     # Return theme_ok # Decide if partial success is okay
     if not theme_ok: # If theme failed, it's a failure
@@ -130,7 +123,6 @@ def _apply_settings_for_mode(mode: str) -> bool:
 
 
 # --- NEW Public API Functions for Config ---
-
 def get_current_config() -> configparser.ConfigParser:
     """
     Public API function to load the current configuration using ConfigManager.
@@ -512,17 +504,7 @@ def get_status() -> Dict[str, Any]:
     except exc.FluxFceError as e:
          status['config']['error'] = str(e)
 
-    # 2. Get State (Remove or keep based on whether Step 3 of prior plan was done)
-    # Example if keeping for now:
-    try:
-        status['state']['last_auto_applied'] = _cfg_mgr.read_state()
-    except exc.ConfigError as e:
-        # Only log error, don't populate dict['error'] for state
-        log.warning(f"API: Error reading state file for status: {e}")
-        status['state']['last_auto_applied'] = "Error" # Indicate error in value
-
-
-    # 3. Calculate Sun Times & Current Period (Keep as before)
+    # 2. Calculate Sun Times & Current Period (Keep as before)
     lat_str = status['config'].get('latitude')
     lon_str = status['config'].get('longitude')
     tz_name = status['config'].get('timezone')
@@ -548,7 +530,7 @@ def get_status() -> Dict[str, Any]:
         status['sun_times']['error'] = "Location/Timezone not configured or invalid."; status['current_period'] = 'unknown'
 
 
-    # 4. Get Schedule Status (Keep as before)
+    # 3. Get Schedule Status (Keep as before)
     try:
         scheduler = sched.AtdScheduler()
         status['schedule']['jobs'] = scheduler.list_scheduled_transitions()
@@ -559,7 +541,7 @@ def get_status() -> Dict[str, Any]:
          log.exception("API: Unexpected error getting schedule status."); status['schedule']['error'] = f"Unexpected: {e}"; status['schedule']['enabled'] = False
 
 
-    # 5. Get Systemd Status (FINAL CORRECTED KEY GENERATION)
+    # 4. Get Systemd Status (FINAL CORRECTED KEY GENERATION)
     try:
         sysd_mgr = sysd.SystemdManager()
         for unit_name in sysd.MANAGED_UNITS:

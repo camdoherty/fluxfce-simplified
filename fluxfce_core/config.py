@@ -14,8 +14,6 @@ log = logging.getLogger(__name__)
 APP_NAME = "fluxfce"
 CONFIG_DIR = pathlib.Path.home() / ".config" / APP_NAME
 CONFIG_FILE = CONFIG_DIR / "config.ini"
-# PRESETS_FILE removed
-STATE_FILE = CONFIG_DIR / "state" # Tracks last *auto* applied state ('day'/'night')
 
 # Default configuration values
 DEFAULT_CONFIG: Dict[str, Dict[str, str]] = {
@@ -25,8 +23,8 @@ DEFAULT_CONFIG: Dict[str, Dict[str, str]] = {
         'TIMEZONE': "America/Toronto", # IANA Timezone Name
     },
     'Themes': {
-        'LIGHT_THEME': "Adwaita",
-        'DARK_THEME': "Adwaita-dark",
+        'LIGHT_THEME': "Arc-Lighter",
+        'DARK_THEME': "Materia-dark-compact",
     },
     'BackgroundDay': {
         'BG_HEX1': "ADD8E6",
