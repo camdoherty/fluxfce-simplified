@@ -1,1 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+htmlcov/
+.coverage
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+env/
+venv/
+.venv/
+.venv-*/
+*.env
+.env.*
+*.log
 todo
+# Ruff cache
+.ruff_cache/
+
+# Editor and OS specific
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+setup_format_lint.sh output (if you decide to ignore it)
+output.log
