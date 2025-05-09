@@ -7,7 +7,7 @@ import pathlib
 # typing.Dict and typing.Optional will be flagged by ruff (UP006/UP007/UP035)
 # and can be changed to dict and | None (or just Optional if Python < 3.10 for return only)
 # For now, keeping them as per original file for direct comparison of state file removal.
-from typing import Dict, Optional
+from typing import Optional
 
 # Import custom exceptions from within the same package
 from .exceptions import (
@@ -23,7 +23,7 @@ CONFIG_FILE = CONFIG_DIR / "config.ini"
 # STATE_FILE constant removed
 
 # Default configuration values
-DEFAULT_CONFIG: Dict[str, Dict[str, str]] = (
+DEFAULT_CONFIG: dict[str, dict[str, str]] = (
     {  # Ruff will suggest: dict[str, dict[str, str]]
         "Location": {
             "LATITUDE": "43.65N",  # Toronto Latitude (Example)

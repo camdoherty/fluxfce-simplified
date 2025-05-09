@@ -3,7 +3,6 @@
 import logging
 import math
 from datetime import date, datetime, timedelta, timezone
-from typing import Dict
 
 # zoneinfo is standard library in Python 3.9+
 try:
@@ -134,7 +133,7 @@ def _noaa_sunrise_sunset(
 
 def get_sun_times(
     lat: float, lon: float, target_date: date, tz_name: str
-) -> Dict[str, datetime]:
+) -> dict[str, datetime]:
     """
     Calculates sunrise and sunset times, returning them as timezone-aware datetimes.
 

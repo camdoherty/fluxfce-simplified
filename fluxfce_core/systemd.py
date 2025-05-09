@@ -3,7 +3,7 @@
 import logging
 import pathlib
 import sys
-from typing import List, Optional, Tuple
+from typing import Optional
 
 # Import helpers and exceptions from within the same package
 from . import helpers
@@ -120,11 +120,11 @@ class SystemdManager:
             raise SystemdError(f"Cannot initialize SystemdManager: {e}") from e
 
     def _run_systemctl(
-        self, args: List[str], check_errors: bool = True
-    ) -> Tuple[int, str, str]:
+        self, args: list[str], check_errors: bool = True
+    ) -> tuple[int, str, str]:
         """Runs a systemctl --user command."""
         # This method remains unchanged
-        cmd = ["systemctl", "--user"] + args
+        cmd = ["systemctl", "--user", *args]
         try:
             code, stdout, stderr = helpers.run_command(cmd, check=False)
             if code != 0 and check_errors:
@@ -344,7 +344,7 @@ class SystemdManager:
                 # Use the updated MANAGED_UNITS constant
                 log.debug("Resetting failed state for managed units...")
                 self._run_systemctl(
-                    ["reset-failed"] + MANAGED_UNITS, check_errors=False
+                    ["reset-failed", *MANAGED_UNITS], check_errors=False
                 )
 
             log.info(

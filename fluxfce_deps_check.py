@@ -4,7 +4,7 @@ import os
 import shutil
 import subprocess
 import sys
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 MIN_PYTHON_VERSION = (3, 9)
 DEPS_TO_CHECK = {
@@ -55,8 +55,8 @@ def print_success(message: str):
 
 
 def run_command(
-    command: List[str], check_exit_code: bool = True, capture_output: bool = False
-) -> Tuple[int, Optional[str], Optional[str]]:
+    command: list[str], check_exit_code: bool = True, capture_output: bool = False
+) -> tuple[int, Optional[str], Optional[str]]:
     """Runs a system command."""
     try:
         process = subprocess.run(
@@ -150,7 +150,7 @@ def check_command_installed(cmd_name: str, friendly_name: str) -> bool:
         return False
 
 
-def check_service_status(service_name: str, friendly_name: str) -> Tuple[bool, bool]:
+def check_service_status(service_name: str, friendly_name: str) -> tuple[bool, bool]:
     """
     Checks if a systemd service is active and enabled.
     Returns: (is_active, is_enabled)
@@ -299,8 +299,8 @@ def main():
             sys.exit(1)
 
     all_deps_ok = True
-    missing_packages_to_install: Dict[str, str] = {}  # pkg_name: friendly_name
-    services_to_manage: List[Tuple[str, str, bool]] = (
+    missing_packages_to_install: dict[str, str] = {}  # pkg_name: friendly_name
+    services_to_manage: list[tuple[str, str, bool]] = (
         []
     )  # service_name, friendly_name, needs_enable
 

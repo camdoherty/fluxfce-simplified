@@ -4,7 +4,7 @@ import logging
 import re
 import subprocess
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 # Import helpers and exceptions from within the same package
 from . import helpers
@@ -31,7 +31,7 @@ class XfceHandler:
             # Make dependency issues during init fatal for this handler
             raise XfceError(f"Cannot initialize XfceHandler: {e}") from e
 
-    def find_desktop_paths(self) -> List[str]:
+    def find_desktop_paths(self) -> list[str]:
         """
         Finds relevant XFCE desktop property base paths for background settings.
 
@@ -192,7 +192,7 @@ class XfceHandler:
                 f"An unexpected error occurred while setting GTK theme: {e}"
             ) from e
 
-    def get_background_settings(self) -> Dict[str, Any]:
+    def get_background_settings(self) -> dict[str, Any]:
         """
         Gets background settings (style, colors) from the first detected path.
 
@@ -235,7 +235,7 @@ class XfceHandler:
                     f"Unexpected error getting property {prop_path}: {e}"
                 ) from e
 
-        def _parse_rgba_output(prop_name: str) -> Optional[List[float]]:
+        def _parse_rgba_output(prop_name: str) -> Optional[list[float]]:
             """Parses multi-line xfconf-query output for rgba arrays."""
             prop_path = f"{base_path}/{prop_name}"
             cmd = ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", prop_path]
@@ -268,7 +268,7 @@ class XfceHandler:
                 )
                 return None
 
-        def _floats_to_hex(rgba_floats: Optional[List[float]]) -> Optional[str]:
+        def _floats_to_hex(rgba_floats: Optional[list[float]]) -> Optional[str]:
             """Converts list of [r,g,b,a] floats (0.0-1.0) to 6-digit Hex."""
             if not rgba_floats or len(rgba_floats) != 4:
                 return None
@@ -407,7 +407,6 @@ class XfceHandler:
         overall_success = True
         for base_path in paths:
             log.debug(f"Applying background settings to path: {base_path}")
-            path_success = True
 
             try:
                 # Set styles using --create (-n) and type (-t)
@@ -487,7 +486,7 @@ class XfceHandler:
                 ]
 
                 # Execute commands for this path
-                all_cmds = style_cmds + [rgba1_cmd, rgba2_cmd, reset_img_cmd]
+                all_cmds = [*style_cmds, rgba1_cmd, rgba2_cmd, reset_img_cmd]
                 for cmd in all_cmds:
                     code, _, stderr = helpers.run_command(
                         cmd, check=False
@@ -508,7 +507,6 @@ class XfceHandler:
                             log.error(
                                 f"Failed command for {base_path}: {' '.join(cmd)} - {stderr}"
                             )
-                            path_success = False
                             overall_success = False  # Mark overall failure
                             # Continue to next command/path? Or break? Let's continue for now.
 
@@ -517,7 +515,6 @@ class XfceHandler:
                 log.exception(
                     f"Error applying background settings to path {base_path}: {e}"
                 )
-                path_success = False
                 overall_success = False
 
         # Reload desktop once after trying all paths
@@ -532,7 +529,7 @@ class XfceHandler:
         log.info("Background settings applied successfully to all detected paths.")
         return True
 
-    def get_screen_settings(self) -> Dict[str, Any]:
+    def get_screen_settings(self) -> dict[str, Any]:
         """
         Gets screen temperature and brightness via xsct. Attempts different parsing
         strategies based on common xsct output formats.

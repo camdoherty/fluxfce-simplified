@@ -3,7 +3,7 @@
 import configparser  # Ensure this is imported
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 # Import core components and exceptions
 from . import config as cfg
@@ -555,7 +555,7 @@ def set_default_from_current(mode: str) -> bool:
         ) from e
 
 
-def get_status() -> Dict[str, Any]:
+def get_status() -> dict[str, Any]:
     """
     Retrieves the current status of fluxfce.
 
@@ -567,7 +567,7 @@ def get_status() -> Dict[str, Any]:
         even if some components fail. Errors within components are noted in the dict.
     """
     log.debug("API: Getting status...")
-    status: Dict[str, Any] = {
+    status: dict[str, Any] = {
         "config": {},
         "state": {
             "last_auto_applied": None

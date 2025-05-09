@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """
 srss.py - Calculate and print sunrise/sunset times for N days.
@@ -13,8 +12,8 @@ Usage:
 """
 
 import argparse
-import sys
 import logging
+import sys
 import time
 from datetime import date, timedelta
 
@@ -22,11 +21,11 @@ from datetime import date, timedelta
 # This assumes srss.py is run from the project root (fluxfce-simplified)
 # or that fluxfce_core is installed in the Python environment.
 try:
+    from fluxfce_core import CONFIG_FILE  # Import config path constant
     from fluxfce_core import api as fluxfce_api
-    from fluxfce_core import helpers as fluxfce_helpers
-    from fluxfce_core import sun as fluxfce_sun # Direct access needed
     from fluxfce_core import exceptions as fluxfce_exc
-    from fluxfce_core import CONFIG_FILE # Import config path constant
+    from fluxfce_core import helpers as fluxfce_helpers
+    from fluxfce_core import sun as fluxfce_sun  # Direct access needed
 except ImportError as e:
     print(f"Error: Failed to import fluxfce_core: {e}", file=sys.stderr)
     print("Please run this script from the project root directory", file=sys.stderr)
@@ -123,7 +122,7 @@ def main():
         duration = end_time - start_time
 
         log.info("-" * 30)
-        log.info(f"Calculation complete.")
+        log.info("Calculation complete.")
         log.info(f"Total output lines: {output_count}")
         if calculation_errors > 0:
              log.warning(f"Dates with calculation errors (e.g., polar day/night): {calculation_errors}")

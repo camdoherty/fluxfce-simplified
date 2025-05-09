@@ -5,7 +5,6 @@ import pathlib
 import re
 import shlex
 from datetime import datetime, timedelta
-from typing import Dict, List
 
 # zoneinfo needed for datetime comparison within scheduling logic
 try:
@@ -58,7 +57,7 @@ class AtdScheduler:
                 f"Cannot initialize AtdScheduler: 'atd' service check failed: {e}"
             ) from e
 
-    def _get_pending_jobs(self) -> List[Dict[str, str]]:
+    def _get_pending_jobs(self) -> list[dict[str, str]]:
         """
         Gets list of pending 'at' jobs created by fluxfce.
 
@@ -285,7 +284,7 @@ class AtdScheduler:
             )
 
         # 4. Collect potential future events for the next N days
-        potential_events: Dict[datetime, str] = {}
+        potential_events: dict[datetime, str] = {}
         for i in range(days_to_schedule):  # <-- Loop N days
             target_date = today + timedelta(days=i)
             try:
@@ -376,7 +375,7 @@ class AtdScheduler:
 
         return scheduled_count > 0
 
-    def list_scheduled_transitions(self) -> List[Dict[str, str]]:
+    def list_scheduled_transitions(self) -> list[dict[str, str]]:
         """
         Returns a list of pending fluxfce transition jobs.
 

@@ -1,29 +1,3 @@
-INFO: pipx found. Will use pipx to install black and ruff.
-INFO: Installing/updating black and ruff using pipx...
-'black' already seems to be installed. Not modifying existing installation in
-'/home/cad/.local/share/pipx/venvs/black'. Pass '--force' to force
-installation.
-'ruff' already seems to be installed. Not modifying existing installation in
-'/home/cad/.local/share/pipx/venvs/ruff'. Pass '--force' to force
-installation.
-/home/cad/.local/bin is already in PATH.
-
-⚠️  All pipx binary directories have been added to PATH. If you are sure you
-want to proceed, try again with the '--force' flag.
-
-Otherwise pipx is ready to go! ✨ 🌟 ✨
-WARNING: If this is the first time running 'pipx ensurepath', you may need to open a new terminal or source your shell profile.
-SUCCESS: black and ruff installation step complete.
-INFO: Checking for /home/cad/dev/fluxfce-simplified/pyproject.toml...
-INFO: Found existing [tool.ruff] configuration in /home/cad/dev/fluxfce-simplified/pyproject.toml. Skipping creation.
-INFO: Please ensure your existing [tool.ruff] configuration in /home/cad/dev/fluxfce-simplified/pyproject.toml is appropriate.
-INFO: Running black to format Python files...
-reformatted /home/cad/dev/fluxfce-simplified/fluxfce_core/__init__.py
-
-All done! ✨ 🍰 ✨
-1 file reformatted, 10 files left unchanged.
-SUCCESS: black formatting complete.
-INFO: Running ruff to check and autofix Python files...
 fluxfce_cli.py:217:5: C901 `main` is too complex (36 > 10)
     |
 216 | # --- Main Execution Logic ---
@@ -32,57 +6,6 @@ fluxfce_cli.py:217:5: C901 `main` is too complex (36 > 10)
 218 |     parser = argparse.ArgumentParser(
 219 |         description="fluxfce (CLI): Manage XFCE appearance via sunrise/sunset timing.",
     |
-
-fluxfce_core/__init__.py:46:11: RUF022 `__all__` is not sorted
-   |
-45 |   # Optionally define __all__ to control wildcard imports and document public interface
-46 |   __all__ = [
-   |  ___________^
-47 | |     # Constants
-48 | |     "CONFIG_DIR",
-49 | |     "CONFIG_FILE",
-50 | |     "SCHEDULER_TIMER_NAME",
-51 | |     "SCHEDULER_SERVICE_NAME",
-52 | |     "LOGIN_SERVICE_NAME",
-53 | |     "RESUME_SERVICE_NAME",  # <--- ADD THIS LINE
-54 | |     # Exceptions
-55 | |     "FluxFceError",
-56 | |     "ConfigError",
-57 | |     "CalculationError",
-58 | |     "XfceError",
-59 | |     "SchedulerError",
-60 | |     "SystemdError",
-61 | |     "DependencyError",
-62 | |     "ValidationError",
-63 | |     # Helper Functions
-64 | |     "detect_system_timezone",
-65 | |     # API Functions
-66 | |     "install_fluxfce",
-67 | |     "uninstall_fluxfce",
-68 | |     "enable_scheduling",
-69 | |     "disable_scheduling",
-70 | |     "apply_manual_mode",
-71 | |     "set_default_from_current",
-72 | |     "get_status",
-73 | |     "save_configuration",
-74 | |     "get_current_config",
-75 | |     "handle_internal_apply",
-76 | |     "handle_schedule_jobs_command",
-77 | |     "handle_run_login_check",
-78 | | ]
-   | |_^ RUF022
-   |
-   = help: Apply an isort-style sorting to `__all__`
-
-fluxfce_core/api.py:6:1: UP035 `typing.Dict` is deprecated, use `dict` instead
-  |
-4 | import logging
-5 | from datetime import datetime
-6 | from typing import Any, Dict, Optional
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-7 |
-8 | # Import core components and exceptions
-  |
 
 fluxfce_core/api.py:22:5: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
    |
@@ -113,81 +36,11 @@ fluxfce_core/api.py:424:5: C901 `set_default_from_current` is too complex (17 > 
 
 fluxfce_core/api.py:558:5: C901 `get_status` is too complex (27 > 10)
     |
-558 | def get_status() -> Dict[str, Any]:
+558 | def get_status() -> dict[str, Any]:
     |     ^^^^^^^^^^ C901
 559 |     """
 560 |     Retrieves the current status of fluxfce.
     |
-
-fluxfce_core/api.py:558:21: UP006 Use `dict` instead of `Dict` for type annotation
-    |
-558 | def get_status() -> Dict[str, Any]:
-    |                     ^^^^ UP006
-559 |     """
-560 |     Retrieves the current status of fluxfce.
-    |
-    = help: Replace with `dict`
-
-fluxfce_core/api.py:570:13: UP006 Use `dict` instead of `Dict` for type annotation
-    |
-568 |     """
-569 |     log.debug("API: Getting status...")
-570 |     status: Dict[str, Any] = {
-    |             ^^^^ UP006
-571 |         "config": {},
-572 |         "state": {
-    |
-    = help: Replace with `dict`
-
-fluxfce_core/config.py:10:1: UP035 `typing.Dict` is deprecated, use `dict` instead
-   |
- 8 | # and can be changed to dict and | None (or just Optional if Python < 3.10 for return only)
- 9 | # For now, keeping them as per original file for direct comparison of state file removal.
-10 | from typing import Dict, Optional
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-11 |
-12 | # Import custom exceptions from within the same package
-   |
-
-fluxfce_core/config.py:26:17: UP006 Use `dict` instead of `Dict` for type annotation
-   |
-25 | # Default configuration values
-26 | DEFAULT_CONFIG: Dict[str, Dict[str, str]] = (
-   |                 ^^^^ UP006
-27 |     {  # Ruff will suggest: dict[str, dict[str, str]]
-28 |         "Location": {
-   |
-   = help: Replace with `dict`
-
-fluxfce_core/config.py:26:27: UP006 Use `dict` instead of `Dict` for type annotation
-   |
-25 | # Default configuration values
-26 | DEFAULT_CONFIG: Dict[str, Dict[str, str]] = (
-   |                           ^^^^ UP006
-27 |     {  # Ruff will suggest: dict[str, dict[str, str]]
-28 |         "Location": {
-   |
-   = help: Replace with `dict`
-
-fluxfce_core/helpers.py:9:1: UP035 `typing.List` is deprecated, use `list` instead
-   |
- 7 | import shutil
- 8 | import subprocess
- 9 | from typing import List, Optional, Tuple
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-10 |
-11 | try:
-   |
-
-fluxfce_core/helpers.py:9:1: UP035 `typing.Tuple` is deprecated, use `tuple` instead
-   |
- 7 | import shutil
- 8 | import subprocess
- 9 | from typing import List, Optional, Tuple
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-10 |
-11 | try:
-   |
 
 fluxfce_core/helpers.py:14:5: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
    |
@@ -201,311 +54,114 @@ fluxfce_core/helpers.py:14:5: B904 Within an `except` clause, raise exceptions w
 18 |   from .exceptions import DependencyError, FluxFceError, ValidationError
    |
 
-fluxfce_core/helpers.py:27:15: UP006 Use `list` instead of `List` for type annotation
-   |
-26 | def run_command(
-27 |     cmd_list: List[str],
-   |               ^^^^ UP006
-28 |     check: bool = False,
-29 |     capture: bool = True,
-   |
-   = help: Replace with `list`
-
-fluxfce_core/helpers.py:31:6: UP006 Use `tuple` instead of `Tuple` for type annotation
-   |
-29 |     capture: bool = True,
-30 |     input_str: Optional[str] = None,
-31 | ) -> Tuple[int, str, str]:
-   |      ^^^^^ UP006
-32 |     """
-33 |     Runs an external command and returns its status, stdout, and stderr.
-   |
-   = help: Replace with `tuple`
-
-fluxfce_core/helpers.py:55:5: F841 Local variable `stdin_pipe` is assigned to but never used
-   |
-53 |     """
-54 |     log.debug(f"Running command: {' '.join(cmd_list)}")
-55 |     stdin_pipe = subprocess.PIPE if input_str is not None else None
-   |     ^^^^^^^^^^ F841
-56 |     stdout_pipe = subprocess.PIPE if capture else None
-57 |     stderr_pipe = subprocess.PIPE if capture else None
-   |
-   = help: Remove assignment to unused variable `stdin_pipe`
-
-fluxfce_core/helpers.py:109:30: UP006 Use `list` instead of `List` for type annotation
+fluxfce_core/helpers.py:186:9: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
     |
-109 | def check_dependencies(deps: List[str]) -> bool:
-    |                              ^^^^ UP006
-110 |     """
-111 |     Checks if required external commands exist in PATH using shutil.which.
-    |
-    = help: Replace with `list`
-
-fluxfce_core/helpers.py:187:9: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-    |
-185 |           FileNotFoundError
-186 |       ):  # Should be caught by check_dependencies, but belts and suspenders
-187 | /         raise DependencyError(
-188 | |             "The 'systemctl' command was not found, cannot check 'atd' status."
-189 | |         )
+184 |           FileNotFoundError
+185 |       ):  # Should be caught by check_dependencies, but belts and suspenders
+186 | /         raise DependencyError(
+187 | |             "The 'systemctl' command was not found, cannot check 'atd' status."
+188 | |         )
     | |_________^ B904
-190 |       except Exception as e:
-191 |           # Catch potential errors from run_command itself or re-raised CalledProcessError
+189 |       except Exception as e:
+190 |           # Catch potential errors from run_command itself or re-raised CalledProcessError
     |
 
-fluxfce_core/helpers.py:197:5: C901 `detect_system_timezone` is too complex (23 > 10)
+fluxfce_core/helpers.py:196:5: C901 `detect_system_timezone` is too complex (23 > 10)
     |
-196 | # --- Detect timezone ---
-197 | def detect_system_timezone() -> Optional[str]:
+195 | # --- Detect timezone ---
+196 | def detect_system_timezone() -> Optional[str]:
     |     ^^^^^^^^^^^^^^^^^^^^^^ C901
-198 |     """
-199 |     Attempts to detect the system's configured IANA timezone name.
+197 |     """
+198 |     Attempts to detect the system's configured IANA timezone name.
     |
 
-fluxfce_core/helpers.py:355:9: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+fluxfce_core/helpers.py:354:9: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
     |
-353 |       except ValueError:
-354 |           # Should not happen with the regex, but safeguard
-355 | /         raise ValidationError(
-356 | |             f"Could not convert value part '{match.group(1)}' to float."
-357 | |         )
+352 |       except ValueError:
+353 |           # Should not happen with the regex, but safeguard
+354 | /         raise ValidationError(
+355 | |             f"Could not convert value part '{match.group(1)}' to float."
+356 | |         )
     | |_________^ B904
-358 |
-359 |       direction = match.group(3)
+357 |
+358 |       direction = match.group(3)
     |
 
-fluxfce_core/helpers.py:377:44: UP006 Use `list` instead of `List` for type annotation
-    |
-377 | def hex_to_rgba_doubles(hex_color: str) -> List[float]:
-    |                                            ^^^^ UP006
-378 |     """
-379 |     Converts a 6-digit hex color string (#RRGGBB or RRGGBB) to RGBA doubles
-    |
-    = help: Replace with `list`
-
-fluxfce_core/scheduler.py:8:1: UP035 `typing.Dict` is deprecated, use `dict` instead
+fluxfce_core/scheduler.py:13:5: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
    |
- 6 | import shlex
- 7 | from datetime import datetime, timedelta
- 8 | from typing import Dict, List
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
- 9 |
-10 | # zoneinfo needed for datetime comparison within scheduling logic
-   |
-
-fluxfce_core/scheduler.py:8:1: UP035 `typing.List` is deprecated, use `list` instead
-   |
- 6 | import shlex
- 7 | from datetime import datetime, timedelta
- 8 | from typing import Dict, List
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
- 9 |
-10 | # zoneinfo needed for datetime comparison within scheduling logic
-   |
-
-fluxfce_core/scheduler.py:14:5: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-   |
-12 |       from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-13 |   except ImportError:
-14 | /     raise ImportError(
-15 | |         "Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+."
-16 | |     )
-   | |_____^ B904
-17 |
-18 |   # Import helpers, sun calculation, and exceptions
-   |
-
-fluxfce_core/scheduler.py:61:9: C901 `_get_pending_jobs` is too complex (14 > 10)
-   |
-59 |             ) from e
-60 |
-61 |     def _get_pending_jobs(self) -> List[Dict[str, str]]:
-   |         ^^^^^^^^^^^^^^^^^ C901
-62 |         """
-63 |         Gets list of pending 'at' jobs created by fluxfce.
-   |
-
-fluxfce_core/scheduler.py:61:36: UP006 Use `list` instead of `List` for type annotation
-   |
-59 |             ) from e
-60 |
-61 |     def _get_pending_jobs(self) -> List[Dict[str, str]]:
-   |                                    ^^^^ UP006
-62 |         """
-63 |         Gets list of pending 'at' jobs created by fluxfce.
-   |
-   = help: Replace with `list`
-
-fluxfce_core/scheduler.py:61:41: UP006 Use `dict` instead of `Dict` for type annotation
-   |
-59 |             ) from e
-60 |
-61 |     def _get_pending_jobs(self) -> List[Dict[str, str]]:
-   |                                         ^^^^ UP006
-62 |         """
-63 |         Gets list of pending 'at' jobs created by fluxfce.
-   |
-   = help: Replace with `dict`
-
-fluxfce_core/scheduler.py:183:9: C901 `schedule_transitions` is too complex (24 > 10)
-    |
-181 |         return all_cleared
-182 |
-183 |     def schedule_transitions(
-    |         ^^^^^^^^^^^^^^^^^^^^ C901
-184 |         self,
-185 |         lat: float,
-    |
-
-fluxfce_core/scheduler.py:237:13: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-    |
-235 |             today = now_local.date()
-236 |         except ZoneInfoNotFoundError:
-237 |             raise ValidationError(f"Invalid Timezone '{tz_name}' during scheduling.")
-    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ B904
-238 |         except Exception as e:
-239 |             raise SchedulerError(
-    |
-
-fluxfce_core/scheduler.py:288:27: UP006 Use `dict` instead of `Dict` for type annotation
-    |
-287 |         # 4. Collect potential future events for the next N days
-288 |         potential_events: Dict[datetime, str] = {}
-    |                           ^^^^ UP006
-289 |         for i in range(days_to_schedule):  # <-- Loop N days
-290 |             target_date = today + timedelta(days=i)
-    |
-    = help: Replace with `dict`
-
-fluxfce_core/scheduler.py:379:45: UP006 Use `list` instead of `List` for type annotation
-    |
-377 |         return scheduled_count > 0
-378 |
-379 |     def list_scheduled_transitions(self) -> List[Dict[str, str]]:
-    |                                             ^^^^ UP006
-380 |         """
-381 |         Returns a list of pending fluxfce transition jobs.
-    |
-    = help: Replace with `list`
-
-fluxfce_core/scheduler.py:379:50: UP006 Use `dict` instead of `Dict` for type annotation
-    |
-377 |         return scheduled_count > 0
-378 |
-379 |     def list_scheduled_transitions(self) -> List[Dict[str, str]]:
-    |                                                  ^^^^ UP006
-380 |         """
-381 |         Returns a list of pending fluxfce transition jobs.
-    |
-    = help: Replace with `dict`
-
-fluxfce_core/sun.py:6:1: UP035 `typing.Dict` is deprecated, use `dict` instead
-  |
-4 | import math
-5 | from datetime import date, datetime, timedelta, timezone
-6 | from typing import Dict
-  | ^^^^^^^^^^^^^^^^^^^^^^^ UP035
-7 |
-8 | # zoneinfo is standard library in Python 3.9+
-  |
-
-fluxfce_core/sun.py:13:5: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-   |
-11 |   except ImportError:
-12 |       # This is a critical dependency failure if zoneinfo is expected
+11 |       from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+12 |   except ImportError:
 13 | /     raise ImportError(
 14 | |         "Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+."
 15 | |     )
    | |_____^ B904
 16 |
-17 |   # Import custom exceptions from within the same package
+17 |   # Import helpers, sun calculation, and exceptions
    |
 
-fluxfce_core/sun.py:95:9: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+fluxfce_core/scheduler.py:60:9: C901 `_get_pending_jobs` is too complex (14 > 10)
    |
-93 |       except ZeroDivisionError:
-94 |           # This can happen near the poles if cos(decl) is near zero
-95 | /         raise CalculationError(
-96 | |             "Division by zero encountered during hour angle calculation (likely near poles)."
-97 | |         )
+58 |             ) from e
+59 |
+60 |     def _get_pending_jobs(self) -> list[dict[str, str]]:
+   |         ^^^^^^^^^^^^^^^^^ C901
+61 |         """
+62 |         Gets list of pending 'at' jobs created by fluxfce.
+   |
+
+fluxfce_core/scheduler.py:182:9: C901 `schedule_transitions` is too complex (24 > 10)
+    |
+180 |         return all_cleared
+181 |
+182 |     def schedule_transitions(
+    |         ^^^^^^^^^^^^^^^^^^^^ C901
+183 |         self,
+184 |         lat: float,
+    |
+
+fluxfce_core/scheduler.py:236:13: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+    |
+234 |             today = now_local.date()
+235 |         except ZoneInfoNotFoundError:
+236 |             raise ValidationError(f"Invalid Timezone '{tz_name}' during scheduling.")
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ B904
+237 |         except Exception as e:
+238 |             raise SchedulerError(
+    |
+
+fluxfce_core/sun.py:12:5: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+   |
+10 |   except ImportError:
+11 |       # This is a critical dependency failure if zoneinfo is expected
+12 | /     raise ImportError(
+13 | |         "Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+."
+14 | |     )
+   | |_____^ B904
+15 |
+16 |   # Import custom exceptions from within the same package
+   |
+
+fluxfce_core/sun.py:94:9: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+   |
+92 |       except ZeroDivisionError:
+93 |           # This can happen near the poles if cos(decl) is near zero
+94 | /         raise CalculationError(
+95 | |             "Division by zero encountered during hour angle calculation (likely near poles)."
+96 | |         )
    | |_________^ B904
-98 |
-99 |       # Check for polar day/night conditions
+97 |
+98 |       # Check for polar day/night conditions
    |
 
-fluxfce_core/sun.py:137:6: UP006 Use `dict` instead of `Dict` for type annotation
+fluxfce_core/sun.py:162:9: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
     |
-135 | def get_sun_times(
-136 |     lat: float, lon: float, target_date: date, tz_name: str
-137 | ) -> Dict[str, datetime]:
-    |      ^^^^ UP006
-138 |     """
-139 |     Calculates sunrise and sunset times, returning them as timezone-aware datetimes.
-    |
-    = help: Replace with `dict`
-
-fluxfce_core/sun.py:163:9: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-    |
-161 |     except ZoneInfoNotFoundError:
-162 |         log.error(f"Invalid or unknown IANA Timezone Name: '{tz_name}'")
-163 |         raise ValidationError(f"Invalid or unknown IANA Timezone Name: '{tz_name}'")
+160 |     except ZoneInfoNotFoundError:
+161 |         log.error(f"Invalid or unknown IANA Timezone Name: '{tz_name}'")
+162 |         raise ValidationError(f"Invalid or unknown IANA Timezone Name: '{tz_name}'")
     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ B904
-164 |     except Exception as e:  # Catch other potential zoneinfo errors
-165 |         log.error(f"Error loading timezone '{tz_name}': {e}")
+163 |     except Exception as e:  # Catch other potential zoneinfo errors
+164 |         log.error(f"Error loading timezone '{tz_name}': {e}")
     |
-
-fluxfce_core/systemd.py:6:1: UP035 `typing.List` is deprecated, use `list` instead
-  |
-4 | import pathlib
-5 | import sys
-6 | from typing import List, Optional, Tuple
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-7 |
-8 | # Import helpers and exceptions from within the same package
-  |
-
-fluxfce_core/systemd.py:6:1: UP035 `typing.Tuple` is deprecated, use `tuple` instead
-  |
-4 | import pathlib
-5 | import sys
-6 | from typing import List, Optional, Tuple
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-7 |
-8 | # Import helpers and exceptions from within the same package
-  |
-
-fluxfce_core/systemd.py:123:21: UP006 Use `list` instead of `List` for type annotation
-    |
-122 |     def _run_systemctl(
-123 |         self, args: List[str], check_errors: bool = True
-    |                     ^^^^ UP006
-124 |     ) -> Tuple[int, str, str]:
-125 |         """Runs a systemctl --user command."""
-    |
-    = help: Replace with `list`
-
-fluxfce_core/systemd.py:124:10: UP006 Use `tuple` instead of `Tuple` for type annotation
-    |
-122 |     def _run_systemctl(
-123 |         self, args: List[str], check_errors: bool = True
-124 |     ) -> Tuple[int, str, str]:
-    |          ^^^^^ UP006
-125 |         """Runs a systemctl --user command."""
-126 |         # This method remains unchanged
-    |
-    = help: Replace with `tuple`
-
-fluxfce_core/systemd.py:127:15: RUF005 Consider `["systemctl", "--user", *args]` instead of concatenation
-    |
-125 |         """Runs a systemctl --user command."""
-126 |         # This method remains unchanged
-127 |         cmd = ["systemctl", "--user"] + args
-    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ RUF005
-128 |         try:
-129 |             code, stdout, stderr = helpers.run_command(cmd, check=False)
-    |
-    = help: Replace with `["systemctl", "--user", *args]`
 
 fluxfce_core/systemd.py:136:13: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
     |
@@ -535,99 +191,25 @@ fluxfce_core/systemd.py:286:9: C901 `remove_units` is too complex (11 > 10)
 288 |         Stops, disables, and removes all managed systemd user units.
     |
 
-fluxfce_core/systemd.py:347:21: RUF005 Consider `["reset-failed", *MANAGED_UNITS]` instead of concatenation
-    |
-345 |                 log.debug("Resetting failed state for managed units...")
-346 |                 self._run_systemctl(
-347 |                     ["reset-failed"] + MANAGED_UNITS, check_errors=False
-    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ RUF005
-348 |                 )
-    |
-    = help: Replace with `["reset-failed", *MANAGED_UNITS]`
-
-fluxfce_core/xfce.py:7:1: UP035 `typing.Dict` is deprecated, use `dict` instead
-  |
-5 | import subprocess
-6 | import time
-7 | from typing import Any, Dict, List, Optional
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-8 |
-9 | # Import helpers and exceptions from within the same package
-  |
-
-fluxfce_core/xfce.py:7:1: UP035 `typing.List` is deprecated, use `list` instead
-  |
-5 | import subprocess
-6 | import time
-7 | from typing import Any, Dict, List, Optional
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-8 |
-9 | # Import helpers and exceptions from within the same package
-  |
-
 fluxfce_core/xfce.py:34:9: C901 `find_desktop_paths` is too complex (11 > 10)
    |
 32 |             raise XfceError(f"Cannot initialize XfceHandler: {e}") from e
 33 |
-34 |     def find_desktop_paths(self) -> List[str]:
+34 |     def find_desktop_paths(self) -> list[str]:
    |         ^^^^^^^^^^^^^^^^^^ C901
 35 |         """
 36 |         Finds relevant XFCE desktop property base paths for background settings.
    |
 
-fluxfce_core/xfce.py:34:37: UP006 Use `list` instead of `List` for type annotation
-   |
-32 |             raise XfceError(f"Cannot initialize XfceHandler: {e}") from e
-33 |
-34 |     def find_desktop_paths(self) -> List[str]:
-   |                                     ^^^^ UP006
-35 |         """
-36 |         Finds relevant XFCE desktop property base paths for background settings.
-   |
-   = help: Replace with `list`
-
 fluxfce_core/xfce.py:195:9: C901 `get_background_settings` is too complex (24 > 10)
     |
 193 |             ) from e
 194 |
-195 |     def get_background_settings(self) -> Dict[str, Any]:
+195 |     def get_background_settings(self) -> dict[str, Any]:
     |         ^^^^^^^^^^^^^^^^^^^^^^^ C901
 196 |         """
 197 |         Gets background settings (style, colors) from the first detected path.
     |
-
-fluxfce_core/xfce.py:195:42: UP006 Use `dict` instead of `Dict` for type annotation
-    |
-193 |             ) from e
-194 |
-195 |     def get_background_settings(self) -> Dict[str, Any]:
-    |                                          ^^^^ UP006
-196 |         """
-197 |         Gets background settings (style, colors) from the first detected path.
-    |
-    = help: Replace with `dict`
-
-fluxfce_core/xfce.py:238:60: UP006 Use `list` instead of `List` for type annotation
-    |
-236 |                 ) from e
-237 |
-238 |         def _parse_rgba_output(prop_name: str) -> Optional[List[float]]:
-    |                                                            ^^^^ UP006
-239 |             """Parses multi-line xfconf-query output for rgba arrays."""
-240 |             prop_path = f"{base_path}/{prop_name}"
-    |
-    = help: Replace with `list`
-
-fluxfce_core/xfce.py:271:50: UP006 Use `list` instead of `List` for type annotation
-    |
-269 |                 return None
-270 |
-271 |         def _floats_to_hex(rgba_floats: Optional[List[float]]) -> Optional[str]:
-    |                                                  ^^^^ UP006
-272 |             """Converts list of [r,g,b,a] floats (0.0-1.0) to 6-digit Hex."""
-273 |             if not rgba_floats or len(rgba_floats) != 4:
-    |
-    = help: Replace with `list`
 
 fluxfce_core/xfce.py:351:9: C901 `set_background` is too complex (19 > 10)
     |
@@ -639,106 +221,15 @@ fluxfce_core/xfce.py:351:9: C901 `set_background` is too complex (19 > 10)
 353 |         Sets the background to solid or gradient color across all detected paths.
     |
 
-fluxfce_core/xfce.py:490:28: RUF005 Consider `[*style_cmds, rgba1_cmd, rgba2_cmd, reset_img_cmd]` instead of concatenation
+fluxfce_core/xfce.py:532:9: C901 `get_screen_settings` is too complex (13 > 10)
     |
-489 |                 # Execute commands for this path
-490 |                 all_cmds = style_cmds + [rgba1_cmd, rgba2_cmd, reset_img_cmd]
-    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ RUF005
-491 |                 for cmd in all_cmds:
-492 |                     code, _, stderr = helpers.run_command(
-    |
-    = help: Replace with `[*style_cmds, rgba1_cmd, rgba2_cmd, reset_img_cmd]`
-
-fluxfce_core/xfce.py:520:17: F841 Local variable `path_success` is assigned to but never used
-    |
-518 |                     f"Error applying background settings to path {base_path}: {e}"
-519 |                 )
-520 |                 path_success = False
-    |                 ^^^^^^^^^^^^ F841
-521 |                 overall_success = False
-    |
-    = help: Remove assignment to unused variable `path_success`
-
-fluxfce_core/xfce.py:535:9: C901 `get_screen_settings` is too complex (13 > 10)
-    |
-533 |         return True
-534 |
-535 |     def get_screen_settings(self) -> Dict[str, Any]:
+530 |         return True
+531 |
+532 |     def get_screen_settings(self) -> dict[str, Any]:
     |         ^^^^^^^^^^^^^^^^^^^ C901
-536 |         """
-537 |         Gets screen temperature and brightness via xsct. Attempts different parsing
+533 |         """
+534 |         Gets screen temperature and brightness via xsct. Attempts different parsing
     |
-
-fluxfce_core/xfce.py:535:38: UP006 Use `dict` instead of `Dict` for type annotation
-    |
-533 |         return True
-534 |
-535 |     def get_screen_settings(self) -> Dict[str, Any]:
-    |                                      ^^^^ UP006
-536 |         """
-537 |         Gets screen temperature and brightness via xsct. Attempts different parsing
-    |
-    = help: Replace with `dict`
-
-fluxfce_deps_check.py:7:1: UP035 `typing.Dict` is deprecated, use `dict` instead
-  |
-5 | import subprocess
-6 | import sys
-7 | from typing import Dict, List, Optional, Tuple
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-8 |
-9 | MIN_PYTHON_VERSION = (3, 9)
-  |
-
-fluxfce_deps_check.py:7:1: UP035 `typing.List` is deprecated, use `list` instead
-  |
-5 | import subprocess
-6 | import sys
-7 | from typing import Dict, List, Optional, Tuple
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-8 |
-9 | MIN_PYTHON_VERSION = (3, 9)
-  |
-
-fluxfce_deps_check.py:7:1: UP035 `typing.Tuple` is deprecated, use `tuple` instead
-  |
-5 | import subprocess
-6 | import sys
-7 | from typing import Dict, List, Optional, Tuple
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-8 |
-9 | MIN_PYTHON_VERSION = (3, 9)
-  |
-
-fluxfce_deps_check.py:58:14: UP006 Use `list` instead of `List` for type annotation
-   |
-57 | def run_command(
-58 |     command: List[str], check_exit_code: bool = True, capture_output: bool = False
-   |              ^^^^ UP006
-59 | ) -> Tuple[int, Optional[str], Optional[str]]:
-60 |     """Runs a system command."""
-   |
-   = help: Replace with `list`
-
-fluxfce_deps_check.py:59:6: UP006 Use `tuple` instead of `Tuple` for type annotation
-   |
-57 | def run_command(
-58 |     command: List[str], check_exit_code: bool = True, capture_output: bool = False
-59 | ) -> Tuple[int, Optional[str], Optional[str]]:
-   |      ^^^^^ UP006
-60 |     """Runs a system command."""
-61 |     try:
-   |
-   = help: Replace with `tuple`
-
-fluxfce_deps_check.py:153:68: UP006 Use `tuple` instead of `Tuple` for type annotation
-    |
-153 | def check_service_status(service_name: str, friendly_name: str) -> Tuple[bool, bool]:
-    |                                                                    ^^^^^ UP006
-154 |     """
-155 |     Checks if a systemd service is active and enabled.
-    |
-    = help: Replace with `tuple`
 
 fluxfce_deps_check.py:290:5: C901 `main` is too complex (22 > 10)
     |
@@ -748,803 +239,13 @@ fluxfce_deps_check.py:290:5: C901 `main` is too complex (22 > 10)
 292 |     print_info("=" * 60)
     |
 
-fluxfce_deps_check.py:302:34: UP006 Use `dict` instead of `Dict` for type annotation
-    |
-301 |     all_deps_ok = True
-302 |     missing_packages_to_install: Dict[str, str] = {}  # pkg_name: friendly_name
-    |                                  ^^^^ UP006
-303 |     services_to_manage: List[Tuple[str, str, bool]] = (
-304 |         []
-    |
-    = help: Replace with `dict`
-
-fluxfce_deps_check.py:303:25: UP006 Use `list` instead of `List` for type annotation
-    |
-301 |     all_deps_ok = True
-302 |     missing_packages_to_install: Dict[str, str] = {}  # pkg_name: friendly_name
-303 |     services_to_manage: List[Tuple[str, str, bool]] = (
-    |                         ^^^^ UP006
-304 |         []
-305 |     )  # service_name, friendly_name, needs_enable
-    |
-    = help: Replace with `list`
-
-fluxfce_deps_check.py:303:30: UP006 Use `tuple` instead of `Tuple` for type annotation
-    |
-301 |     all_deps_ok = True
-302 |     missing_packages_to_install: Dict[str, str] = {}  # pkg_name: friendly_name
-303 |     services_to_manage: List[Tuple[str, str, bool]] = (
-    |                              ^^^^^ UP006
-304 |         []
-305 |     )  # service_name, friendly_name, needs_enable
-    |
-    = help: Replace with `tuple`
-
-Found 72 errors (1 fixed, 71 remaining).
-No fixes available (33 hidden fixes can be enabled with the `--unsafe-fixes` option).
-INFO: Ruff autofix attempt complete.
-INFO: Running ruff check again to show remaining issues (if any)...
-fluxfce_cli.py:217:5: C901 `main` is too complex (36 > 10)
-    |
-216 | # --- Main Execution Logic ---
-217 | def main():
-    |     ^^^^ C901
-218 |     parser = argparse.ArgumentParser(
-219 |         description="fluxfce (CLI): Manage XFCE appearance via sunrise/sunset timing.",
-    |
-
-fluxfce_core/__init__.py:46:11: RUF022 `__all__` is not sorted
+srss.py:40:5: C901 `main` is too complex (11 > 10)
    |
-45 |   # Optionally define __all__ to control wildcard imports and document public interface
-46 |   __all__ = [
-   |  ___________^
-47 | |     # Constants
-48 | |     "CONFIG_DIR",
-49 | |     "CONFIG_FILE",
-50 | |     "SCHEDULER_TIMER_NAME",
-51 | |     "SCHEDULER_SERVICE_NAME",
-52 | |     "LOGIN_SERVICE_NAME",
-53 | |     "RESUME_SERVICE_NAME",  # <--- ADD THIS LINE
-54 | |     # Exceptions
-55 | |     "FluxFceError",
-56 | |     "ConfigError",
-57 | |     "CalculationError",
-58 | |     "XfceError",
-59 | |     "SchedulerError",
-60 | |     "SystemdError",
-61 | |     "DependencyError",
-62 | |     "ValidationError",
-63 | |     # Helper Functions
-64 | |     "detect_system_timezone",
-65 | |     # API Functions
-66 | |     "install_fluxfce",
-67 | |     "uninstall_fluxfce",
-68 | |     "enable_scheduling",
-69 | |     "disable_scheduling",
-70 | |     "apply_manual_mode",
-71 | |     "set_default_from_current",
-72 | |     "get_status",
-73 | |     "save_configuration",
-74 | |     "get_current_config",
-75 | |     "handle_internal_apply",
-76 | |     "handle_schedule_jobs_command",
-77 | |     "handle_run_login_check",
-78 | | ]
-   | |_^ RUF022
-   |
-   = help: Apply an isort-style sorting to `__all__`
-
-fluxfce_core/api.py:6:1: UP035 `typing.Dict` is deprecated, use `dict` instead
-  |
-4 | import logging
-5 | from datetime import datetime
-6 | from typing import Any, Dict, Optional
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-7 |
-8 | # Import core components and exceptions
-  |
-
-fluxfce_core/api.py:22:5: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-   |
-20 |       )  # Corrected import location for check
-21 |   except ImportError:
-22 | /     raise ImportError(
-23 | |         "Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+."
-24 | |     )
-   | |_____^ B904
+39 | # --- Main Function ---
+40 | def main():
+   |     ^^^^ C901
+41 |     parser = argparse.ArgumentParser(
+42 |         description="Calculate sunrise/sunset times for N days using fluxfce config.",
    |
 
-fluxfce_core/api.py:51:5: C901 `_apply_settings_for_mode` is too complex (13 > 10)
-   |
-50 | # Updated internal helper to use the renamed config loader
-51 | def _apply_settings_for_mode(mode: str) -> bool:
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^ C901
-52 |     """Internal helper to apply all settings for 'day' or 'night'."""
-53 |     if mode not in ["day", "night"]:
-   |
-
-fluxfce_core/api.py:424:5: C901 `set_default_from_current` is too complex (17 > 10)
-    |
-424 | def set_default_from_current(mode: str) -> bool:
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^ C901
-425 |     """
-426 |     Saves the current desktop settings (theme, background, screen) as the
-    |
-
-fluxfce_core/api.py:558:5: C901 `get_status` is too complex (27 > 10)
-    |
-558 | def get_status() -> Dict[str, Any]:
-    |     ^^^^^^^^^^ C901
-559 |     """
-560 |     Retrieves the current status of fluxfce.
-    |
-
-fluxfce_core/api.py:558:21: UP006 Use `dict` instead of `Dict` for type annotation
-    |
-558 | def get_status() -> Dict[str, Any]:
-    |                     ^^^^ UP006
-559 |     """
-560 |     Retrieves the current status of fluxfce.
-    |
-    = help: Replace with `dict`
-
-fluxfce_core/api.py:570:13: UP006 Use `dict` instead of `Dict` for type annotation
-    |
-568 |     """
-569 |     log.debug("API: Getting status...")
-570 |     status: Dict[str, Any] = {
-    |             ^^^^ UP006
-571 |         "config": {},
-572 |         "state": {
-    |
-    = help: Replace with `dict`
-
-fluxfce_core/config.py:10:1: UP035 `typing.Dict` is deprecated, use `dict` instead
-   |
- 8 | # and can be changed to dict and | None (or just Optional if Python < 3.10 for return only)
- 9 | # For now, keeping them as per original file for direct comparison of state file removal.
-10 | from typing import Dict, Optional
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-11 |
-12 | # Import custom exceptions from within the same package
-   |
-
-fluxfce_core/config.py:26:17: UP006 Use `dict` instead of `Dict` for type annotation
-   |
-25 | # Default configuration values
-26 | DEFAULT_CONFIG: Dict[str, Dict[str, str]] = (
-   |                 ^^^^ UP006
-27 |     {  # Ruff will suggest: dict[str, dict[str, str]]
-28 |         "Location": {
-   |
-   = help: Replace with `dict`
-
-fluxfce_core/config.py:26:27: UP006 Use `dict` instead of `Dict` for type annotation
-   |
-25 | # Default configuration values
-26 | DEFAULT_CONFIG: Dict[str, Dict[str, str]] = (
-   |                           ^^^^ UP006
-27 |     {  # Ruff will suggest: dict[str, dict[str, str]]
-28 |         "Location": {
-   |
-   = help: Replace with `dict`
-
-fluxfce_core/helpers.py:9:1: UP035 `typing.List` is deprecated, use `list` instead
-   |
- 7 | import shutil
- 8 | import subprocess
- 9 | from typing import List, Optional, Tuple
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-10 |
-11 | try:
-   |
-
-fluxfce_core/helpers.py:9:1: UP035 `typing.Tuple` is deprecated, use `tuple` instead
-   |
- 7 | import shutil
- 8 | import subprocess
- 9 | from typing import List, Optional, Tuple
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-10 |
-11 | try:
-   |
-
-fluxfce_core/helpers.py:14:5: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-   |
-12 |       from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-13 |   except ImportError:
-14 | /     raise ImportError(
-15 | |         "Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+."
-16 | |     )
-   | |_____^ B904
-17 |   # Import custom exceptions from within the same package
-18 |   from .exceptions import DependencyError, FluxFceError, ValidationError
-   |
-
-fluxfce_core/helpers.py:27:15: UP006 Use `list` instead of `List` for type annotation
-   |
-26 | def run_command(
-27 |     cmd_list: List[str],
-   |               ^^^^ UP006
-28 |     check: bool = False,
-29 |     capture: bool = True,
-   |
-   = help: Replace with `list`
-
-fluxfce_core/helpers.py:31:6: UP006 Use `tuple` instead of `Tuple` for type annotation
-   |
-29 |     capture: bool = True,
-30 |     input_str: Optional[str] = None,
-31 | ) -> Tuple[int, str, str]:
-   |      ^^^^^ UP006
-32 |     """
-33 |     Runs an external command and returns its status, stdout, and stderr.
-   |
-   = help: Replace with `tuple`
-
-fluxfce_core/helpers.py:55:5: F841 Local variable `stdin_pipe` is assigned to but never used
-   |
-53 |     """
-54 |     log.debug(f"Running command: {' '.join(cmd_list)}")
-55 |     stdin_pipe = subprocess.PIPE if input_str is not None else None
-   |     ^^^^^^^^^^ F841
-56 |     stdout_pipe = subprocess.PIPE if capture else None
-57 |     stderr_pipe = subprocess.PIPE if capture else None
-   |
-   = help: Remove assignment to unused variable `stdin_pipe`
-
-fluxfce_core/helpers.py:109:30: UP006 Use `list` instead of `List` for type annotation
-    |
-109 | def check_dependencies(deps: List[str]) -> bool:
-    |                              ^^^^ UP006
-110 |     """
-111 |     Checks if required external commands exist in PATH using shutil.which.
-    |
-    = help: Replace with `list`
-
-fluxfce_core/helpers.py:187:9: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-    |
-185 |           FileNotFoundError
-186 |       ):  # Should be caught by check_dependencies, but belts and suspenders
-187 | /         raise DependencyError(
-188 | |             "The 'systemctl' command was not found, cannot check 'atd' status."
-189 | |         )
-    | |_________^ B904
-190 |       except Exception as e:
-191 |           # Catch potential errors from run_command itself or re-raised CalledProcessError
-    |
-
-fluxfce_core/helpers.py:197:5: C901 `detect_system_timezone` is too complex (23 > 10)
-    |
-196 | # --- Detect timezone ---
-197 | def detect_system_timezone() -> Optional[str]:
-    |     ^^^^^^^^^^^^^^^^^^^^^^ C901
-198 |     """
-199 |     Attempts to detect the system's configured IANA timezone name.
-    |
-
-fluxfce_core/helpers.py:355:9: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-    |
-353 |       except ValueError:
-354 |           # Should not happen with the regex, but safeguard
-355 | /         raise ValidationError(
-356 | |             f"Could not convert value part '{match.group(1)}' to float."
-357 | |         )
-    | |_________^ B904
-358 |
-359 |       direction = match.group(3)
-    |
-
-fluxfce_core/helpers.py:377:44: UP006 Use `list` instead of `List` for type annotation
-    |
-377 | def hex_to_rgba_doubles(hex_color: str) -> List[float]:
-    |                                            ^^^^ UP006
-378 |     """
-379 |     Converts a 6-digit hex color string (#RRGGBB or RRGGBB) to RGBA doubles
-    |
-    = help: Replace with `list`
-
-fluxfce_core/scheduler.py:8:1: UP035 `typing.Dict` is deprecated, use `dict` instead
-   |
- 6 | import shlex
- 7 | from datetime import datetime, timedelta
- 8 | from typing import Dict, List
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
- 9 |
-10 | # zoneinfo needed for datetime comparison within scheduling logic
-   |
-
-fluxfce_core/scheduler.py:8:1: UP035 `typing.List` is deprecated, use `list` instead
-   |
- 6 | import shlex
- 7 | from datetime import datetime, timedelta
- 8 | from typing import Dict, List
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
- 9 |
-10 | # zoneinfo needed for datetime comparison within scheduling logic
-   |
-
-fluxfce_core/scheduler.py:14:5: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-   |
-12 |       from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-13 |   except ImportError:
-14 | /     raise ImportError(
-15 | |         "Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+."
-16 | |     )
-   | |_____^ B904
-17 |
-18 |   # Import helpers, sun calculation, and exceptions
-   |
-
-fluxfce_core/scheduler.py:61:9: C901 `_get_pending_jobs` is too complex (14 > 10)
-   |
-59 |             ) from e
-60 |
-61 |     def _get_pending_jobs(self) -> List[Dict[str, str]]:
-   |         ^^^^^^^^^^^^^^^^^ C901
-62 |         """
-63 |         Gets list of pending 'at' jobs created by fluxfce.
-   |
-
-fluxfce_core/scheduler.py:61:36: UP006 Use `list` instead of `List` for type annotation
-   |
-59 |             ) from e
-60 |
-61 |     def _get_pending_jobs(self) -> List[Dict[str, str]]:
-   |                                    ^^^^ UP006
-62 |         """
-63 |         Gets list of pending 'at' jobs created by fluxfce.
-   |
-   = help: Replace with `list`
-
-fluxfce_core/scheduler.py:61:41: UP006 Use `dict` instead of `Dict` for type annotation
-   |
-59 |             ) from e
-60 |
-61 |     def _get_pending_jobs(self) -> List[Dict[str, str]]:
-   |                                         ^^^^ UP006
-62 |         """
-63 |         Gets list of pending 'at' jobs created by fluxfce.
-   |
-   = help: Replace with `dict`
-
-fluxfce_core/scheduler.py:183:9: C901 `schedule_transitions` is too complex (24 > 10)
-    |
-181 |         return all_cleared
-182 |
-183 |     def schedule_transitions(
-    |         ^^^^^^^^^^^^^^^^^^^^ C901
-184 |         self,
-185 |         lat: float,
-    |
-
-fluxfce_core/scheduler.py:237:13: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-    |
-235 |             today = now_local.date()
-236 |         except ZoneInfoNotFoundError:
-237 |             raise ValidationError(f"Invalid Timezone '{tz_name}' during scheduling.")
-    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ B904
-238 |         except Exception as e:
-239 |             raise SchedulerError(
-    |
-
-fluxfce_core/scheduler.py:288:27: UP006 Use `dict` instead of `Dict` for type annotation
-    |
-287 |         # 4. Collect potential future events for the next N days
-288 |         potential_events: Dict[datetime, str] = {}
-    |                           ^^^^ UP006
-289 |         for i in range(days_to_schedule):  # <-- Loop N days
-290 |             target_date = today + timedelta(days=i)
-    |
-    = help: Replace with `dict`
-
-fluxfce_core/scheduler.py:379:45: UP006 Use `list` instead of `List` for type annotation
-    |
-377 |         return scheduled_count > 0
-378 |
-379 |     def list_scheduled_transitions(self) -> List[Dict[str, str]]:
-    |                                             ^^^^ UP006
-380 |         """
-381 |         Returns a list of pending fluxfce transition jobs.
-    |
-    = help: Replace with `list`
-
-fluxfce_core/scheduler.py:379:50: UP006 Use `dict` instead of `Dict` for type annotation
-    |
-377 |         return scheduled_count > 0
-378 |
-379 |     def list_scheduled_transitions(self) -> List[Dict[str, str]]:
-    |                                                  ^^^^ UP006
-380 |         """
-381 |         Returns a list of pending fluxfce transition jobs.
-    |
-    = help: Replace with `dict`
-
-fluxfce_core/sun.py:6:1: UP035 `typing.Dict` is deprecated, use `dict` instead
-  |
-4 | import math
-5 | from datetime import date, datetime, timedelta, timezone
-6 | from typing import Dict
-  | ^^^^^^^^^^^^^^^^^^^^^^^ UP035
-7 |
-8 | # zoneinfo is standard library in Python 3.9+
-  |
-
-fluxfce_core/sun.py:13:5: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-   |
-11 |   except ImportError:
-12 |       # This is a critical dependency failure if zoneinfo is expected
-13 | /     raise ImportError(
-14 | |         "Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+."
-15 | |     )
-   | |_____^ B904
-16 |
-17 |   # Import custom exceptions from within the same package
-   |
-
-fluxfce_core/sun.py:95:9: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-   |
-93 |       except ZeroDivisionError:
-94 |           # This can happen near the poles if cos(decl) is near zero
-95 | /         raise CalculationError(
-96 | |             "Division by zero encountered during hour angle calculation (likely near poles)."
-97 | |         )
-   | |_________^ B904
-98 |
-99 |       # Check for polar day/night conditions
-   |
-
-fluxfce_core/sun.py:137:6: UP006 Use `dict` instead of `Dict` for type annotation
-    |
-135 | def get_sun_times(
-136 |     lat: float, lon: float, target_date: date, tz_name: str
-137 | ) -> Dict[str, datetime]:
-    |      ^^^^ UP006
-138 |     """
-139 |     Calculates sunrise and sunset times, returning them as timezone-aware datetimes.
-    |
-    = help: Replace with `dict`
-
-fluxfce_core/sun.py:163:9: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-    |
-161 |     except ZoneInfoNotFoundError:
-162 |         log.error(f"Invalid or unknown IANA Timezone Name: '{tz_name}'")
-163 |         raise ValidationError(f"Invalid or unknown IANA Timezone Name: '{tz_name}'")
-    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ B904
-164 |     except Exception as e:  # Catch other potential zoneinfo errors
-165 |         log.error(f"Error loading timezone '{tz_name}': {e}")
-    |
-
-fluxfce_core/systemd.py:6:1: UP035 `typing.List` is deprecated, use `list` instead
-  |
-4 | import pathlib
-5 | import sys
-6 | from typing import List, Optional, Tuple
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-7 |
-8 | # Import helpers and exceptions from within the same package
-  |
-
-fluxfce_core/systemd.py:6:1: UP035 `typing.Tuple` is deprecated, use `tuple` instead
-  |
-4 | import pathlib
-5 | import sys
-6 | from typing import List, Optional, Tuple
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-7 |
-8 | # Import helpers and exceptions from within the same package
-  |
-
-fluxfce_core/systemd.py:123:21: UP006 Use `list` instead of `List` for type annotation
-    |
-122 |     def _run_systemctl(
-123 |         self, args: List[str], check_errors: bool = True
-    |                     ^^^^ UP006
-124 |     ) -> Tuple[int, str, str]:
-125 |         """Runs a systemctl --user command."""
-    |
-    = help: Replace with `list`
-
-fluxfce_core/systemd.py:124:10: UP006 Use `tuple` instead of `Tuple` for type annotation
-    |
-122 |     def _run_systemctl(
-123 |         self, args: List[str], check_errors: bool = True
-124 |     ) -> Tuple[int, str, str]:
-    |          ^^^^^ UP006
-125 |         """Runs a systemctl --user command."""
-126 |         # This method remains unchanged
-    |
-    = help: Replace with `tuple`
-
-fluxfce_core/systemd.py:127:15: RUF005 Consider `["systemctl", "--user", *args]` instead of concatenation
-    |
-125 |         """Runs a systemctl --user command."""
-126 |         # This method remains unchanged
-127 |         cmd = ["systemctl", "--user"] + args
-    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ RUF005
-128 |         try:
-129 |             code, stdout, stderr = helpers.run_command(cmd, check=False)
-    |
-    = help: Replace with `["systemctl", "--user", *args]`
-
-fluxfce_core/systemd.py:136:13: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-    |
-134 |             return code, stdout, stderr
-135 |         except FileNotFoundError:
-136 |             raise DependencyError("systemctl command not found.")
-    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ B904
-137 |         except Exception as e:
-138 |             log.exception(f"Unexpected error running systemctl command: {e}")
-    |
-
-fluxfce_core/systemd.py:167:9: C901 `install_units` is too complex (13 > 10)
-    |
-166 |     # --- UPDATED install_units ---
-167 |     def install_units(
-    |         ^^^^^^^^^^^^^ C901
-168 |         self, script_path: str, python_executable: Optional[str] = None
-169 |     ) -> bool:
-    |
-
-fluxfce_core/systemd.py:286:9: C901 `remove_units` is too complex (11 > 10)
-    |
-285 |     # --- UPDATED remove_units ---
-286 |     def remove_units(self) -> bool:
-    |         ^^^^^^^^^^^^ C901
-287 |         """
-288 |         Stops, disables, and removes all managed systemd user units.
-    |
-
-fluxfce_core/systemd.py:347:21: RUF005 Consider `["reset-failed", *MANAGED_UNITS]` instead of concatenation
-    |
-345 |                 log.debug("Resetting failed state for managed units...")
-346 |                 self._run_systemctl(
-347 |                     ["reset-failed"] + MANAGED_UNITS, check_errors=False
-    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ RUF005
-348 |                 )
-    |
-    = help: Replace with `["reset-failed", *MANAGED_UNITS]`
-
-fluxfce_core/xfce.py:7:1: UP035 `typing.Dict` is deprecated, use `dict` instead
-  |
-5 | import subprocess
-6 | import time
-7 | from typing import Any, Dict, List, Optional
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-8 |
-9 | # Import helpers and exceptions from within the same package
-  |
-
-fluxfce_core/xfce.py:7:1: UP035 `typing.List` is deprecated, use `list` instead
-  |
-5 | import subprocess
-6 | import time
-7 | from typing import Any, Dict, List, Optional
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-8 |
-9 | # Import helpers and exceptions from within the same package
-  |
-
-fluxfce_core/xfce.py:34:9: C901 `find_desktop_paths` is too complex (11 > 10)
-   |
-32 |             raise XfceError(f"Cannot initialize XfceHandler: {e}") from e
-33 |
-34 |     def find_desktop_paths(self) -> List[str]:
-   |         ^^^^^^^^^^^^^^^^^^ C901
-35 |         """
-36 |         Finds relevant XFCE desktop property base paths for background settings.
-   |
-
-fluxfce_core/xfce.py:34:37: UP006 Use `list` instead of `List` for type annotation
-   |
-32 |             raise XfceError(f"Cannot initialize XfceHandler: {e}") from e
-33 |
-34 |     def find_desktop_paths(self) -> List[str]:
-   |                                     ^^^^ UP006
-35 |         """
-36 |         Finds relevant XFCE desktop property base paths for background settings.
-   |
-   = help: Replace with `list`
-
-fluxfce_core/xfce.py:195:9: C901 `get_background_settings` is too complex (24 > 10)
-    |
-193 |             ) from e
-194 |
-195 |     def get_background_settings(self) -> Dict[str, Any]:
-    |         ^^^^^^^^^^^^^^^^^^^^^^^ C901
-196 |         """
-197 |         Gets background settings (style, colors) from the first detected path.
-    |
-
-fluxfce_core/xfce.py:195:42: UP006 Use `dict` instead of `Dict` for type annotation
-    |
-193 |             ) from e
-194 |
-195 |     def get_background_settings(self) -> Dict[str, Any]:
-    |                                          ^^^^ UP006
-196 |         """
-197 |         Gets background settings (style, colors) from the first detected path.
-    |
-    = help: Replace with `dict`
-
-fluxfce_core/xfce.py:238:60: UP006 Use `list` instead of `List` for type annotation
-    |
-236 |                 ) from e
-237 |
-238 |         def _parse_rgba_output(prop_name: str) -> Optional[List[float]]:
-    |                                                            ^^^^ UP006
-239 |             """Parses multi-line xfconf-query output for rgba arrays."""
-240 |             prop_path = f"{base_path}/{prop_name}"
-    |
-    = help: Replace with `list`
-
-fluxfce_core/xfce.py:271:50: UP006 Use `list` instead of `List` for type annotation
-    |
-269 |                 return None
-270 |
-271 |         def _floats_to_hex(rgba_floats: Optional[List[float]]) -> Optional[str]:
-    |                                                  ^^^^ UP006
-272 |             """Converts list of [r,g,b,a] floats (0.0-1.0) to 6-digit Hex."""
-273 |             if not rgba_floats or len(rgba_floats) != 4:
-    |
-    = help: Replace with `list`
-
-fluxfce_core/xfce.py:351:9: C901 `set_background` is too complex (19 > 10)
-    |
-349 |             ) from e
-350 |
-351 |     def set_background(self, hex1: str, hex2: Optional[str], direction: str) -> bool:
-    |         ^^^^^^^^^^^^^^ C901
-352 |         """
-353 |         Sets the background to solid or gradient color across all detected paths.
-    |
-
-fluxfce_core/xfce.py:490:28: RUF005 Consider `[*style_cmds, rgba1_cmd, rgba2_cmd, reset_img_cmd]` instead of concatenation
-    |
-489 |                 # Execute commands for this path
-490 |                 all_cmds = style_cmds + [rgba1_cmd, rgba2_cmd, reset_img_cmd]
-    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ RUF005
-491 |                 for cmd in all_cmds:
-492 |                     code, _, stderr = helpers.run_command(
-    |
-    = help: Replace with `[*style_cmds, rgba1_cmd, rgba2_cmd, reset_img_cmd]`
-
-fluxfce_core/xfce.py:520:17: F841 Local variable `path_success` is assigned to but never used
-    |
-518 |                     f"Error applying background settings to path {base_path}: {e}"
-519 |                 )
-520 |                 path_success = False
-    |                 ^^^^^^^^^^^^ F841
-521 |                 overall_success = False
-    |
-    = help: Remove assignment to unused variable `path_success`
-
-fluxfce_core/xfce.py:535:9: C901 `get_screen_settings` is too complex (13 > 10)
-    |
-533 |         return True
-534 |
-535 |     def get_screen_settings(self) -> Dict[str, Any]:
-    |         ^^^^^^^^^^^^^^^^^^^ C901
-536 |         """
-537 |         Gets screen temperature and brightness via xsct. Attempts different parsing
-    |
-
-fluxfce_core/xfce.py:535:38: UP006 Use `dict` instead of `Dict` for type annotation
-    |
-533 |         return True
-534 |
-535 |     def get_screen_settings(self) -> Dict[str, Any]:
-    |                                      ^^^^ UP006
-536 |         """
-537 |         Gets screen temperature and brightness via xsct. Attempts different parsing
-    |
-    = help: Replace with `dict`
-
-fluxfce_deps_check.py:7:1: UP035 `typing.Dict` is deprecated, use `dict` instead
-  |
-5 | import subprocess
-6 | import sys
-7 | from typing import Dict, List, Optional, Tuple
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-8 |
-9 | MIN_PYTHON_VERSION = (3, 9)
-  |
-
-fluxfce_deps_check.py:7:1: UP035 `typing.List` is deprecated, use `list` instead
-  |
-5 | import subprocess
-6 | import sys
-7 | from typing import Dict, List, Optional, Tuple
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-8 |
-9 | MIN_PYTHON_VERSION = (3, 9)
-  |
-
-fluxfce_deps_check.py:7:1: UP035 `typing.Tuple` is deprecated, use `tuple` instead
-  |
-5 | import subprocess
-6 | import sys
-7 | from typing import Dict, List, Optional, Tuple
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
-8 |
-9 | MIN_PYTHON_VERSION = (3, 9)
-  |
-
-fluxfce_deps_check.py:58:14: UP006 Use `list` instead of `List` for type annotation
-   |
-57 | def run_command(
-58 |     command: List[str], check_exit_code: bool = True, capture_output: bool = False
-   |              ^^^^ UP006
-59 | ) -> Tuple[int, Optional[str], Optional[str]]:
-60 |     """Runs a system command."""
-   |
-   = help: Replace with `list`
-
-fluxfce_deps_check.py:59:6: UP006 Use `tuple` instead of `Tuple` for type annotation
-   |
-57 | def run_command(
-58 |     command: List[str], check_exit_code: bool = True, capture_output: bool = False
-59 | ) -> Tuple[int, Optional[str], Optional[str]]:
-   |      ^^^^^ UP006
-60 |     """Runs a system command."""
-61 |     try:
-   |
-   = help: Replace with `tuple`
-
-fluxfce_deps_check.py:153:68: UP006 Use `tuple` instead of `Tuple` for type annotation
-    |
-153 | def check_service_status(service_name: str, friendly_name: str) -> Tuple[bool, bool]:
-    |                                                                    ^^^^^ UP006
-154 |     """
-155 |     Checks if a systemd service is active and enabled.
-    |
-    = help: Replace with `tuple`
-
-fluxfce_deps_check.py:290:5: C901 `main` is too complex (22 > 10)
-    |
-290 | def main():
-    |     ^^^^ C901
-291 |     print_info("FluxFCE Dependency Checker for Debian/Ubuntu-based systems")
-292 |     print_info("=" * 60)
-    |
-
-fluxfce_deps_check.py:302:34: UP006 Use `dict` instead of `Dict` for type annotation
-    |
-301 |     all_deps_ok = True
-302 |     missing_packages_to_install: Dict[str, str] = {}  # pkg_name: friendly_name
-    |                                  ^^^^ UP006
-303 |     services_to_manage: List[Tuple[str, str, bool]] = (
-304 |         []
-    |
-    = help: Replace with `dict`
-
-fluxfce_deps_check.py:303:25: UP006 Use `list` instead of `List` for type annotation
-    |
-301 |     all_deps_ok = True
-302 |     missing_packages_to_install: Dict[str, str] = {}  # pkg_name: friendly_name
-303 |     services_to_manage: List[Tuple[str, str, bool]] = (
-    |                         ^^^^ UP006
-304 |         []
-305 |     )  # service_name, friendly_name, needs_enable
-    |
-    = help: Replace with `list`
-
-fluxfce_deps_check.py:303:30: UP006 Use `tuple` instead of `Tuple` for type annotation
-    |
-301 |     all_deps_ok = True
-302 |     missing_packages_to_install: Dict[str, str] = {}  # pkg_name: friendly_name
-303 |     services_to_manage: List[Tuple[str, str, bool]] = (
-    |                              ^^^^^ UP006
-304 |         []
-305 |     )  # service_name, friendly_name, needs_enable
-    |
-    = help: Replace with `tuple`
-
-Found 71 errors.
-No fixes available (33 hidden fixes can be enabled with the `--unsafe-fixes` option).
-WARNING: Ruff found issues. Please review the output above.
-SUCCESS: Ruff check complete.
-INFO: ---
-INFO: Formatting and linting script finished.
-INFO: Review any changes made by black and ruff, and address any remaining ruff warnings.
-INFO: You might want to commit the changes to pyproject.toml and the formatted/linted files.
+Found 25 errors.

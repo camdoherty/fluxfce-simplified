@@ -6,7 +6,7 @@ import pathlib
 import re
 import shutil
 import subprocess
-from typing import List, Optional, Tuple
+from typing import Optional
 
 try:
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -24,11 +24,11 @@ log = logging.getLogger(__name__)
 
 
 def run_command(
-    cmd_list: List[str],
+    cmd_list: list[str],
     check: bool = False,
     capture: bool = True,
     input_str: Optional[str] = None,
-) -> Tuple[int, str, str]:
+) -> tuple[int, str, str]:
     """
     Runs an external command and returns its status, stdout, and stderr.
 
@@ -52,7 +52,6 @@ def run_command(
         Exception: For other unexpected subprocess errors.
     """
     log.debug(f"Running command: {' '.join(cmd_list)}")
-    stdin_pipe = subprocess.PIPE if input_str is not None else None
     stdout_pipe = subprocess.PIPE if capture else None
     stderr_pipe = subprocess.PIPE if capture else None
 
@@ -106,7 +105,7 @@ def run_command(
 # --- Dependency Checks ---
 
 
-def check_dependencies(deps: List[str]) -> bool:
+def check_dependencies(deps: list[str]) -> bool:
     """
     Checks if required external commands exist in PATH using shutil.which.
 
@@ -374,7 +373,7 @@ def latlon_str_to_float(coord_str: str) -> float:
     return value
 
 
-def hex_to_rgba_doubles(hex_color: str) -> List[float]:
+def hex_to_rgba_doubles(hex_color: str) -> list[float]:
     """
     Converts a 6-digit hex color string (#RRGGBB or RRGGBB) to RGBA doubles
     [R, G, B, A] (0.0-1.0), with Alpha always 1.0.
