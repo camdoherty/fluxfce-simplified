@@ -509,59 +509,63 @@ def _apply_settings_for_mode(mode: str) -> bool:
     bright_str = config_obj.get(screen_section, "XSCT_BRIGHT", fallback=None)
 
     if not theme:
-        raise exc.ConfigError(f"Theme '{theme_key}' not configured in [Themes].")
+        # This is a critical configuration item.
+        raise exc.ConfigError(f"Theme '{theme_key}' not configured in [Themes]. Cannot apply mode '{mode}'.")
 
     xsct_temp: Optional[int] = None
     xsct_bright: Optional[float] = None
     try:
-        if mode == "day" and (temp_str == "" or bright_str == ""):
-            log.info("Day mode specifies resetting screen temperature/brightness.")
+        if mode == "day" and (temp_str == "" or bright_str == ""): # Explicit reset for day mode
+            log.info("Day mode: Screen temperature/brightness will be reset by xsct.")
         elif (
-            temp_str is not None and temp_str != "" and
-            bright_str is not None and bright_str != ""
+            temp_str is not None and temp_str.strip() != "" and
+            bright_str is not None and bright_str.strip() != ""
         ):
             xsct_temp = int(temp_str)
             xsct_bright = float(bright_str)
+        # If only one is set, or they are set but empty for night mode, xsct might not be called with values.
+        # The XfceHandler.set_screen_temp handles None values by resetting.
     except (ValueError, TypeError) as e:
         log.warning(
-            f"Could not parse screen settings from [{screen_section}]: {e}. Screen settings skipped."
+            f"Could not parse screen settings (Temp: '{temp_str}', Bright: '{bright_str}') "
+            f"from [{screen_section}]: {e}. Screen settings will be skipped or reset."
         )
 
-    theme_ok, bg_ok, screen_ok = True, True, True
+    all_ok = True # Track overall success
 
     try:
         log.info(f"API: Applying theme '{theme}' for mode '{mode}'")
         _xfce_handler.set_gtk_theme(theme)
     except (exc.XfceError, exc.ValidationError) as e:
-        log.error(f"API: Failed to set theme: {e}")
-        theme_ok = False
-        raise exc.FluxFceError(f"Critical failure setting theme '{theme}': {e}") from e
+        # For _apply_settings_for_mode, a theme failure is critical because it's a primary component.
+        log.error(f"API: CRITICAL - Failed to set theme '{theme}': {e}")
+        raise exc.FluxFceError(f"Critical failure setting theme '{theme}' for mode '{mode}': {e}") from e
 
-    if bg_hex1 and bg_dir:
+    if bg_hex1 and bg_dir: # Background is optional if not configured
         try:
             log.info(
-                f"API: Applying background (Dir={bg_dir}, Hex1={bg_hex1}, Hex2={bg_hex2}) for mode '{mode}'"
+                f"API: Applying background (Dir={bg_dir}, Hex1={bg_hex1}, Hex2={bg_hex2 or 'N/A'}) for mode '{mode}'"
             )
             _xfce_handler.set_background(bg_hex1, bg_hex2, bg_dir)
         except (exc.XfceError, exc.ValidationError) as e:
-            log.error(f"API: Failed to set background: {e}")
-            bg_ok = False
+            log.error(f"API: Failed to set background for mode '{mode}': {e}")
+            all_ok = False # Non-critical, log and continue
     else:
-        log.info("API: Background not fully configured, skipping background set.")
+        log.info(f"API: Background not fully configured in [{bg_section}], skipping background set for mode '{mode}'.")
 
     try:
         log.info(
-            f"API: Applying screen settings (Temp={xsct_temp}, Bright={xsct_bright}) for mode '{mode}'"
+            f"API: Applying screen settings (Temp={xsct_temp or 'reset'}, Bright={xsct_bright or 'reset'}) for mode '{mode}'"
         )
-        _xfce_handler.set_screen_temp(xsct_temp, xsct_bright)
+        _xfce_handler.set_screen_temp(xsct_temp, xsct_bright) # Handles None by resetting
     except (exc.XfceError, exc.ValidationError) as e:
-        log.error(f"API: Failed to set screen settings: {e}")
-        screen_ok = False
-
-    if not theme_ok: return False
-    if not bg_ok: log.warning(f"Mode '{mode}' applied, but background setting failed.")
-    if not screen_ok: log.warning(f"Mode '{mode}' applied, but screen setting failed.")
-    return True
+        log.error(f"API: Failed to set screen settings for mode '{mode}': {e}")
+        all_ok = False # Non-critical, log and continue
+    
+    if not all_ok:
+        log.warning(f"API: Mode '{mode}' applied, but one or more non-critical appearance settings (background/screen) failed.")
+    
+    return all_ok # Returns true if theme set, even if bg/screen had warnings
 
 
 # --- Public API Functions for Config ---
@@ -591,18 +595,14 @@ def install_fluxfce(script_path: str, python_executable: Optional[str] = None) -
     """
     log.info(f"API: Starting {sysd._APP_NAME} installation (static systemd units).")
     try:
-        # SystemdManager instance is module-level: _sysd_mgr
         success = _sysd_mgr.install_units(
             script_path=script_path, python_executable=python_executable
         )
         if success:
             log.info("API: Static systemd units installed successfully.")
-            # Note: enable_scheduling() should be called by CLI after this to set up dynamic timers
-            # and enable the main scheduler.timer.
             return True
         else:
-            # install_units should raise on critical failure.
-            raise exc.SystemdError(f"{sysd._APP_NAME} SystemdManager install_units returned False or failed internally.")
+            raise exc.SystemdError(f"{sysd._APP_NAME} SystemdManager install_units returned False or failed critically.")
     except (exc.SystemdError, FileNotFoundError, exc.DependencyError) as e:
         log.error(f"API: Static systemd unit installation failed: {e}")
         raise
@@ -617,17 +617,16 @@ def uninstall_fluxfce() -> bool:
     """
     log.info(f"API: Starting {sysd._APP_NAME} uninstallation (all systemd units).")
     try:
-        # disable_scheduling ensures dynamic timers are stopped and removed first.
-        # This is important because remove_units might just delete files without stopping.
         disable_scheduling_ok = True
         try:
-            disable_scheduling() # Best effort to clean up dynamic timers
+            # This will stop main scheduler, stop dynamic event timers, and remove their files.
+            disable_scheduling() 
         except Exception as e_disable:
             log.warning(f"API: Error during disable_scheduling in uninstall process (continuing): {e_disable}")
             disable_scheduling_ok = False
 
-        # SystemdManager instance is module-level: _sysd_mgr
-        removal_ok = _sysd_mgr.remove_units() # Removes static units and attempts to clean dynamic files
+        # remove_units removes static unit files.
+        removal_ok = _sysd_mgr.remove_units() 
         
         if removal_ok:
             log.info(f"API: {sysd._APP_NAME} systemd units removed successfully.")
@@ -635,9 +634,8 @@ def uninstall_fluxfce() -> bool:
                  log.warning("API: Uninstallation completed, but disabling/cleanup of dynamic timers encountered issues.")
             return True
         else:
-            # remove_units should raise on critical failure.
             raise exc.SystemdError(f"{sysd._APP_NAME} SystemdManager remove_units returned False or failed critically.")
-    except (exc.SystemdError, exc.DependencyError) as e:
+    except (exc.SystemdError, exc.DependencyError) as e: # remove_units can raise DependencyError if systemctl is missing
         log.error(f"API: Failed to remove {sysd._APP_NAME} systemd units during uninstall: {e}")
         raise
     except Exception as e:
@@ -645,22 +643,23 @@ def uninstall_fluxfce() -> bool:
         raise exc.FluxFceError(f"Unexpected error during {sysd._APP_NAME} uninstallation: {e}") from e
 
 
-# --- Scheduling API Functions (NEW IMPLEMENTATION) ---
+# --- Scheduling API Functions ---
 
 def handle_schedule_dynamic_transitions_command(python_exe_path: str, script_exe_path: str) -> bool:
     """
-    Calculates next sun events, writes dynamic systemd timers, and starts them.
+    Calculates next sun events, writes dynamic systemd timer files, reloads the
+    systemd daemon, and starts the dynamic timers.
     Called by the fluxfce-scheduler.service.
-    Paths are passed by the service definition and are absolute.
     """
-    log.info("API: Handling schedule-dynamic-transitions command...")
+    log.info("API: Handling 'schedule-dynamic-transitions' command...")
     try:
         current_config = get_current_config()
         lat_str = current_config.get("Location", "LATITUDE")
         lon_str = current_config.get("Location", "LONGITUDE")
         tz_name = current_config.get("Location", "TIMEZONE")
 
-        if not all([lat_str, lon_str, tz_name]):
+        if not all([lat_str, lon_str, tz_name, 
+                    lat_str != "Not Set", lon_str != "Not Set", tz_name != "Not Set"]):
             raise exc.ConfigError("Location (latitude, longitude, timezone) not fully configured for scheduling.")
 
         lat = helpers.latlon_str_to_float(lat_str)
@@ -673,171 +672,155 @@ def handle_schedule_dynamic_transitions_command(python_exe_path: str, script_exe
 
         now_local = datetime.now(local_tz)
         today_local = now_local.date()
-        
-        # Store next local event datetimes
         next_event_times: dict[str, Optional[datetime]] = {"day": None, "night": None}
 
-        # Check today and tomorrow for the next relevant sunrise/sunset
-        for day_offset in range(2): # 0 for today, 1 for tomorrow
+        for day_offset in range(2): # Check today and tomorrow
             target_date = today_local + timedelta(days=day_offset)
             try:
                 sun_times = sun.get_sun_times(lat, lon, target_date, tz_name)
-                
-                # If 'day' (sunrise) event for this iteration is in the future and not yet found
                 if not next_event_times["day"] and sun_times["sunrise"] > now_local:
                     next_event_times["day"] = sun_times["sunrise"]
-                
-                # If 'night' (sunset) event for this iteration is in the future and not yet found
                 if not next_event_times["night"] and sun_times["sunset"] > now_local:
                     next_event_times["night"] = sun_times["sunset"]
-            
-            except exc.CalculationError as e: # Handles polar day/night for target_date
-                log.warning(f"Could not calculate sun times for {target_date} to determine transitions: {e}")
-            
-            # If both next events are found, no need to check further days
+            except exc.CalculationError as e:
+                log.warning(f"Could not calculate sun times for {target_date}: {e}")
             if next_event_times["day"] and next_event_times["night"]:
                 break
         
-        # Stop any existing dynamic timers first for a clean update.
-        # This prevents issues if this command runs multiple times before a timer fires.
         _sysd_mgr._run_systemctl(
             ["stop", sysd.SUNRISE_EVENT_TIMER_NAME, sysd.SUNSET_EVENT_TIMER_NAME],
-            check_errors=False,
-            capture_output=True # Capture output to prevent "Unit not loaded" messages
+            check_errors=False, capture_output=True
         )
 
         scheduled_any_timer = False
         utc_tz = ZoneInfo("UTC")
 
-        # Schedule Sunrise Timer
         if next_event_times["day"]:
-            utc_sunrise_event_time = next_event_times["day"].astimezone(utc_tz)
-            _sysd_mgr.write_dynamic_event_timer_unit_file("day", utc_sunrise_event_time)
+            utc_event_time = next_event_times["day"].astimezone(utc_tz)
+            _sysd_mgr.write_dynamic_event_timer_unit_file("day", utc_event_time)
             scheduled_any_timer = True
-            log.info(f"Dynamic timer for SUNRISE prepared for: {utc_sunrise_event_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            log.info(f"Dynamic timer for SUNRISE prepared for: {utc_event_time.isoformat()}")
         else:
-            log.warning("No upcoming sunrise event found to schedule. Removing existing timer if any.")
+            log.warning("No upcoming sunrise event found. Removing existing timer if any.")
             (sysd.SYSTEMD_USER_DIR / sysd.SUNRISE_EVENT_TIMER_NAME).unlink(missing_ok=True)
 
-        # Schedule Sunset Timer
         if next_event_times["night"]:
-            utc_sunset_event_time = next_event_times["night"].astimezone(utc_tz)
-            _sysd_mgr.write_dynamic_event_timer_unit_file("night", utc_sunset_event_time)
+            utc_event_time = next_event_times["night"].astimezone(utc_tz)
+            _sysd_mgr.write_dynamic_event_timer_unit_file("night", utc_event_time)
             scheduled_any_timer = True
-            log.info(f"Dynamic timer for SUNSET prepared for: {utc_sunset_event_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            log.info(f"Dynamic timer for SUNSET prepared for: {utc_event_time.isoformat()}")
         else:
-            log.warning("No upcoming sunset event found to schedule. Removing existing timer if any.")
+            log.warning("No upcoming sunset event found. Removing existing timer if any.")
             (sysd.SYSTEMD_USER_DIR / sysd.SUNSET_EVENT_TIMER_NAME).unlink(missing_ok=True)
 
-        # Reload systemd daemon to recognize new/changed timer files
         _sysd_mgr._run_systemctl(["daemon-reload"], capture_output=True)
 
-        # ---> REINSTATE THE START CALLS <---
-        # Start the dynamic timers to ensure they are active and counting down.
-        # If they were already running, this (after daemon-reload) ensures they use the new schedule.
-        # If they weren't, this starts them.
         if next_event_times["day"]:
-             _sysd_mgr._run_systemctl(["start", sysd.SUNRISE_EVENT_TIMER_NAME], check_errors=False, capture_output=True) 
+            _sysd_mgr._run_systemctl(["start", sysd.SUNRISE_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
         if next_event_times["night"]:
-             _sysd_mgr._run_systemctl(["start", sysd.SUNSET_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
+            _sysd_mgr._run_systemctl(["start", sysd.SUNSET_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
         
         if not scheduled_any_timer:
-            log.warning("No sun event timers could be scheduled (e.g. polar night/day).")
-            return True 
-        
-        log.info("Dynamic event timers (re)written, daemon reloaded, and timers (re)started.") # Updated log message
-        return True
+            log.warning("No sun event timers could be scheduled (e.g. polar day/night).")
+        else:
+            log.info("Dynamic event timers (re)written, daemon reloaded, and timers (re)started.")
+        return True # Command itself succeeded even if no timers were scheduled
 
     except (exc.ConfigError, exc.ValidationError, exc.SystemdError, exc.FluxFceError) as e:
         log.error(f"API: Failed to schedule dynamic transitions: {e}")
-        return False # Indicate failure to the calling service
+        return False
     except Exception as e:
-        log.exception(f"API: Unexpected error during schedule-dynamic-transitions: {e}")
+        log.exception(f"API: Unexpected error during 'schedule-dynamic-transitions': {e}")
         return False
 
 def enable_scheduling(python_exe_path: str, script_exe_path: str) -> bool:
     """
     Enables automatic theme transitions:
-    1. Sets up initial dynamic event timers for the next sunrise/sunset.
-    2. Enables and starts the main daily scheduler timer (fluxfce-scheduler.timer).
+    1. Defines dynamic event timers for the next sunrise/sunset.
+    2. Enables and starts the main daily scheduler timer (`fluxfce-scheduler.timer`).
+    3. Applies the theme appropriate for the current actual solar period.
     """
-    log.info("API: Enabling scheduling with dynamic systemd timers...")
+    log.info("API: Enabling scheduling...")
     try:
-        # 1. Set up initial dynamic event timers for the immediate next transitions.
-        # Paths are needed here as this might be called from CLI directly.
-        initial_setup_ok = handle_schedule_dynamic_transitions_command(python_exe_path, script_exe_path)
-        if not initial_setup_ok:
+        # Step 1: Define dynamic event timers for future events.
+        # This writes timer files, reloads daemon, and starts the dynamic timers.
+        # If a dynamic timer's scheduled time (e.g. sunrise) has passed for today but was "missed",
+        # systemd's Persistent=true might trigger it now. This is now handled by ensuring the
+        # apply-transition service is stable.
+        define_schedule_ok = handle_schedule_dynamic_transitions_command(
+            python_exe_path=python_exe_path, script_exe_path=script_exe_path
+        )
+        if not define_schedule_ok:
             # Log as warning because the main scheduler will still be enabled to try again.
-            log.warning("API: Initial setup of dynamic event timers failed or scheduled nothing, "
+            log.warning("API: Initial definition of dynamic event timers failed or scheduled nothing, "
                         "but proceeding to enable the main daily scheduler.")
-            # Depending on desired strictness, one might choose to return False here.
-            # However, the daily scheduler should eventually fix it.
 
-        # 2. Enable and --now start the main daily scheduler timer.
-        # `--now` ensures that if its OnCalendar=daily already passed for today, it runs immediately
-        # to schedule the dynamic timers (redundant if initial_setup_ok, but safe).
-        code, _, stderr = _sysd_mgr._run_systemctl(["enable", "--now", sysd.SCHEDULER_TIMER_NAME], capture_output=True)
+        # Step 2: Enable and start (--now) the main daily scheduler timer.
+        # Its service (`fluxfce-scheduler.service`) will run `handle_schedule_dynamic_transitions_command`
+        # again immediately, re-evaluating and ensuring the dynamic timers are correctly set.
+        code, _, stderr = _sysd_mgr._run_systemctl(
+            ["enable", "--now", sysd.SCHEDULER_TIMER_NAME], capture_output=True
+        )
         if code != 0:
             raise exc.SystemdError(
                 f"Failed to enable and start main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}): {stderr.strip()}"
             )
+        log.info(f"API: Main scheduler ({sysd.SCHEDULER_TIMER_NAME}) enabled; its service runs once now to set schedule.")
+
+        # Step 3: Explicitly apply the theme for the current actual period.
+        # This ensures that after enabling, the desktop reflects the correct current state.
+        # `handle_run_login_check` determines current period and applies all settings.
+        log.info("API: Applying theme for the current actual solar period...")
+        apply_current_ok = handle_run_login_check()
+        if apply_current_ok:
+            log.info("API: Theme for current solar period applied successfully after enabling schedule.")
+        else:
+            log.warning("API: Failed to apply theme for the current solar period after enabling schedule. "
+                        "Scheduled timers should still correct it later if the issue is transient.")
         
-        log.info(f"API: Main scheduler ({sysd.SCHEDULER_TIMER_NAME}) enabled and started.")
         log.info("API: Scheduling enabled successfully.")
         return True
         
-    except (exc.SystemdError, exc.FluxFceError) as e:
+    except (exc.SystemdError, exc.FluxFceError) as e: # Catch known, specific errors
         log.error(f"API: Failed to enable scheduling: {e}")
-        raise # Re-raise specific, known errors
-    except Exception as e:
+        raise 
+    except Exception as e: # Catch unexpected errors
         log.exception(f"API: Unexpected error enabling scheduling: {e}")
-        # Wrap unexpected errors
         raise exc.FluxFceError(f"An unexpected error occurred while enabling scheduling: {e}") from e
 
 def disable_scheduling() -> bool:
     """
     Disables automatic theme transitions:
-    1. Stops and disables the main scheduler timer (fluxfce-scheduler.timer).
-    2. Stops and removes the dynamic event timer files (sunrise/sunset).
-    3. Reloads the systemd daemon.
+    1. Stops and disables the main scheduler timer.
+    2. Stops and removes the dynamic event timer files.
+    3. Reloads the systemd daemon and resets failed states.
     """
     log.info("API: Disabling scheduling and removing dynamic systemd timers...")
     try:
-        # 1. Stop and disable the main scheduler timer
         _sysd_mgr._run_systemctl(["stop", sysd.SCHEDULER_TIMER_NAME], check_errors=False, capture_output=True)
         _sysd_mgr._run_systemctl(["disable", sysd.SCHEDULER_TIMER_NAME], check_errors=False, capture_output=True)
         log.debug(f"API: Main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}) stopped and disabled.")
 
-        # 2. Stop the dynamic event timers
         _sysd_mgr._run_systemctl(["stop", sysd.SUNRISE_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
         _sysd_mgr._run_systemctl(["stop", sysd.SUNSET_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
         log.debug("API: Dynamic event timers stopped.")
 
-        # 3. Delete the dynamic event timer files
-        sunrise_timer_path = sysd.SYSTEMD_USER_DIR / sysd.SUNRISE_EVENT_TIMER_NAME
-        sunset_timer_path = sysd.SYSTEMD_USER_DIR / sysd.SUNSET_EVENT_TIMER_NAME
-        
-        try:
-            sunrise_timer_path.unlink(missing_ok=True)
-            log.debug(f"API: Removed {sysd.SUNRISE_EVENT_TIMER_NAME} (if existed).")
-        except OSError as e:
-            log.warning(f"API: Could not remove {sysd.SUNRISE_EVENT_TIMER_NAME}: {e}")
-            
-        try:
-            sunset_timer_path.unlink(missing_ok=True)
-            log.debug(f"API: Removed {sysd.SUNSET_EVENT_TIMER_NAME} (if existed).")
-        except OSError as e:
-            log.warning(f"API: Could not remove {sysd.SUNSET_EVENT_TIMER_NAME}: {e}")
+        for timer_name in [sysd.SUNRISE_EVENT_TIMER_NAME, sysd.SUNSET_EVENT_TIMER_NAME]:
+            timer_path = sysd.SYSTEMD_USER_DIR / timer_name
+            try:
+                timer_path.unlink(missing_ok=True)
+                log.debug(f"API: Removed {timer_name} (if existed).")
+            except OSError as e:
+                log.warning(f"API: Could not remove {timer_name}: {e}")
 
-        # 4. Reload systemd daemon
         _sysd_mgr._run_systemctl(["daemon-reload"], capture_output=True)
         log.debug("API: Systemd daemon reloaded.")
         
-        # 5. Reset failed state for these units to clean up systemd's view
         units_to_reset = [
             sysd.SCHEDULER_TIMER_NAME, 
             sysd.SUNRISE_EVENT_TIMER_NAME, 
-            sysd.SUNSET_EVENT_TIMER_NAME
+            sysd.SUNSET_EVENT_TIMER_NAME,
+            sysd.SCHEDULER_SERVICE_NAME # Also reset the service it activates
         ]
         _sysd_mgr._run_systemctl(["reset-failed", *units_to_reset], check_errors=False, capture_output=True)
 
@@ -857,19 +840,36 @@ def apply_manual_mode(mode: str) -> bool:
     log.info(f"API: Manually applying mode '{mode}' and disabling schedule...")
     apply_ok = False
     try:
-        apply_ok = _apply_settings_for_mode(mode)
+        apply_ok = _apply_settings_for_mode(mode) # This applies all components
     except exc.FluxFceError as e:
+        # _apply_settings_for_mode now raises on critical theme failure,
+        # or returns True if theme OK but other parts failed (with warnings logged).
+        # Here, if it raised, it's a critical failure to apply the mode.
         log.error(f"API: Failed critical apply step for mode '{mode}': {e}")
-        raise
+        # We might still want to attempt to disable scheduling.
+        # Or re-raise immediately if apply_ok is the primary concern.
+        # For now, let's ensure scheduling is disabled even if apply failed.
+        # The CLI will report the error from the raise.
+        pass # Allow disable_scheduling to run
+    except Exception as e_apply: # Catch any other unexpected error from apply
+        log.exception(f"API: Unexpected error applying manual mode '{mode}': {e_apply}")
+        # Also allow disable_scheduling to run
+        pass
 
+
+    disable_success = False
     try:
-        disable_ok = disable_scheduling() # Use the updated disable_scheduling
-        if not disable_ok:
-            log.warning("API: Applied settings, but failed to properly disable/cleanup schedule.")
-    except exc.FluxFceError as e: # disable_scheduling can raise FluxFceError
-        log.warning(f"API: Applied settings, but an error occurred disabling schedule: {e}")
+        disable_success = disable_scheduling()
+        if not disable_success:
+            log.warning("API: Manual mode applied (or attempted), but failed to properly disable/cleanup schedule.")
+    except exc.FluxFceError as e_disable: 
+        log.warning(f"API: Manual mode applied (or attempted), but an error occurred disabling schedule: {e_disable}")
     
-    return apply_ok
+    if not apply_ok: # If _apply_settings_for_mode itself returned False or raised an error caught above
+        log.error(f"API: Manual mode '{mode}' did not apply successfully (theme or other critical part failed).")
+        return False # Indicate overall failure
+        
+    return True # True if _apply_settings_for_mode was successful
 
 def set_default_from_current(mode: str) -> bool:
     """Saves current desktop settings as the new default for Day or Night mode."""
@@ -880,10 +880,14 @@ def set_default_from_current(mode: str) -> bool:
         current_theme = _xfce_handler.get_gtk_theme()
         current_bg = None
         try:
+            # get_background_settings now raises XfceError if it can't reliably get gradient
             current_bg = _xfce_handler.get_background_settings()
         except exc.XfceError as bg_e:
-            log.warning(f"API: Could not get current background settings: {bg_e}. Skipping background save.")
-        current_screen = _xfce_handler.get_screen_settings()
+            log.warning(f"API: Could not get current background settings: {bg_e}. Skipping background save for set-default.")
+            # If we can't get background, we can still save theme and screen.
+            # Consider if this should be a partial success or require all parts. For now, continue.
+
+        current_screen = _xfce_handler.get_screen_settings() # Returns {'temp': None, 'bright': None} if off
 
         config_obj = _load_config_with_defaults()
         config_changed = False
@@ -892,51 +896,64 @@ def set_default_from_current(mode: str) -> bool:
         if config_obj.get("Themes", theme_key, fallback=None) != current_theme:
             _cfg_mgr.set_setting(config_obj, "Themes", theme_key, current_theme)
             config_changed = True
+            log.info(f"API: Updated default theme for '{mode}' to '{current_theme}'.")
 
         bg_section = "BackgroundDay" if mode == "day" else "BackgroundNight"
-        if current_bg:
-            for key, config_key in [("dir", "BG_DIR"), ("hex1", "BG_HEX1"), ("hex2", "BG_HEX2")]:
-                new_value = current_bg.get(key)
-                current_value = config_obj.get(bg_section, config_key, fallback=None)
-                new_value_str = str(new_value) if new_value is not None else ""
-                current_value_str = str(current_value) if current_value is not None else ""
-                if new_value_str != current_value_str:
-                    _cfg_mgr.set_setting(config_obj, bg_section, config_key, new_value_str)
+        if current_bg: # Only try to save background if we successfully got current settings
+            for key_in_current_bg, config_key_name in [("dir", "BG_DIR"), ("hex1", "BG_HEX1"), ("hex2", "BG_HEX2")]:
+                new_value_from_desktop = current_bg.get(key_in_current_bg)
+                current_value_in_config = config_obj.get(bg_section, config_key_name, fallback=None)
+                
+                value_to_save_str = str(new_value_from_desktop) if new_value_from_desktop is not None else ""
+                current_value_in_config_str = str(current_value_in_config) if current_value_in_config is not None else ""
+
+                if value_to_save_str != current_value_in_config_str:
+                    _cfg_mgr.set_setting(config_obj, bg_section, config_key_name, value_to_save_str)
                     config_changed = True
+                    log.info(f"API: Updated default background '{config_key_name}' for '{mode}' to '{value_to_save_str}'.")
         
         screen_section = "ScreenDay" if mode == "day" else "ScreenNight"
-        temp_to_save: Optional[str] = None
-        bright_to_save: Optional[str] = None
-        if current_screen:
-            cur_temp, cur_bright = current_screen.get("temperature"), current_screen.get("brightness")
-            if cur_temp is None and cur_bright is None: # xsct is off or reset
-                temp_to_save, bright_to_save = "", ""
-            elif cur_temp is not None and cur_bright is not None:
-                temp_to_save, bright_to_save = str(cur_temp), f"{cur_bright:.2f}"
-            else: log.warning("API: Inconsistent screen settings read; not updating defaults.")
+        temp_to_save_str: Optional[str] = None
+        bright_to_save_str: Optional[str] = None
 
-        if temp_to_save is not None and bright_to_save is not None:
-            if config_obj.get(screen_section, "XSCT_TEMP", fallback=None) != temp_to_save:
-                _cfg_mgr.set_setting(config_obj, screen_section, "XSCT_TEMP", temp_to_save)
+        if current_screen: # Will always be a dict, possibly with None values
+            cur_temp, cur_bright = current_screen.get("temperature"), current_screen.get("brightness")
+            if cur_temp is None and cur_bright is None: # xsct is off or reset (temp and bright are None)
+                temp_to_save_str, bright_to_save_str = "", "" # Save as empty strings to signify reset
+            elif cur_temp is not None and cur_bright is not None:
+                temp_to_save_str, bright_to_save_str = str(cur_temp), f"{cur_bright:.2f}"
+            else: # Should not happen if get_screen_settings is consistent (both None or both set)
+                log.warning(f"API: Inconsistent screen settings read (Temp: {cur_temp}, Bright: {cur_bright}); not updating screen defaults for '{mode}'.")
+                temp_to_save_str, bright_to_save_str = None, None # Don't save if inconsistent
+
+        if temp_to_save_str is not None: # Check if we decided to save temp (not None means yes, or empty string)
+            if config_obj.get(screen_section, "XSCT_TEMP", fallback=None) != temp_to_save_str:
+                _cfg_mgr.set_setting(config_obj, screen_section, "XSCT_TEMP", temp_to_save_str)
                 config_changed = True
-            if config_obj.get(screen_section, "XSCT_BRIGHT", fallback=None) != bright_to_save:
-                _cfg_mgr.set_setting(config_obj, screen_section, "XSCT_BRIGHT", bright_to_save)
+                log.info(f"API: Updated default screen temp for '{mode}' to '{temp_to_save_str or 'reset'}'.")
+        
+        if bright_to_save_str is not None: # Check if we decided to save bright
+            if config_obj.get(screen_section, "XSCT_BRIGHT", fallback=None) != bright_to_save_str:
+                _cfg_mgr.set_setting(config_obj, screen_section, "XSCT_BRIGHT", bright_to_save_str)
                 config_changed = True
+                log.info(f"API: Updated default screen bright for '{mode}' to '{bright_to_save_str or 'reset'}'.")
 
         if config_changed:
-            if save_configuration(config_obj):
+            save_ok = save_configuration(config_obj)
+            if save_ok:
                 log.info(f"API: Successfully saved updated defaults for mode '{mode}'.")
-                return True
-            return False # save_configuration should raise on failure
+            # save_configuration raises on failure, so no explicit else needed for failure
+            return save_ok
         else:
-            log.info(f"API: Current settings already match defaults for '{mode}'. No changes made.")
-            return True
+            log.info(f"API: Current settings already match defaults for '{mode}'. No changes made to config file.")
+            return True # No changes needed, so "successful" in that sense
+            
     except (exc.ValidationError, exc.XfceError, exc.ConfigError) as e:
-        log.error(f"API: Failed to set default from current: {e}")
-        raise
+        log.error(f"API: Failed to set default from current for mode '{mode}': {e}")
+        raise # Re-raise to be caught by CLI
     except Exception as e:
-        log.exception(f"API: Unexpected error setting default from current: {e}")
-        raise exc.FluxFceError(f"Unexpected error setting default from current: {e}") from e
+        log.exception(f"API: Unexpected error setting default from current for '{mode}': {e}")
+        raise exc.FluxFceError(f"Unexpected error setting default from current for '{mode}': {e}") from e
 
 # --- Status Function ---
 def get_status() -> dict[str, Any]:
@@ -946,8 +963,8 @@ def get_status() -> dict[str, Any]:
         "config": {},
         "sun_times": {"sunrise": None, "sunset": None, "error": None},
         "current_period": "unknown",
-        "schedule": {"error": None, "timers": {}}, # Updated for systemd timers
-        "systemd_services": {"error": None}, # For login, resume, scheduler *service*
+        "schedule": {"error": None, "timers": {}},
+        "systemd_services": {"error": None},
     }
 
     # 1. Get Config
@@ -966,24 +983,25 @@ def get_status() -> dict[str, Any]:
         lat_str = status["config"]["latitude"]
         lon_str = status["config"]["longitude"]
         tz_name = status["config"]["timezone"]
-        if lat_str and lon_str and tz_name and tz_name != "Not Set" and lat_str !="Not Set" and lon_str != "Not Set":
+        if all([lat_str, lon_str, tz_name, 
+                lat_str != "Not Set", lon_str != "Not Set", tz_name != "Not Set"]):
             try:
                 lat = helpers.latlon_str_to_float(lat_str)
                 lon = helpers.latlon_str_to_float(lon_str)
                 tz_info = ZoneInfo(tz_name)
-                today = datetime.now(tz_info).date()
+                now_local = datetime.now(tz_info)
+                today = now_local.date()
                 sun_times_today = sun.get_sun_times(lat, lon, today, tz_name)
                 status["sun_times"]["sunrise"] = sun_times_today["sunrise"]
                 status["sun_times"]["sunset"] = sun_times_today["sunset"]
-                now_local = datetime.now(tz_info)
                 status["current_period"] = "day" if sun_times_today["sunrise"] <= now_local < sun_times_today["sunset"] else "night"
             except (exc.ValidationError, exc.CalculationError, ZoneInfoNotFoundError) as e:
                 status["sun_times"]["error"] = str(e)
-                status["current_period"] = "error"
-            except Exception as e: # Catch-all for unexpected issues
+                status["current_period"] = "error (calculation/config)"
+            except Exception as e: 
                 log.exception("API: Unexpected error calculating sun times for status.")
                 status["sun_times"]["error"] = f"Unexpected in sun times: {e}"
-                status["current_period"] = "error"
+                status["current_period"] = "error (unexpected)"
         else:
             status["sun_times"]["error"] = "Location/Timezone not fully configured."
             status["current_period"] = "unknown (config incomplete)"
@@ -999,122 +1017,110 @@ def get_status() -> dict[str, Any]:
             ["list-timers", "--all", *timer_names_to_query],
             check_errors=False, capture_output=True
         )
-        if code != 0 and not ("0 timers listed." in stdout_timers or "No timers found." in stdout_timers) :
+        # "No timers found." is also a valid empty output from systemctl
+        if code != 0 and not ("0 timers listed." in stdout_timers or "No timers found." in stdout_timers):
             status["schedule"]["error"] = f"Failed to list systemd timers (code {code}): {stderr_timers.strip() or stdout_timers.strip()}"
         
         if stdout_timers:
             parsed_timers = {}
             lines = stdout_timers.strip().split('\n')
-            if len(lines) > 1: # Header + data lines
+            if "NEXT" in lines[0].upper() and len(lines) > 1: # Basic check for header
                 header_line = lines[0].upper()
-                col_indices = { # Store start indices of columns
-                    "NEXT": header_line.find("NEXT"),
-                    "LEFT": header_line.find("LEFT"),
-                    "LAST": header_line.find("LAST"),
-                    "PASSED": header_line.find("PASSED"), # Not used by print_status but parsed
-                    "UNIT": header_line.find("UNIT"),
-                    "ACTIVATES": header_line.find("ACTIVATES"),
+                col_indices = {
+                    "NEXT": header_line.find("NEXT"), "LEFT": header_line.find("LEFT"),
+                    "LAST": header_line.find("LAST"), "PASSED": header_line.find("PASSED"),
+                    "UNIT": header_line.find("UNIT"), "ACTIVATES": header_line.find("ACTIVATES"),
                 }
-                # Filter out -1 (column not found) and sort by index to handle order variations
                 sorted_cols = sorted([(name, idx) for name, idx in col_indices.items() if idx != -1], key=lambda item: item[1])
 
-                for line_content in lines[1:]: # Skip header line
-                    if not line_content.strip(): continue
+                for line_content in lines[1:]:
+                    if not line_content.strip() or "timer" not in line_content: continue # Skip empty lines or non-timer lines
                     
-                    timer_data_raw = {} # Stores raw data parsed by column name
+                    timer_data_raw = {}
                     current_unit_name = "Unknown"
                     
                     for i, (col_name, start_idx) in enumerate(sorted_cols):
-                        # Determine end_idx for the current field
-                        # If it's the last column, take content to the end of the line
                         end_idx = sorted_cols[i+1][1] if i + 1 < len(sorted_cols) else len(line_content)
                         field_value = line_content[start_idx:end_idx].strip()
                         timer_data_raw[col_name.lower()] = field_value
-                        if col_name == "UNIT": # UNIT is a guaranteed column name
-                            current_unit_name = field_value
+                        if col_name == "UNIT": current_unit_name = field_value
                     
-                    if current_unit_name != "Unknown" and current_unit_name in timer_names_to_query:
-                        # Get enabled/active status (ensure capture_output=True)
-                        is_enabled_code, _, _ = _sysd_mgr._run_systemctl(
-                            ["is-enabled", current_unit_name], check_errors=False, capture_output=True
-                        )
-                        is_active_code, _, _ = _sysd_mgr._run_systemctl(
-                            ["is-active", current_unit_name], check_errors=False, capture_output=True
-                        )
+                    if current_unit_name in timer_names_to_query:
+                        is_enabled_code, _, _ = _sysd_mgr._run_systemctl(["is-enabled", current_unit_name], check_errors=False, capture_output=True)
+                        is_active_code, _, _ = _sysd_mgr._run_systemctl(["is-active", current_unit_name], check_errors=False, capture_output=True)
                         
-                        # Map raw parsed data to keys expected by print_status in fluxfce_cli.py
-                        final_timer_data_for_cli = {
+                        parsed_timers[current_unit_name] = {
                             "enabled": "Enabled" if is_enabled_code == 0 else "Disabled",
                             "active": "Active" if is_active_code == 0 else "Inactive",
                             "next_run": timer_data_raw.get("next", "N/A"),
                             "time_left": timer_data_raw.get("left", "N/A"),
                             "last_run": timer_data_raw.get("last", "N/A"),
                             "activates": timer_data_raw.get("activates", "N/A")
-                            # "passed" is parsed into timer_data_raw.get("passed") but not used by CLI's print_status
                         }
-                        parsed_timers[current_unit_name] = final_timer_data_for_cli
             
             status["schedule"]["timers"] = parsed_timers
-            if not parsed_timers and not status["schedule"]["error"]:
-                status["schedule"]["info"] = "No relevant fluxfce timers found or listed."
+            if not parsed_timers and not status["schedule"].get("error"): # Use .get to avoid KeyError if error was already set
+                status["schedule"]["info"] = "No relevant fluxfce timers found or listed by systemctl."
+            elif "0 timers listed." in stdout_timers or "No timers found." in stdout_timers:
+                 status["schedule"]["info"] = "No relevant fluxfce timers found or listed by systemctl."
+
 
     except Exception as e:
         log.exception("API: Unexpected error getting systemd timer schedule status.")
         status["schedule"]["error"] = f"Unexpected error querying timers: {e}"
 
-    # 4. Get Systemd Service Status (Login, Resume, Scheduler Service itself)
+    # 4. Get Systemd Service Status
     services_to_check = {
         "scheduler_service": sysd.SCHEDULER_SERVICE_NAME,
         "login_service": sysd.LOGIN_SERVICE_NAME,
         "resume_service": sysd.RESUME_SERVICE_NAME,
     }
+    any_service_error = False
     for key, unit_name in services_to_check.items():
         try:
-            # Ensure capture_output=True
-            enabled_code, _, _ = _sysd_mgr._run_systemctl(
-                ["is-enabled", unit_name], check_errors=False, capture_output=True
-            )
-            active_code, _, _ = _sysd_mgr._run_systemctl(
-                ["is-active", unit_name], check_errors=False, capture_output=True
-            )
+            enabled_code, _, _ = _sysd_mgr._run_systemctl(["is-enabled", unit_name], check_errors=False, capture_output=True)
+            active_code, _, _ = _sysd_mgr._run_systemctl(["is-active", unit_name], check_errors=False, capture_output=True)
             status["systemd_services"][key] = f"{'Enabled' if enabled_code == 0 else 'Disabled'}, {'Active' if active_code == 0 else 'Inactive'}"
-        except exc.SystemdError as e: # Should be caught by _run_systemctl if it raises
+        except exc.SystemdError as e:
             status["systemd_services"][key] = f"Error checking: {e}"
-            status["systemd_services"]["error"] = status["systemd_services"].get("error","") + f" Error with {key}. "
-        except Exception as e: # For unexpected errors not wrapped by _run_systemctl
+            any_service_error = True
+        except Exception as e:
             log.exception(f"API: Unexpected error getting status for service {unit_name}")
             status["systemd_services"][key] = "Unexpected error checking"
-            status["systemd_services"]["error"] = status["systemd_services"].get("error","") + f" Unexpected with {key}. "
+            any_service_error = True
+    if any_service_error and not status["systemd_services"].get("error"):
+        status["systemd_services"]["error"] = "One or more services could not be checked."
             
     return status
 
 # --- Internal Command Handlers (Called by Executable Script / Systemd) ---
 def handle_internal_apply(mode: str) -> bool:
-    """Called by systemd (fluxfce-apply-transition@.service) to apply mode."""
-    log.info(f"API: Internal apply called for mode '{mode}'")
+    """Called by systemd (`fluxfce-apply-transition@.service`) to apply mode."""
+    log.info(f"API: Internal apply called for mode '{mode}' by systemd.")
     try:
         return _apply_settings_for_mode(mode)
-    except exc.FluxFceError as e:
+    except exc.FluxFceError as e: # Includes critical theme errors from _apply_settings_for_mode
         log.error(f"API: Error during internal apply for mode '{mode}': {e}")
-        return False
-    except Exception as e:
+        return False # Service should fail if critical part fails
+    except Exception as e: # Catch any other unexpected errors
         log.exception(f"API: Unexpected error during internal apply for mode '{mode}': {e}")
         return False
 
 def handle_run_login_check() -> bool:
     """
-    Called by systemd (fluxfce-login.service, fluxfce-resume.service).
-    Determines current period and applies appropriate theme.
+    Called by systemd (`fluxfce-login.service`, `fluxfce-resume.service`).
+    Determines current solar period and applies appropriate theme settings.
     """
-    log.info("API: Handling run-login-check command...")
+    log.info("API: Handling 'run-login-check' command (login/resume)...")
     try:
-        config_obj = _load_config_with_defaults()
+        config_obj = _load_config_with_defaults() # Ensures defaults are considered
         lat_str = config_obj.get("Location", "LATITUDE")
         lon_str = config_obj.get("Location", "LONGITUDE")
         tz_name = config_obj.get("Location", "TIMEZONE")
-        mode_to_apply = "night" # Default assumption
+        mode_to_apply = "night" # Default assumption if sun times can't be calculated
 
-        if lat_str and lon_str and tz_name and tz_name != "Not Set":
+        if all([lat_str, lon_str, tz_name, 
+                lat_str != "Not Set", lon_str != "Not Set", tz_name != "Not Set"]):
             try:
                 lat = helpers.latlon_str_to_float(lat_str)
                 lon = helpers.latlon_str_to_float(lon_str)
@@ -1124,22 +1130,22 @@ def handle_run_login_check() -> bool:
                 sun_times = sun.get_sun_times(lat, lon, today, tz_name)
                 if sun_times["sunrise"] <= now_local < sun_times["sunset"]:
                     mode_to_apply = "day"
-                log.info(f"API: Login check determined current mode: '{mode_to_apply}'")
+                log.info(f"API: Login/Resume check determined current mode: '{mode_to_apply}' based on sun times.")
             except (exc.ValidationError, exc.CalculationError, ZoneInfoNotFoundError) as e:
-                log.warning(f"API: Could not determine mode for login check ({e}). Defaulting to '{mode_to_apply}'.")
-            except Exception as e_sun: # Catch-all for unexpected issues in sun time logic
-                log.exception(f"API: Unexpected error determining mode for login check ({e_sun}). Defaulting to '{mode_to_apply}'.")
+                log.warning(f"API: Could not determine mode for login/resume check due to sun time calculation error ({e}). Defaulting to '{mode_to_apply}'.")
+            except Exception as e_sun:
+                log.exception(f"API: Unexpected error determining mode for login/resume check ({e_sun}). Defaulting to '{mode_to_apply}'.")
         else:
-            log.warning("API: Location/Timezone not fully configured for login check. Defaulting to 'night'.")
+            log.warning("API: Location/Timezone not fully configured for login/resume check. Defaulting to 'night'.")
         
         log.info(f"API: Applying mode '{mode_to_apply}' for login/resume check.")
         return _apply_settings_for_mode(mode_to_apply)
 
-    except exc.FluxFceError as e:
-        log.error(f"API: Error during run-login-check: {e}")
+    except exc.FluxFceError as e: # Includes critical theme errors
+        log.error(f"API: Error during 'run-login-check': {e}")
         return False
-    except Exception as e: # Catch-all for unexpected issues
-        log.exception(f"API: Unexpected error during run-login-check: {e}")
+    except Exception as e: 
+        log.exception(f"API: Unexpected error during 'run-login-check': {e}")
         return False
 ##############
 ./fluxfce_core/config.py
@@ -3517,154 +3523,11 @@ if __name__ == "__main__":
 
 
 ##############
-./hand-over-prompt.md
-
-**Project Handover: fluxfce-simplified v0.1**
-
-**Context:**
-You are taking over development for `fluxfce-simplified` (v0.1), a Python CLI tool designed to automatically switch the XFCE desktop appearance (GTK theme, background color/gradient, screen temperature/brightness via `xsct`) based on calculated local sunrise and sunset times.
-
-**Your Role & Required Skills:**
-You are a software engineer and Linux system administrator. You possess deep knowledge of:
-*   Python (3.9+)
-*   Linux Command-Line Tools: `xfconf-query`, `xsct`, **`systemctl`**, `journalctl`, `timedatectl`, `git`, `make`, standard shell utilities.
-*   XFCE Desktop Environment: Configuration concepts (`xfconf`), theming.
-*   Systemd: User sessions, `.service` and `.timer` units, targets (esp. `sleep.target`, `graphical-session.target`), `journalctl`.
-*   Software Architecture: Separation of concerns, API design.
-*   Debugging Techniques: Analyzing logs, tracebacks, system states.
-
-**Codebase:**
-*   The codebase for `fluxfce-simplified` v0.1 is included as `codebase.txt` accompanying this prompt.
-
-**Tasks:**
-*   Analyze and review the codebase, ensuring you have a thorough understanding of the intended functionality of fluxfce-simplified.
-*   **Focus on code related to installation (ie `fluxfce install`), and the setup and creation systemd units. Assist with debugging and resoloving the following:**
-
-```
-~ ❯ fluxfce install
-...
---- Step 3: Installing systemd units ---
-Created symlink /home/cad/.config/systemd/user/graphical-session.target.wants/fluxfce-login.service → /home/cad/.config/systemd/user/fluxfce-login.service.
-Created symlink /home/cad/.config/systemd/user/suspend.target.wants/fluxfce-resume.service → /home/cad/.config/systemd/user/fluxfce-resume.service.
-Unit /home/cad/.config/systemd/user/fluxfce-resume.service is added as a dependency to a non-existent unit suspend.target. # note this issue
-Created symlink /home/cad/.config/systemd/user/timers.target.wants/fluxfce-scheduler.timer → /home/cad/.config/systemd/user/fluxfce-scheduler.timer.
-Static systemd units installed.
-
---- Step 4: Enabling automatic scheduling ---
-Failed to stop fluxfce-sunrise-event.timer: Unit fluxfce-sunrise-event.timer not loaded. # note this line
-Failed to stop fluxfce-sunset-event.timer: Unit fluxfce-sunset-event.timer not loaded. # note this line
-Automatic theme scheduling enabled via systemd timers.
-```
-
-**Note:**
-*   It may be necessary to do research to determine the correct approach to craeting the dynamic systemd units.
-
-
-
-
-**Your objective**
-*   Assist in debugging fluxfce-simplified
-
-
-
-
-
-**Core Goal of `fluxfce`:**
-To automatically apply user-defined "Day" and "Night" appearance settings (Theme, Background, Screen Temp) at the correct local sunrise and sunset times, while remaining reliable across logins, reboots, and suspend/resume cycles, using minimal system resources when idle.
-
-**Architecture Overview:**
-The project is split into two main parts:
-1.  `fluxfce_core` (Python Package): Contains all backend logic, isolated from the UI.
-    *   `api.py`: Public functions acting as the interface for external callers.
-    *   `config.py`: `ConfigManager` class, handles `config.ini` (no presets).
-    *   `exceptions.py`: Custom exception classes.
-    *   `helpers.py`: Utility functions (`run_command`, validators, timezone detection).
-    *   `scheduler.py`: `AtdScheduler` class, manages `at` jobs.
-    *   `sun.py`: Sunrise/sunset calculation logic.
-    *   `systemd.py`: `SystemdManager` class, manages systemd user units.
-    *   `xfce.py`: `XfceHandler` class, interacts with `xfconf-query` and `xsct`.
-    *   `__init__.py`: Exports the public API elements.
-2.  `fluxfce_cli.py`: The command-line interface script. Uses `argparse`, calls functions from `fluxfce_core`, handles user output and error reporting.
-
-**Key Features Implemented (v0.1):**
-*   `install`: Sets up systemd units, creates default config (detects TZ, prompts coords), enables scheduling.
-*   `uninstall`: Removes systemd units, clears schedule, prompts to remove config dir.
-*   `enable`: Enables automatic scheduling (sets N-day `at` job buffer).
-*   `disable`: Disables automatic scheduling (clears `at` jobs).
-*   `status`: Shows current configuration, calculated sun times, schedule, systemd status.
-*   `force-day`/`force-night`: Applies the specified mode now and disables automatic scheduling.
-*   `set-default --mode <day|night>`: Saves the *current* desktop appearance as the default for the specified mode in `config.ini`.
-*   Automatic theme application on Login and Resume via dedicated systemd services (`run-login-check` command).
-
-**Key Features Explicitly REMOVED from original design:**
-*   Preset system (`save`, `apply`, etc.)
-*   Direct component setters (`set background`, `set theme`)
-*   `config --get/--set` command
-*   `toggle` command
-*   State file (`~/.config/fluxfce/state`) - Deemed redundant.
-
-**Technical Details & Design Decisions:**
-*   **Scheduling:** Uses a **daily systemd user timer** (`fluxfce-scheduler.timer` with `Persistent=true`) which triggers a service (`fluxfce-scheduler.service`) to run `fluxfce schedule-jobs`. This calculates sunrise/sunset for the next **N=7 days** and schedules ~14 individual `at` jobs using `atd`. This provides robustness against missed scheduler runs. *Alternatives (daemon, chaining `at`, long-term pre-calc) were evaluated and rejected due to fragility, complexity, or lack of significant benefit.*
-*   **Environment for `atd`:** `xsct` and `xfconf-query` need `DISPLAY`/`XAUTHORITY`. The `scheduler.schedule_transitions` function attempts to fetch these using `systemctl --user show-environment` and injects them as `export` commands into the script run by the `at` job.
-*   **Resume Handling:** A dedicated systemd user service (`fluxfce-resume.service`) triggered by `sleep.target` runs the `run-login-check` command after resuming from suspend/hibernate to ensure the correct theme is applied.
-*   **`xsct` Installation:** Requires manual compilation/installation from source (`https://github.com/faf0/xsct.git`) as it's typically not in package repositories.
-*   **Configuration:** Single `config.ini` file. Edits should be reflected automatically within ~24hrs (by daily scheduler) or immediately upon next `enable` command.
-
-
-
-**Config File:**
-*   **Example Config File:**
-```
-~/.config/fluxfce/config.ini
-[Location]
-latitude = 43.65N
-longitude = 79.38W
-timezone = America/Toronto
-
-[Themes]
-light_theme = Adwaita
-dark_theme = Adwaita-dark
-
-[BackgroundDay]
-bg_hex1 = ADD8E6
-bg_hex2 = 87CEEB
-bg_dir = v
-
-[ScreenDay]
-xsct_temp = 6500
-xsct_bright = 1.0
-
-[BackgroundNight]
-bg_hex1 = 1E1E2E
-bg_hex2 = 000000
-bg_dir = v
-
-[ScreenNight]
-xsct_temp = 4500
-xsct_bright = 0.85
-```
-
-
-
-**Please procceed**
-
-
-   development task will likely involve addressing the "Known Issues / Immediate Next Steps", starting with **implementing automated tests** for the `fluxfce_core` library or creating the **packaging setup** (`pyproject.toml`). Await further instructions on which to prioritize.
-
-
-
-**Known Issues / Immediate Next Steps:**
-1.  **Automated Testing:** The project completely lacks automated tests (unit/integration). This is the highest priority before adding significant new features or distributing widely.
-2.  **Packaging:** No `pyproject.toml` or `setup.py` exists. Installation relies on manual PATH setup (symlink recommended). Proper packaging using `pip` is needed.
-3.  **Documentation:** Docstrings within `fluxfce_core` are sparse. The `README.md` needs review and potentially minor updates based on the final code state.
-4.  **Real-world Testing:** Needs more testing across different XFCE versions, login managers, and suspend/resume scenarios. Confirm `xsct` env injection works reliably across systems.
-
-##############
 ./readme.md
 
 # fluxfce - XFCE Auto-Theming Utility
 
-**Fluxfce** automates switching XFCE desktop appearance (GTK Theme, Background Color/Gradient, Screen Temperature/Brightness) between configured Day and Night modes based on local sunrise and sunset times. It uses an adapted NOAA algorithm to calculate transition times. Systemd and the `atd` scheduler are used for precise, low-resource scheduling.
+**Fluxfce** automates switching XFCE desktop appearance (GTK Theme, Background Color/Gradient, Screen Temperature/Brightness) between configured Day and Night modes based on local sunrise and sunset times. It uses an adapted NOAA algorithm to calculate transition times. **Systemd user timers** are used for precise, low-resource scheduling and applying themes on login/resume.
 
 This is a refactored and simplified version focusing on core functionality, reliability, and maintainability.
 
@@ -3677,56 +3540,41 @@ This is a refactored and simplified version focusing on core functionality, reli
 ## Features
 
 - **Automatic Switching:** Automatically transitions between Day and Night modes at local sunrise and sunset.
+- **Easy Default Setting:** Save your current desktop look as the new default for Day or Night mode (`fluxfce set-default --mode day`).
 - **Component Control:** Adjusts:
   - GTK Theme (`Net/ThemeName`)
   - Desktop Background (Solid color or vertical/horizontal gradient via `xfce4-desktop` properties)
   - Screen Temperature & Brightness (via `xsct`)
-  - *(Support for background image switching is planned for a future version)*
 - **Location Aware:** Calculates sunrise/sunset times based on user-configured latitude, longitude, and IANA timezone.
 - **Timezone Detection:** Attempts to automatically detect system timezone during initial install.
-- **Low Resource Usage:** Uses the system `atd` service for scheduling transitions, avoiding a persistent background daemon.
-- **Systemd Integration:** Installs systemd user units (`.timer`, `.service`) for reliable daily rescheduling and applying the correct theme on login and resume from suspend.
-- **Manual Overrides:** Easily force Day or Night mode (`force-day`, `force-night`). Manual overrides temporarily disable automatic scheduling.
+- **Low Resource Usage:** Uses systemd user timers, avoiding a persistent custom background daemon.
+- **Systemd Integration:** Installs systemd user units (`.timer`, `.service`) for:
+    - Daily rescheduling of sunrise/sunset event timers.
+    - Triggering theme transitions at precise sunrise/sunset times.
+    - Applying the correct theme on login and resume from suspend.
+- **Manual Overrides:** Easily force Day or Night mode (`force-day`, `force-night`). Manual overrides disable automatic scheduling.
 - **Simple Configuration:** Uses a clear INI file (`~/.config/fluxfce/config.ini`).
-- **Easy Default Setting:** Save your current desktop look as the new default for Day or Night mode (`set-default`).
-- **Status Reporting:** Check current configuration, calculated times, and scheduled jobs (`status`).
+- **Status Reporting:** Check current configuration, calculated times, and systemd timer status (`status`).
 
 ## Requirements
 
-- **Linux Distribution:** Designed for systemd-based distributions with XFCE.
+- **Linux Distribution:** Designed for XFCE distributions with systemd.
   - **Primary Targets:** Ubuntu 22.04+ (Xubuntu), Linux Mint 21.x+ (XFCE), Debian 11+ (XFCE).
   - *May work on other systemd-based XFCE distributions (e.g., Fedora XFCE, Arch XFCE) with adjustments to package names for dependencies.*
 - **Desktop Environment:** XFCE 4.x
 - **Python:** Python 3.9+ (due to `zoneinfo` usage).
 - **System Tools & Services (Dependencies):**
-  - **`atd` service:** For scheduling transitions.
-    - Installation: Usually via the `at` package (e.g., `sudo apt install at`).
-    - Activation: Must be enabled and running (e.g., `sudo systemctl enable --now atd`).
+  - **`systemd`:** User instance must be operational.
   - **`xsct`:** For screen temperature and brightness control.
     - Installation on **Ubuntu 24.04 (Noble Numbat) and newer (or equivalent Linux Mint/Debian versions)**:
       ```bash
       sudo apt update
       sudo apt install xsct
       ```
-    - Installation on **older Ubuntu/Debian versions (e.g., Ubuntu 22.04, Debian 11) or if `apt install xsct` fails**:
-      `xsct` typically requires manual compilation from source:
-      1.  Install build dependencies:
-          ```bash
-          sudo apt update
-          sudo apt install build-essential libx11-dev libxrandr-dev git
-          ```
-      2.  Clone, compile, and install `xsct`:
-          ```bash
-          git clone https://github.com/faf0/xsct.git
-          cd xsct
-          sudo make install  # Installs to /usr/local/bin by default
-          ```
-          *(Alternatively, install to `~/.local/bin`: `make PREFIX=~/.local install` and ensure `~/.local/bin` is in your PATH)*
   - **Core XFCE/System Tools** (Usually pre-installed on XFCE systems):
     - `xfconf-query` (from `xfce4-utils` or similar)
     - `xfdesktop` (from `xfdesktop4` or similar, for background reloads)
-    - `systemctl`, `timedatectl` (part of systemd)
-    - `at`, `atq`, `atrm` (from the `at` package)
+    - `timedatectl` (part of systemd)
 
 ## Installation
 
@@ -3742,10 +3590,10 @@ This is a refactored and simplified version focusing on core functionality, reli
     ```
     The script will:
     *   Check for Python version.
-    *   Check for required system dependencies and guide you through installing missing ones (like `at` or `xsct` via `apt`, or provide manual instructions for `xsct`).
+    *   Check for required system dependencies using `fluxfce_deps_check.py` and guide you through installing missing ones (like `xsct` via `apt`, or provide manual instructions for `xsct`).
     *   Prompt you for location (latitude/longitude) and attempt to detect your timezone for accurate sun time calculations if a configuration file doesn't exist.
     *   Install systemd user units for automatic operation.
-    *   Enable scheduling.
+    *   Enable scheduling, which sets up timers for the next sunrise/sunset and ensures the current desktop appearance matches the current solar period.
 
 3.  **Make the `fluxfce` command easily accessible (if not using `pip install .` in the future):**
     The `install` script will provide instructions. A common method is:
@@ -3757,11 +3605,12 @@ This is a refactored and simplified version focusing on core functionality, reli
     *   Make the main script executable:
         ```bash
         chmod +x ./fluxfce_cli.py
-        ```    *   Create a symbolic link:
+        ```
+    *   Create a symbolic link:
         ```bash
         SCRIPT_ABS_PATH=$(readlink -f ./fluxfce_cli.py) # Or use: SCRIPT_ABS_PATH=$(pwd)/fluxfce_cli.py
         mkdir -p ~/.local/bin
-        ln -s "$SCRIPT_ABS_PATH" ~/.local/bin/fluxfce
+        ln -s -f "$SCRIPT_ABS_PATH" ~/.local/bin/fluxfce # Added -f to force overwrite if exists
         ```
 
 4.  **(Recommended) Configure Day/Night Appearance:**
@@ -3773,117 +3622,10 @@ This is a refactored and simplified version focusing on core functionality, reli
     ```bash
     fluxfce set-default --mode night
     ```
-    `fluxfce` will save these settings to its configuration file.
+    `fluxfce` will save these settings to its configuration file. When `fluxfce enable` is run, or when the scheduled transitions occur, these configured settings will be applied.
 
 ## Usage
 
 ```bash
 fluxfce <command> [options]
-```
-
-**Commands:**
-- `install` — Performs dependency checks, interactive setup (if needed), installs systemd units, and enables automatic scheduling.
-- `uninstall` — Removes systemd units and clears schedule (prompts to remove config).
-- `enable` — Enables automatic scheduling (schedules transitions).
-- `disable` — Disable automatic scheduling (clears scheduled transitions).
-- `status` — Show config, calculated times, and schedule status.
-- `force-day` — Apply Day Mode settings now (disables automatic scheduling).
-- `force-night` — Apply Night Mode settings now (disables automatic scheduling).
-- `set-default --mode {day,night}` — Save current desktop look as the new default for Day or Night mode.
-
-**Options:**
-- `-h`, `--help` — Show this help message and exit.
-- `-v`, `--verbose` — Enable detailed logging output for `fluxfce` operations.
-
-## Configuration
-
-Fluxfce uses an INI file located at `~/.config/fluxfce/config.ini`.
-The `fluxfce install` command will help you create this initially. You can edit it manually later.
-
-**Example `config.ini`:**
-```ini
-[Location]
-latitude = 43.65N
-longitude = 79.38W
-timezone = America/Toronto
-
-[Themes]
-light_theme = Adwaita
-dark_theme = Adwaita-dark
-
-[BackgroundDay]
-bg_dir = v
-bg_hex1 = ADD8E6
-bg_hex2 = 87CEEB
-
-[ScreenDay]
-xsct_temp = 6500
-xsct_bright = 1.0
-
-[BackgroundNight]
-bg_dir = v
-bg_hex1 = 1E1E2E
-bg_hex2 = 000000
-
-[ScreenNight]
-xsct_temp = 4500
-xsct_bright = 0.85
-```
-
-- **`bg_dir` (Background Direction):**
-  - `s` = Solid color (uses `bg_hex1` only)
-  - `h` = Horizontal gradient (uses `bg_hex1` and `bg_hex2`)
-  - `v` = Vertical gradient (uses `bg_hex1` and `bg_hex2`)
-- **`xsct_temp` (Screen Temperature):** In Kelvin (e.g., 3700, 6500). If empty for Day mode, `xsct` typically resets to its default.
-- **`xsct_bright` (Screen Brightness):** Factor (e.g., 0.8, 1.0). If empty for Day mode, `xsct` typically resets to its default.
-
-## Troubleshooting
-
-- **Verbose Output:** Always try running `fluxfce` with the `-v` flag first to get more detailed logs:
-  ```bash
-  fluxfce -v status
-  fluxfce -v enable
-  ```
-- **Dependency Check Script:**
-  If you suspect system dependencies are the issue, and if the `fluxfce install` guidance wasn't sufficient, you can re-run the dependency check. If a separate script (e.g., `fluxfce_dependency_setup.py`) was provided with fluxfce:
-  ```bash
-  python3 /path/to/fluxfce_dependency_setup.py
-  ```
-  Otherwise, the `fluxfce install` command itself performs these checks.
-
-- **Check `atd` Service:**
-  ```bash
-  sudo systemctl status atd
-  ```
-  Ensure it's active and enabled. If not:
-  ```bash
-  sudo apt install at # If not installed
-  sudo systemctl enable --now atd
-  ```
-
-- **Check `at` Queue:** See if `fluxfce` jobs are scheduled:
-  ```bash
-  atq
-  ```
-
-- **Systemd User Units:** Check the status of `fluxfce`'s own services:
-  ```bash
-  systemctl --user status fluxfce-scheduler.timer fluxfce-scheduler.service fluxfce-login.service fluxfce-resume.service
-  ```
-
-- **View Journal Logs:** For more detailed error messages from `fluxfce` services:
-  ```bash
-  journalctl --user -u fluxfce-scheduler.timer
-  journalctl --user -u fluxfce-scheduler.service
-  journalctl --user -u fluxfce-login.service
-  journalctl --user -u fluxfce-resume.service
-  journalctl --user -t fluxfce-atjob # For output from the actual theme transitions
-  ```
-
-- **Configuration File Path:** Ensure your config is at `~/.config/fluxfce/config.ini`.
-
-## License
-
-MIT
-
 ##############

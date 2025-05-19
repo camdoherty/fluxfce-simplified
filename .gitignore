@@ -7,3 +7,7 @@ srss.py
 setup_format_lint.sh
 codebase-to-txt.sh
 
+hand-over-prompt
+codebase.txt
+.gitignore
+codebase.txt
