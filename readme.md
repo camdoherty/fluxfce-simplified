@@ -44,20 +44,6 @@ This is a refactored and simplified version focusing on core functionality, reli
       sudo apt update
       sudo apt install xsct
       ```
-    - Installation on **older Ubuntu/Debian versions (e.g., Ubuntu 22.04, Debian 11) or if `apt install xsct` fails**:
-      `xsct` typically requires manual compilation from source:
-      1.  Install build dependencies:
-          ```bash
-          sudo apt update
-          sudo apt install build-essential libx11-dev libxrandr-dev git
-          ```
-      2.  Clone, compile, and install `xsct`:
-          ```bash
-          git clone https://github.com/faf0/xsct.git
-          cd xsct
-          sudo make install  # Installs to /usr/local/bin by default
-          ```
-          *(Alternatively, install to `~/.local/bin`: `make PREFIX=~/.local install` and ensure `~/.local/bin` is in your PATH)*
   - **Core XFCE/System Tools** (Usually pre-installed on XFCE systems):
     - `xfconf-query` (from `xfce4-utils` or similar)
     - `xfdesktop` (from `xfdesktop4` or similar, for background reloads)
