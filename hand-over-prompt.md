@@ -1,19 +1,52 @@
 **Project Handover: fluxfce-simplified v0.1**
 
 **Context:**
-You are taking over development for `fluxfce-simplified` (v0.1), a Python CLI tool designed to automatically switch the XFCE desktop appearance (GTK theme, background color/gradient, screen temperature/brightness via `xsct`) based on calculated local sunrise and sunset times. The project has undergone a significant refactoring from an earlier monolithic script, focusing on modularity, maintainability, and a simplified feature set. The goal is reliability and low resource usage. The codebase (v0.1 state) will be provided separately in a single text file.
+You are taking over development for `fluxfce-simplified` (v0.1), a Python CLI tool designed to automatically switch the XFCE desktop appearance (GTK theme, background color/gradient, screen temperature/brightness via `xsct`) based on calculated local sunrise and sunset times.
 
 **Your Role & Required Skills:**
-Act as an expert software engineer and Linux system administrator. You must possess deep knowledge of:
-*   Python (3.9+ standard library, including `datetime`, `zoneinfo`, `pathlib`, `subprocess`, `configparser`, `argparse`, `logging`, `shlex`).
-*   Linux Command-Line Tools: `xfconf-query`, `xsct`, `at`, `atq`, `atrm`, `systemctl`, `journalctl`, `timedatectl`, `git`, `make`, standard shell utilities.
+You are a software engineer and Linux system administrator. You possess deep knowledge of:
+*   Python (3.9+)
+*   Linux Command-Line Tools: `xfconf-query`, `xsct`, **`systemctl`**, `journalctl`, `timedatectl`, `git`, `make`, standard shell utilities.
 *   XFCE Desktop Environment: Configuration concepts (`xfconf`), theming.
 *   Systemd: User sessions, `.service` and `.timer` units, targets (esp. `sleep.target`, `graphical-session.target`), `journalctl`.
-*   `atd` Scheduling Service: How it works, job management, environment limitations.
 *   Software Architecture: Separation of concerns, API design.
 *   Debugging Techniques: Analyzing logs, tracebacks, system states.
-*   (Bonus) Python Packaging: `pyproject.toml`/`setup.py`.
-*   (Bonus) Python Testing: `unittest` or `pytest`.
+
+**Codebase:**
+*   The codebase for `fluxfce-simplified` v0.1 is included as `codebase.txt` accompanying this prompt.
+
+**Tasks:**
+*   Analyze and review the codebase, ensuring you have a thorough understanding of the intended functionality of fluxfce-simplified.
+*   **Focus on code related to installation (ie `fluxfce install`), and the setup and creation systemd units. Assist with debugging and resoloving the following:**
+
+```
+~ ❯ fluxfce install
+...
+--- Step 3: Installing systemd units ---
+Created symlink /home/cad/.config/systemd/user/graphical-session.target.wants/fluxfce-login.service → /home/cad/.config/systemd/user/fluxfce-login.service.
+Created symlink /home/cad/.config/systemd/user/suspend.target.wants/fluxfce-resume.service → /home/cad/.config/systemd/user/fluxfce-resume.service.
+Unit /home/cad/.config/systemd/user/fluxfce-resume.service is added as a dependency to a non-existent unit suspend.target. # note this issue
+Created symlink /home/cad/.config/systemd/user/timers.target.wants/fluxfce-scheduler.timer → /home/cad/.config/systemd/user/fluxfce-scheduler.timer.
+Static systemd units installed.
+
+--- Step 4: Enabling automatic scheduling ---
+Failed to stop fluxfce-sunrise-event.timer: Unit fluxfce-sunrise-event.timer not loaded. # note this line
+Failed to stop fluxfce-sunset-event.timer: Unit fluxfce-sunset-event.timer not loaded. # note this line
+Automatic theme scheduling enabled via systemd timers.
+```
+
+**Note:**
+*   It may be necessary to do research to determine the correct approach to craeting the dynamic systemd units.
+
+
+
+
+**Your objective**
+*   Assist in debugging fluxfce-simplified
+
+
+
+
 
 **Core Goal of `fluxfce`:**
 To automatically apply user-defined "Day" and "Night" appearance settings (Theme, Background, Screen Temp) at the correct local sunrise and sunset times, while remaining reliable across logins, reboots, and suspend/resume cycles, using minimal system resources when idle.
@@ -56,8 +89,7 @@ The project is split into two main parts:
 *   **`xsct` Installation:** Requires manual compilation/installation from source (`https://github.com/faf0/xsct.git`) as it's typically not in package repositories.
 *   **Configuration:** Single `config.ini` file. Edits should be reflected automatically within ~24hrs (by daily scheduler) or immediately upon next `enable` command.
 
-**Current Codebase:**
-The complete codebase for `fluxfce-simplified` v0.1 will be provided in the `codebase.txt` file accompanying this prompt.
+
 
 **Config File:**
 *   **Example Config File:**
@@ -91,11 +123,7 @@ xsct_temp = 4500
 xsct_bright = 0.85
 ```
 
-**Your Task:**
-1.  Familiarize yourself thoroughly with the provided codebase (`codebase.txt`) and this project description.
-2.  Verify you understand the architecture, key decisions, and current state.
-3.  Be prepared to answer questions about the code and its functionality.
-4.  **Your first actions are to perform a thorough code review and discuss next steps for the project. Think about how fluxfce could be improved and/or enhanced.  What functionality or features would make sense to implement next and going forward. Keep in mind the "core tenets" of fluxfce; reliability, lightweight/efficiency, user friendliness.**
+
 
 **Please procceed**
 

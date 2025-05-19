@@ -1,0 +1,10 @@
+/tmp/
+/.ruff_cache/
+/fluxfce_core/__pycache__/
+
+todo
+srss.py
+setup_format_lint.sh
+codebase-to-txt.sh
+hand-over-prompt.md
+

@@ -349,26 +349,17 @@ class XfceHandler:
             ) from e
 
     def set_background(self, hex1: str, hex2: Optional[str], direction: str) -> bool:
-        """
-        Sets the background to solid or gradient color across all detected paths.
-
-        Args:
-            hex1: The primary hex color string (6 digits).
-            hex2: The secondary hex color string (6 digits), or None for solid.
-            direction: 's' (solid), 'h' (horizontal), or 'v' (vertical).
-
-        Returns:
-            True if settings were applied successfully to all paths.
-
-        Raises:
-            XfceError: If paths cannot be found or critical xfconf-query commands fail.
-            ValidationError: If hex formats are invalid or inputs are inconsistent
-                             (e.g., gradient dir without hex2).
-        """
         log.info(f"Setting background: Dir={direction}, Hex1={hex1}, Hex2={hex2}")
-        paths = self.find_desktop_paths()  # Raises XfceError if none found
+        # find_desktop_paths() should return a list of paths to try.
+        # If single-workspace-mode is true, it should ideally prioritize the per-monitor path
+        # of the active primary display. This might require find_desktop_paths() to be smarter.
+        # For now, let's assume find_desktop_paths() returns the paths bg-setter.sh would act on.
+        paths = self.find_desktop_paths()
+        if not paths:
+            # This was already there, find_desktop_paths raises XfceError if none found
+            # but good to have a check.
+            raise XfceError("No desktop paths found by find_desktop_paths to apply background settings.")
 
-        # --- Validate Inputs ---
         try:
             rgba1_list = helpers.hex_to_rgba_doubles(hex1)
         except ValidationError as e:
@@ -377,157 +368,100 @@ class XfceHandler:
         rgba2_list = None
         if direction in ("h", "v"):
             if not hex2:
-                raise ValidationError(
-                    "Gradient direction specified but hex2 is missing."
-                )
+                raise ValidationError("Gradient direction specified but hex2 is missing.")
             try:
                 rgba2_list = helpers.hex_to_rgba_doubles(hex2)
             except ValidationError as e:
                 raise ValidationError(f"Invalid format for hex2 '{hex2}': {e}") from e
         elif direction == "s":
             if hex2 is not None:
-                log.warning(
-                    f"Ignoring hex2='{hex2}' because direction='s' (solid) was specified."
-                )
-                hex2 = None  # Ensure hex2 is None internally for solid
+                log.warning(f"Ignoring hex2='{hex2}' because direction='s' (solid) was specified.")
         else:
-            raise ValidationError(
-                f"Invalid background direction: '{direction}'. Must be 's', 'h', or 'v'."
-            )
+            raise ValidationError(f"Invalid background direction: '{direction}'. Must be 's', 'h', or 'v'.")
 
-        # Determine xfconf style values
-        image_style = "1"  # Color mode
-        if direction == "s":
-            color_style = "0"
-        elif direction == "h":
-            color_style = "1"
-        else:
-            color_style = "2"  # 'v'
+        image_style_val = "1"  # Color mode
+        color_style_val = "0"  # Solid
+        if direction == "h":
+            color_style_val = "1"
+        elif direction == "v":
+            color_style_val = "2"
 
         overall_success = True
         for base_path in paths:
-            log.debug(f"Applying background settings to path: {base_path}")
+            log.debug(f"Applying background settings to XFCE path: {base_path}")
+            path_applied_successfully = True
 
-            try:
-                # Set styles using --create (-n) and type (-t)
-                style_cmds = [
-                    [
-                        "xfconf-query",
-                        "-c",
-                        XFCONF_CHANNEL,
-                        "-p",
-                        f"{base_path}/image-style",
-                        "-n",
-                        "-t",
-                        "int",
-                        "-s",
-                        image_style,
-                    ],
-                    [
-                        "xfconf-query",
-                        "-c",
-                        XFCONF_CHANNEL,
-                        "-p",
-                        f"{base_path}/color-style",
-                        "-n",
-                        "-t",
-                        "int",
-                        "-s",
-                        color_style,
-                    ],
-                ]
-                # Command for rgba1 (always set)
-                rgba1_cmd = [
-                    "xfconf-query",
-                    "-c",
-                    XFCONF_CHANNEL,
-                    "-p",
-                    f"{base_path}/rgba1",
-                    "-n",
-                ]
-                for val in rgba1_list:
-                    rgba1_cmd.extend(["-t", "double", "-s", f"{val:.6f}"])
+            # Commands to execute for this path
+            cmds_for_path = []
 
-                # Command for rgba2 (set if gradient, reset if solid)
-                if rgba2_list:
-                    rgba2_cmd = [
-                        "xfconf-query",
-                        "-c",
-                        XFCONF_CHANNEL,
-                        "-p",
-                        f"{base_path}/rgba2",
-                        "-n",
-                    ]
-                    for val in rgba2_list:
-                        rgba2_cmd.extend(["-t", "double", "-s", f"{val:.6f}"])
-                else:
-                    # Reset rgba2 property if switching to solid color
-                    rgba2_cmd = [
-                        "xfconf-query",
-                        "-c",
-                        XFCONF_CHANNEL,
-                        "-p",
-                        f"{base_path}/rgba2",
-                        "-r",
-                    ]
+            # 0. (Optional but good practice) Clear image-path
+            cmds_for_path.append(
+                ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/image-path", "-n", "-t", "string", "-s", ""]
+            )
 
-                # Command to reset last-image (forces reload of solid/gradient)
-                reset_img_cmd = [
-                    "xfconf-query",
-                    "-c",
-                    XFCONF_CHANNEL,
-                    "-p",
-                    f"{base_path}/last-image",
-                    "-n",
-                    "-t",
-                    "string",
-                    "-s",
-                    "",
-                ]
+            # 1. Set image-style
+            cmds_for_path.append(
+                ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/image-style", "-n", "-t", "int", "-s", image_style_val]
+            )
+            # 2. Set color-style
+            cmds_for_path.append(
+                ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/color-style", "-n", "-t", "int", "-s", color_style_val]
+            )
 
-                # Execute commands for this path
-                all_cmds = [*style_cmds, rgba1_cmd, rgba2_cmd, reset_img_cmd]
-                for cmd in all_cmds:
-                    code, _, stderr = helpers.run_command(
-                        cmd, check=False
-                    )  # Don't check, handle code manually
-                    if code != 0:
-                        # Reset failures (-r or last-image) are often non-fatal warnings
-                        is_reset_cmd = "-r" in cmd or "/last-image" in cmd[4]
-                        if is_reset_cmd and "does not exist" in stderr.lower():
-                            log.debug(
-                                f"Ignoring non-existent property reset for {' '.join(cmd)}: {stderr}"
-                            )
-                        elif is_reset_cmd:
-                            log.warning(
-                                f"Non-critical failure for {base_path}: {' '.join(cmd)} - {stderr}"
-                            )
-                        else:
-                            # Critical failure setting style or color
-                            log.error(
-                                f"Failed command for {base_path}: {' '.join(cmd)} - {stderr}"
-                            )
-                            overall_success = False  # Mark overall failure
-                            # Continue to next command/path? Or break? Let's continue for now.
+            # 3. Reset and set rgba1
+            cmds_for_path.append(["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/rgba1", "-r"]) # RESET
+            cmd_rgba1_set = ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/rgba1", "-n"] # Use -n to create if -r made it not exist
+            for val_component in rgba1_list:
+                cmd_rgba1_set.extend(["-t", "double", "-s", f"{val_component:.6f}"])
+            cmds_for_path.append(cmd_rgba1_set)
 
-            except Exception as e:
-                # Catch unexpected errors during command construction/execution for this path
-                log.exception(
-                    f"Error applying background settings to path {base_path}: {e}"
-                )
-                overall_success = False
+            # 4. Reset and set/clear rgba2
+            cmds_for_path.append(["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/rgba2", "-r"]) # RESET
+            if rgba2_list: # If gradient, set new rgba2
+                cmd_rgba2_set = ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/rgba2", "-n"]
+                for val_component in rgba2_list:
+                    cmd_rgba2_set.extend(["-t", "double", "-s", f"{val_component:.6f}"])
+                cmds_for_path.append(cmd_rgba2_set)
+            # If not gradient (solid), rgba2 remains reset (deleted).
+
+            # 5. Set last-image
+            cmds_for_path.append(
+                ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/last-image", "-n", "-t", "string", "-s", ""]
+            )
+
+            # Execute all commands for this path
+            for cmd in cmds_for_path:
+                # Allow reset commands to "fail" if property doesn't exist, don't check errors for -r
+                check_cmd_errors = not ("-r" in cmd)
+                
+                # For setting commands, use --create like bg-setter.sh implies for robustness if -n isn't enough
+                # However, the current fluxfce structure uses -n with -t type -s val... which is also valid for creation.
+                # The key was the reset. Let's stick to current -n for creation after reset.
+                # If issues persist, one could change -n to --create and adjust cmd construction.
+
+                code, stdout, stderr = helpers.run_command(cmd, check=False) # check=False, handle manually
+                
+                if code != 0:
+                    # If a reset command fails because property doesn't exist, that's okay.
+                    if "-r" in cmd and ("property" in stderr.lower() and "does not exist" in stderr.lower()):
+                        log.debug(f"Property {cmd[4]} did not exist for reset (ignoring): {stderr}")
+                    else:
+                        log.error(f"Failed command for {base_path}: {' '.join(cmd)} - Code: {code}, Stderr: {stderr}")
+                        path_applied_successfully = False
+                        overall_success = False
+                        break # Stop processing commands for this failed path
+
+            if not path_applied_successfully:
+                log.warning(f"Settings failed to apply completely for path: {base_path}")
 
         # Reload desktop once after trying all paths
         self.reload_xfdesktop()
 
         if not overall_success:
-            # Raise error if any critical command failed for any path
-            raise XfceError(
-                "Background settings failed for one or more properties/paths. Check logs."
-            )
+            raise XfceError("Background settings failed for one or more properties/paths. Check logs.")
 
-        log.info("Background settings applied successfully to all detected paths.")
-        return True
+        log.info("Background settings applied attempt completed for all detected paths.")
+        return overall_success   
 
     def get_screen_settings(self) -> dict[str, Any]:
         """

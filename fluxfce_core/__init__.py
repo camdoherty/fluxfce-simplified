@@ -11,7 +11,7 @@ from .api import (
     # Internal handlers needed by the CLI/script entry point
     handle_internal_apply,
     handle_run_login_check,
-    handle_schedule_jobs_command,
+    handle_schedule_dynamic_transitions_command, # <--- CORRECTED NAME
     install_fluxfce,
     save_configuration,
     set_default_from_current,
@@ -25,7 +25,7 @@ from .exceptions import (
     ConfigError,
     DependencyError,
     FluxFceError,
-    SchedulerError,
+    # SchedulerError, # No longer needed as scheduler.py is removed
     SystemdError,
     ValidationError,
     XfceError,
@@ -35,11 +35,13 @@ from .exceptions import (
 from .helpers import detect_system_timezone
 
 # --- ADD SYSTEMD CONSTANTS ---
-from .systemd import (  # Import specific names
+from .systemd import (
     LOGIN_SERVICE_NAME,
-    RESUME_SERVICE_NAME,  # <--- ADD THIS LINE
+    RESUME_SERVICE_NAME,
     SCHEDULER_SERVICE_NAME,
     SCHEDULER_TIMER_NAME,
+    # Constants for dynamic timer names are not typically exported here,
+    # as they are implementation details of the systemd/api interaction.
 )
 
 # Optionally define __all__ to control wildcard imports and document public interface
@@ -48,31 +50,32 @@ __all__ = [
     "CONFIG_DIR",
     "CONFIG_FILE",
     "LOGIN_SERVICE_NAME",
-    "RESUME_SERVICE_NAME",  # <--- ADD THIS LINE
+    "RESUME_SERVICE_NAME",
     "SCHEDULER_SERVICE_NAME",
     "SCHEDULER_TIMER_NAME",
+    # Exceptions
     "CalculationError",
     "ConfigError",
     "DependencyError",
-    # Exceptions
     "FluxFceError",
-    "SchedulerError",
+    # "SchedulerError", # Removed
     "SystemdError",
     "ValidationError",
     "XfceError",
+    # API Functions
     "apply_manual_mode",
-    # Helper Functions
-    "detect_system_timezone",
     "disable_scheduling",
     "enable_scheduling",
     "get_current_config",
     "get_status",
-    "handle_internal_apply",
-    "handle_run_login_check",
-    "handle_schedule_jobs_command",
-    # API Functions
     "install_fluxfce",
     "save_configuration",
     "set_default_from_current",
     "uninstall_fluxfce",
+    # Internal Handlers (for CLI use)
+    "handle_internal_apply",
+    "handle_run_login_check",
+    "handle_schedule_dynamic_transitions_command", # <--- CORRECTED NAME
+    # Helper Functions
+    "detect_system_timezone",
 ]
