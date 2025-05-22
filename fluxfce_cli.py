@@ -131,7 +131,7 @@ def print_status(status_data: dict):
             log.info(f"  Timer: {timer_name}")
             log.info(f"    Status:    {details.get('enabled', 'N/A')}, {details.get('active', 'N/A')}")
             log.info(f"    Next Run:  {details.get('next_run', 'N/A')}")
-            log.info(f"    Time Left: {details.get('time_left', 'N/A')}")
+            #log.info(f"    Time Left: {details.get('time_left', 'N/A')}")
             log.info(f"    Last Run:  {details.get('last_run', 'N/A')}")
             log.info(f"    Activates: {details.get('activates', 'N/A')}")
         
