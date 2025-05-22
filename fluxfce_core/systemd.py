@@ -110,7 +110,7 @@ StandardError=journal
 
 _LOGIN_SERVICE_TEMPLATE = """\
 [Unit]
-Description={app_name} - Apply theme on login
+Description={app_name}: Apply theme on login
 After=graphical-session.target plasma-workspace.target gnome-session.target
 Requires=graphical-session.target
 [Service]
