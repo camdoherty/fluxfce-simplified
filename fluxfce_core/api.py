@@ -229,8 +229,8 @@ def apply_manual_mode(mode: str) -> bool:
 
 def set_default_from_current(mode: str) -> bool:
     """API Façade: Saves current desktop settings as default via desktop_manager."""
-    log.info(f"API Facade: Calling desktop_manager.set_default_from_current for mode '{mode}'.")
-    return desktop_manager.set_default_from_current(mode)
+    log.info(f"API Facade: Calling desktop_manager.set_defaults_from_current for mode '{mode}'.")
+    return desktop_manager.set_defaults_from_current(mode)
 
 
 # --- INTERNAL COMMAND HANDLERS FAÇADE (via desktop_manager) ---

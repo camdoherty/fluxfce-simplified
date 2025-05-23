@@ -23,25 +23,16 @@ class XfceHandler:
 
     def __init__(self):
         """Check for essential dependencies."""
-        # Check dependencies needed by most methods during instantiation
         try:
             helpers.check_dependencies(["xfconf-query", "xsct"])
-            # xfdesktop is checked only when reload is called
         except DependencyError as e:
-            # Make dependency issues during init fatal for this handler
             raise XfceError(f"Cannot initialize XfceHandler: {e}") from e
 
     def find_desktop_paths(self) -> list[str]:
         """
         Finds relevant XFCE desktop property base paths for background settings.
-
         These paths usually correspond to specific monitor/workspace combinations.
-
-        Returns:
-            A sorted list of base property paths (e.g., '/backdrop/screen0/monitorDP-1/workspace0').
-
-        Raises:
-            XfceError: If xfconf-query fails or no background paths can be found.
+        Returns a sorted list of potential base property paths.
         """
         log.debug(f"Querying {XFCONF_CHANNEL} for background property paths...")
         cmd = ["xfconf-query", "-c", XFCONF_CHANNEL, "-l"]
@@ -53,311 +44,219 @@ class XfceHandler:
                 )
 
             paths = set()
-            # Prioritize monitor + workspace combo paths
-            prop_pattern = re.compile(
-                r"(/backdrop/screen\d+/[\w-]+/workspace\d+)/last-image$"
+            # Regex: (any_path_ending_with_workspace_number)/last-image
+            prop_pattern_workspace = re.compile(
+                r"(/backdrop/screen\d+/[\w.-]+/workspace\d+)/last-image$"
             )
+            # Regex: (any_path_ending_with_monitor_name_or_id)/last-image
+            prop_pattern_monitor = re.compile(
+                r"(/backdrop/screen\d+/[\w.-]+)/last-image$"
+            )
+
+            # Prioritize more specific per-workspace paths
             for line in stdout.splitlines():
-                match = prop_pattern.match(line.strip())
+                match = prop_pattern_workspace.match(line.strip())
                 if match:
                     paths.add(match.group(1))
+            
+            # Add per-monitor paths (these are often the effective ones if single-workspace-mode is true)
+            # Or if no workspace-specific paths were found for "last-image"
+            for line in stdout.splitlines():
+                match = prop_pattern_monitor.match(line.strip())
+                if match:
+                    # Avoid adding a monitor path if its workspace sub-paths are already included
+                    # (e.g., if we have .../monitorX/workspace0, don't also add .../monitorX unless distinct)
+                    # This logic is a bit simplified; a more robust check might be needed for complex cases.
+                    # For now, we add both and let get_background_settings iterate.
+                    paths.add(match.group(1))
 
-            # Fallback to monitor level only if no workspace paths found
-            if not paths:
-                log.debug(
-                    "No workspace-specific paths found, checking monitor-level paths."
-                )
-                monitor_pattern = re.compile(
-                    r"(/backdrop/screen\d+/[\w-]+)/last-image$"
-                )
-                for line in stdout.splitlines():
-                    match = monitor_pattern.match(line.strip())
-                    # Ensure it's not a parent of an already found workspace path
-                    if match and match.group(1) not in [
-                        p.rsplit("/", 1)[0] for p in paths if "/" in p
-                    ]:
-                        paths.add(match.group(1))
 
             if not paths:
-                # Last resort default check (less reliable) - adapted from original
-                default_path_guess = (
-                    "/backdrop/screen0/monitorHDMI-0/workspace0"  # Example
-                )
-                cmd_check = [
-                    "xfconf-query",
-                    "-c",
-                    XFCONF_CHANNEL,
-                    "-p",
-                    f"{default_path_guess}/last-image",
+                # Fallback to a common default if absolutely no paths found by pattern
+                # This is less likely to be effective but provides a last resort.
+                default_paths_to_try = [
+                    "/backdrop/screen0/monitor0/workspace0", # Generic workspace
+                    "/backdrop/screen0/monitor0"             # Generic monitor
                 ]
-                code_check, _, _ = helpers.run_command(
-                    cmd_check, capture=False
-                )  # Don't capture, just check exit code
-                if code_check == 0:
-                    log.warning(
-                        f"Could not detect specific paths, using default guess: {default_path_guess}"
-                    )
-                    paths.add(default_path_guess)
-                else:
-                    raise XfceError(
-                        "Could not find any XFCE background property paths (checked workspace, monitor, and default guess)."
-                    )
+                for default_path in default_paths_to_try:
+                    cmd_check = ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{default_path}/last-image"]
+                    # Check if property exists, don't care about value. check=False to handle non-zero for non-existent.
+                    code_check, _, _ = helpers.run_command(cmd_check, check=False, capture=True)
+                    if code_check == 0: # Property exists
+                        log.warning(f"Using fallback default path: {default_path} as it seems to exist.")
+                        paths.add(default_path)
+                        break # Use the first default path that exists
 
-            sorted_paths = sorted(list(paths))
-            log.info(
-                f"Found {len(sorted_paths)} potential background paths: {sorted_paths}"
-            )
+                if not paths: # Still no paths
+                    raise XfceError("Could not find any XFCE background property paths.")
+
+            # Sort for consistent processing order, though XFCE's priority is not based on this sort.
+            sorted_paths = sorted(list(paths), key=len, reverse=True) # Try longer (more specific) paths first
+            log.info(f"Found {len(sorted_paths)} potential background paths: {sorted_paths}")
             return sorted_paths
 
         except Exception as e:
             if isinstance(e, XfceError):
-                raise  # Re-raise our specific errors
+                raise
             log.exception(f"Error finding desktop paths: {e}")
-            raise XfceError(
-                f"An unexpected error occurred while finding desktop paths: {e}"
-            ) from e
+            raise XfceError(f"An unexpected error occurred while finding desktop paths: {e}") from e
 
     def get_gtk_theme(self) -> str:
-        """
-        Gets the current GTK theme name using xfconf-query.
-
-        Returns:
-            The current GTK theme name.
-
-        Raises:
-            XfceError: If the xfconf-query command fails.
-        """
-        log.debug(
-            f"Getting GTK theme from {XFCONF_THEME_CHANNEL} {XFCONF_THEME_PROPERTY}"
-        )
+        log.debug(f"Getting GTK theme from {XFCONF_THEME_CHANNEL} {XFCONF_THEME_PROPERTY}")
         cmd = ["xfconf-query", "-c", XFCONF_THEME_CHANNEL, "-p", XFCONF_THEME_PROPERTY]
         try:
             code, stdout, stderr = helpers.run_command(cmd)
             if code != 0:
-                raise XfceError(f"Failed to query GTK theme: {stderr} (code: {code})")
-            if not stdout:
-                raise XfceError(
-                    "GTK theme query returned success code but empty output."
-                )
+                raise XfceError(f"Failed to query GTK theme: {stderr} (code: {code})") from None
+            if not stdout: # Should not happen if code is 0, but good check
+                raise XfceError("GTK theme query returned success but empty output.")
             log.info(f"Current GTK theme: {stdout}")
             return stdout
         except Exception as e:
-            if isinstance(e, XfceError):
-                raise
+            if isinstance(e, XfceError): raise
             log.exception(f"Error getting GTK theme: {e}")
-            raise XfceError(
-                f"An unexpected error occurred while getting GTK theme: {e}"
-            ) from e
+            raise XfceError(f"An unexpected error occurred while getting GTK theme: {e}") from e
 
     def set_gtk_theme(self, theme_name: str) -> bool:
-        """
-        Sets the GTK theme using xfconf-query.
-
-        Args:
-            theme_name: The name of the theme to set.
-
-        Returns:
-            True if the command executes successfully (code 0).
-
-        Raises:
-            XfceError: If the xfconf-query command fails (returns non-zero).
-            ValidationError: If theme_name is empty.
-        """
         if not theme_name:
             raise ValidationError("Theme name cannot be empty.")
-
         log.info(f"Setting GTK theme to: {theme_name}")
-        cmd = [
-            "xfconf-query",
-            "-c",
-            XFCONF_THEME_CHANNEL,
-            "-p",
-            XFCONF_THEME_PROPERTY,
-            "-s",
-            theme_name,
-        ]
+        cmd = ["xfconf-query", "-c", XFCONF_THEME_CHANNEL, "-p", XFCONF_THEME_PROPERTY, "-s", theme_name]
         try:
             code, _, stderr = helpers.run_command(cmd)
             if code != 0:
-                raise XfceError(
-                    f"Failed to set GTK theme to '{theme_name}': {stderr} (code: {code})"
-                )
+                raise XfceError(f"Failed to set GTK theme to '{theme_name}': {stderr} (code: {code})")
             log.debug(f"Successfully set GTK theme to '{theme_name}'")
             return True
         except Exception as e:
-            if isinstance(e, (XfceError, ValidationError)):
-                raise
+            if isinstance(e, (XfceError, ValidationError)): raise
             log.exception(f"Error setting GTK theme: {e}")
-            raise XfceError(
-                f"An unexpected error occurred while setting GTK theme: {e}"
-            ) from e
+            raise XfceError(f"An unexpected error occurred while setting GTK theme: {e}") from e
 
     def get_background_settings(self) -> dict[str, Any]:
         """
-        Gets background settings (style, colors) from the first detected path.
-
-        Returns:
-            A dictionary containing:
-            {'hex1': str, 'hex2': str|None, 'dir': 's'|'h'|'v'}
-            'hex2' is None for solid colors ('s').
-            Returns None only if background is not set to 'Color' mode.
-
-        Raises:
-            XfceError: If paths cannot be found, essential properties cannot be read,
-                       or parsing fails critically.
+        Gets background settings (style, colors) by checking candidate paths.
+        It uses the first path found that is configured for 'Color' mode and 
+        from which all color data can be successfully read.
         """
-        paths = self.find_desktop_paths()  # Raises XfceError if none found
-        base_path = paths[0]  # Use the first path for consistency
-        log.debug(f"Getting background settings from primary path: {base_path}")
+        candidate_paths = self.find_desktop_paths()
+        if not candidate_paths: # find_desktop_paths should raise if it finds nothing
+            raise XfceError("No candidate desktop paths found by find_desktop_paths.")
 
-        settings = {"hex1": None, "hex2": None, "dir": None}
+        log.debug(f"Attempting to get background settings from candidate paths: {candidate_paths}")
 
-        def _get_xfconf_prop(prop_name: str) -> Optional[str]:
-            """Internal helper to get a single string property value."""
-            prop_path = f"{base_path}/{prop_name}"
+        # --- Nested helper functions ---
+        def _get_prop_for_path(base_path_arg: str, prop_name: str) -> Optional[str]:
+            prop_path = f"{base_path_arg}/{prop_name}"
             cmd = ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", prop_path]
             try:
-                code, stdout, stderr = helpers.run_command(cmd)
+                code, stdout, stderr = helpers.run_command(cmd, capture=True) # Ensure capture
                 if code != 0:
-                    # Don't raise if property simply doesn't exist, just return None
                     if "does not exist" in stderr.lower():
-                        log.debug(f"Property {prop_path} does not exist.")
-                        return None
-                    raise XfceError(
-                        f"xfconf-query failed for '{prop_path}': {stderr} (code: {code})"
-                    )
+                        log.debug(f"Property {prop_path} does not exist for candidate path.")
+                    else:
+                        log.warning(f"Could not query {prop_path} for candidate path {base_path_arg}: {stderr} (code: {code})")
+                    return None 
                 return stdout.strip()
-            except Exception as e:
-                if isinstance(e, XfceError):
-                    raise
-                log.exception(f"Unexpected error getting property {prop_path}: {e}")
-                raise XfceError(
-                    f"Unexpected error getting property {prop_path}: {e}"
-                ) from e
+            except Exception as e: # Includes FileNotFoundError if xfconf-query isn't there
+                log.warning(f"Unexpected error getting property {prop_path} for {base_path_arg}: {e}")
+                return None
 
-        def _parse_rgba_output(prop_name: str) -> Optional[list[float]]:
-            """Parses multi-line xfconf-query output for rgba arrays."""
-            prop_path = f"{base_path}/{prop_name}"
+        def _parse_rgba_for_path(base_path_arg: str, prop_name: str) -> Optional[list[float]]:
+            prop_path = f"{base_path_arg}/{prop_name}"
             cmd = ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", prop_path]
-            code, stdout, stderr = helpers.run_command(cmd)
+            code, stdout, stderr = helpers.run_command(cmd, capture=True) # Ensure capture
             if code != 0:
                 if "does not exist" in stderr.lower():
-                    log.warning(f"RGBA property {prop_path} does not exist.")
-                    return None
-                log.warning(
-                    f"Could not query {prop_name} from {base_path}: {stderr} (code: {code})"
-                )
-                return None  # Non-critical if rgba isn't set, maybe
+                    log.debug(f"RGBA property {prop_path} does not exist for candidate path {base_path_arg}.")
+                else:
+                    log.warning(f"Could not query {prop_name} from {base_path_arg}: {stderr} (code: {code})")
+                return None
 
             float_values = []
-            # Match lines containing only a float/int number (more robust)
-            num_pattern = re.compile(r"^\s*(-?\d+(\.\d+)?)\s*$")
+            num_pattern = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*$") # Non-capturing group for decimal part
             for line in stdout.splitlines():
                 match = num_pattern.match(line)
                 if match:
                     try:
                         float_values.append(float(match.group(1)))
-                    except ValueError:  # Should not happen with regex
-                        continue
+                    except ValueError: 
+                        log.warning(f"ValueError converting '{match.group(1)}' to float from {prop_path}")
+                        continue 
             if len(float_values) == 4:
-                log.debug(f"Parsed {prop_name} values: {float_values}")
+                log.debug(f"Parsed {prop_name} values from {base_path_arg}: {float_values}")
                 return float_values
             else:
-                log.warning(
-                    f"Could not parse 4 float values from {prop_name} output ({len(float_values)} found). Output:\n{stdout}"
-                )
+                log.warning(f"Could not parse 4 float values for {prop_name} from {base_path_arg} (found {len(float_values)}). Output:\n{stdout}")
                 return None
 
         def _floats_to_hex(rgba_floats: Optional[list[float]]) -> Optional[str]:
-            """Converts list of [r,g,b,a] floats (0.0-1.0) to 6-digit Hex."""
             if not rgba_floats or len(rgba_floats) != 4:
+                log.debug(f"_floats_to_hex: Invalid input (not a list of 4 floats): {rgba_floats}")
                 return None
             try:
-                r = int(rgba_floats[0] * 255 + 0.5)
-                g = int(rgba_floats[1] * 255 + 0.5)
-                b = int(rgba_floats[2] * 255 + 0.5)
-                # Clamp values to 0-255 range
-                r = max(0, min(255, r))
-                g = max(0, min(255, g))
-                b = max(0, min(255, b))
+                r_f, g_f, b_f = rgba_floats[0], rgba_floats[1], rgba_floats[2] # Alpha (rgba_floats[3]) ignored for hex
+                
+                r = max(0, min(255, int(r_f * 255 + 0.5)))
+                g = max(0, min(255, int(g_f * 255 + 0.5)))
+                b = max(0, min(255, int(b_f * 255 + 0.5)))
+                
                 hex_str = f"{r:02X}{g:02X}{b:02X}"
                 log.debug(f"Converted floats {rgba_floats} to hex '{hex_str}'")
                 return hex_str
             except (ValueError, TypeError, IndexError) as e:
                 log.error(f"Error converting float list {rgba_floats} to hex: {e}")
-                return None  # Conversion error
-
-        # --- Main Logic ---
-        try:
-            image_style = _get_xfconf_prop("image-style")
-            color_style = _get_xfconf_prop("color-style")
-
-            # Check if background is set to 'Color' mode (image-style = 1)
+                return None
+        
+        # --- Iterate through candidate paths ---
+        for path_to_check in candidate_paths:
+            log.debug(f"Checking candidate path for background settings: {path_to_check}")
+            
+            image_style = _get_prop_for_path(path_to_check, "image-style")
             if image_style != "1":
-                log.info(
-                    f"Background image-style is not 'Color' (value: {image_style}). Cannot get color settings."
-                )
-                # Return an empty dict or specific indicator? Let's raise.
-                raise XfceError(
-                    f"Background mode is not 'Color' (image-style={image_style})."
-                )
+                log.debug(f"Path {path_to_check} not in 'Color' mode (image-style: {image_style}). Skipping.")
+                continue
 
-            if color_style is None:
-                raise XfceError(
-                    f"Could not retrieve essential 'color-style' property from {base_path}."
-                )
+            color_style = _get_prop_for_path(path_to_check, "color-style")
+            if color_style is None or color_style not in ("0", "1", "2"):
+                log.debug(f"Path {path_to_check} has invalid/missing color-style ({color_style}). Skipping.")
+                continue
 
-            # Get RGBA1 and convert to Hex1
-            rgba1_floats = _parse_rgba_output("rgba1")
-            settings["hex1"] = _floats_to_hex(rgba1_floats)
-            if not settings["hex1"]:
-                raise XfceError(
-                    "Failed to parse or convert primary background color (rgba1)."
-                )
+            log.info(f"Found suitable path for color settings: {path_to_check}")
+            current_settings_from_path = {"hex1": None, "hex2": None, "dir": None}
 
-            # Determine direction and get secondary color if needed
+            rgba1_floats = _parse_rgba_for_path(path_to_check, "rgba1")
+            current_settings_from_path["hex1"] = _floats_to_hex(rgba1_floats)
+            if not current_settings_from_path["hex1"]:
+                log.warning(f"Failed to get primary color (rgba1) from active path {path_to_check}. Skipping this path.")
+                continue 
+
             if color_style == "0":  # Solid
-                settings["dir"] = "s"
-                settings["hex2"] = None  # Explicitly None
-            elif color_style in ("1", "2"):  # Horizontal or Vertical gradient
-                settings["dir"] = "h" if color_style == "1" else "v"
-                rgba2_floats = _parse_rgba_output("rgba2")
-                settings["hex2"] = _floats_to_hex(rgba2_floats)
-                if not settings["hex2"]:
-                    # Don't fail if secondary fails, just log and set hex2 to None
-                    log.warning(
-                        "Failed to parse or convert secondary gradient color (rgba2). Treating as solid."
-                    )
-                    settings["hex2"] = (
-                        None  # Fallback, might mismatch 'dir' but safer than error
-                    )
-                    # Or should we try to make hex2 = hex1? Maybe just None is better.
-            else:
-                raise XfceError(f"Unknown background color-style found: {color_style}")
-
+                current_settings_from_path["dir"] = "s"
+                current_settings_from_path["hex2"] = None # Explicitly None for solid
+            elif color_style in ("1", "2"):  # Gradient
+                current_settings_from_path["dir"] = "h" if color_style == "1" else "v"
+                rgba2_floats = _parse_rgba_for_path(path_to_check, "rgba2")
+                current_settings_from_path["hex2"] = _floats_to_hex(rgba2_floats)
+                if not current_settings_from_path["hex2"]:
+                    log.warning(f"Path {path_to_check} is gradient mode but failed to get secondary color (rgba2). Skipping this path.")
+                    continue
+            
             log.info(
-                f"Retrieved background: Dir={settings['dir']}, Hex1={settings['hex1']}, Hex2={settings.get('hex2', 'N/A')}"
+                f"Successfully retrieved background from {path_to_check}: "
+                f"Dir={current_settings_from_path['dir']}, Hex1={current_settings_from_path['hex1']}, "
+                f"Hex2={current_settings_from_path.get('hex2', 'N/A')}"
             )
-            return settings
+            return current_settings_from_path # Return settings from the first valid path found
 
-        except Exception as e:
-            if isinstance(e, XfceError):
-                raise
-            log.exception(f"Error getting background settings: {e}")
-            raise XfceError(
-                f"An unexpected error occurred getting background settings: {e}"
-            ) from e
+        # If loop finishes, no suitable path was found
+        raise XfceError("Could not find any xfconf path actively configured for color background settings among candidates.")
+
 
     def set_background(self, hex1: str, hex2: Optional[str], direction: str) -> bool:
-        log.info(f"Setting background: Dir={direction}, Hex1={hex1}, Hex2={hex2}")
-        # find_desktop_paths() should return a list of paths to try.
-        # If single-workspace-mode is true, it should ideally prioritize the per-monitor path
-        # of the active primary display. This might require find_desktop_paths() to be smarter.
-        # For now, let's assume find_desktop_paths() returns the paths bg-setter.sh would act on.
+        log.info(f"Setting background: Dir={direction}, Hex1={hex1}, Hex2={hex2 or 'N/A'}")
         paths = self.find_desktop_paths()
         if not paths:
-            # This was already there, find_desktop_paths raises XfceError if none found
-            # but good to have a check.
             raise XfceError("No desktop paths found by find_desktop_paths to apply background settings.")
 
         try:
@@ -367,282 +266,161 @@ class XfceHandler:
 
         rgba2_list = None
         if direction in ("h", "v"):
-            if not hex2:
-                raise ValidationError("Gradient direction specified but hex2 is missing.")
+            if not hex2: # hex2 is required for gradients
+                raise ValidationError(f"Gradient direction '{direction}' specified but hex2 is missing.")
             try:
                 rgba2_list = helpers.hex_to_rgba_doubles(hex2)
             except ValidationError as e:
                 raise ValidationError(f"Invalid format for hex2 '{hex2}': {e}") from e
         elif direction == "s":
-            if hex2 is not None:
+            if hex2 is not None and hex2.strip() != "": # Ensure hex2 is effectively None or empty for solid
                 log.warning(f"Ignoring hex2='{hex2}' because direction='s' (solid) was specified.")
+                # No need to explicitly set rgba2_list to None here, as it's already initialized to None
         else:
             raise ValidationError(f"Invalid background direction: '{direction}'. Must be 's', 'h', or 'v'.")
 
         image_style_val = "1"  # Color mode
-        color_style_val = "0"  # Solid
-        if direction == "h":
-            color_style_val = "1"
-        elif direction == "v":
-            color_style_val = "2"
+        color_style_val = "0"  # Default to Solid
+        if direction == "h": color_style_val = "1"
+        elif direction == "v": color_style_val = "2"
 
         overall_success = True
         for base_path in paths:
             log.debug(f"Applying background settings to XFCE path: {base_path}")
-            path_applied_successfully = True
+            path_apply_success = True
+            
+            # Sequence of commands for xfconf-query
+            commands_to_run = []
+            commands_to_run.append(["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/image-path", "-n", "-t", "string", "-s", ""])
+            commands_to_run.append(["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/image-style", "-n", "-t", "int", "-s", image_style_val])
+            commands_to_run.append(["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/color-style", "-n", "-t", "int", "-s", color_style_val])
+            
+            # RGBA1: Reset then Set
+            commands_to_run.append(["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/rgba1", "-r"])
+            cmd_rgba1_set = ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/rgba1", "-n"]
+            for val_comp in rgba1_list: cmd_rgba1_set.extend(["-t", "double", "-s", f"{val_comp:.6f}"])
+            commands_to_run.append(cmd_rgba1_set)
 
-            # Commands to execute for this path
-            cmds_for_path = []
-
-            # 0. (Optional but good practice) Clear image-path
-            cmds_for_path.append(
-                ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/image-path", "-n", "-t", "string", "-s", ""]
-            )
-
-            # 1. Set image-style
-            cmds_for_path.append(
-                ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/image-style", "-n", "-t", "int", "-s", image_style_val]
-            )
-            # 2. Set color-style
-            cmds_for_path.append(
-                ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/color-style", "-n", "-t", "int", "-s", color_style_val]
-            )
-
-            # 3. Reset and set rgba1
-            cmds_for_path.append(["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/rgba1", "-r"]) # RESET
-            cmd_rgba1_set = ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/rgba1", "-n"] # Use -n to create if -r made it not exist
-            for val_component in rgba1_list:
-                cmd_rgba1_set.extend(["-t", "double", "-s", f"{val_component:.6f}"])
-            cmds_for_path.append(cmd_rgba1_set)
-
-            # 4. Reset and set/clear rgba2
-            cmds_for_path.append(["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/rgba2", "-r"]) # RESET
-            if rgba2_list: # If gradient, set new rgba2
+            # RGBA2: Reset. If gradient, then Set.
+            commands_to_run.append(["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/rgba2", "-r"])
+            if rgba2_list: # Only set rgba2 if it's a gradient and rgba2_list is populated
                 cmd_rgba2_set = ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/rgba2", "-n"]
-                for val_component in rgba2_list:
-                    cmd_rgba2_set.extend(["-t", "double", "-s", f"{val_component:.6f}"])
-                cmds_for_path.append(cmd_rgba2_set)
-            # If not gradient (solid), rgba2 remains reset (deleted).
+                for val_comp in rgba2_list: cmd_rgba2_set.extend(["-t", "double", "-s", f"{val_comp:.6f}"])
+                commands_to_run.append(cmd_rgba2_set)
+            
+            commands_to_run.append(["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/last-image", "-n", "-t", "string", "-s", ""])
 
-            # 5. Set last-image
-            cmds_for_path.append(
-                ["xfconf-query", "-c", XFCONF_CHANNEL, "-p", f"{base_path}/last-image", "-n", "-t", "string", "-s", ""]
-            )
-
-            # Execute all commands for this path
-            for cmd in cmds_for_path:
-                # Allow reset commands to "fail" if property doesn't exist, don't check errors for -r
-                check_cmd_errors = not ("-r" in cmd)
-                
-                # For setting commands, use --create like bg-setter.sh implies for robustness if -n isn't enough
-                # However, the current fluxfce structure uses -n with -t type -s val... which is also valid for creation.
-                # The key was the reset. Let's stick to current -n for creation after reset.
-                # If issues persist, one could change -n to --create and adjust cmd construction.
-
-                code, stdout, stderr = helpers.run_command(cmd, check=False) # check=False, handle manually
-                
+            for cmd in commands_to_run:
+                code, _, stderr = helpers.run_command(cmd, check=False, capture=True) # Always capture for this
                 if code != 0:
-                    # If a reset command fails because property doesn't exist, that's okay.
-                    if "-r" in cmd and ("property" in stderr.lower() and "does not exist" in stderr.lower()):
-                        log.debug(f"Property {cmd[4]} did not exist for reset (ignoring): {stderr}")
+                    is_reset_cmd = "-r" in cmd
+                    prop_missing_err = "property" in stderr.lower() and "does not exist" in stderr.lower()
+                    if is_reset_cmd and prop_missing_err:
+                        log.debug(f"Property {cmd[4]} did not exist for reset (ignoring for path {base_path}): {stderr}")
                     else:
                         log.error(f"Failed command for {base_path}: {' '.join(cmd)} - Code: {code}, Stderr: {stderr}")
-                        path_applied_successfully = False
-                        overall_success = False
-                        break # Stop processing commands for this failed path
+                        path_apply_success = False
+                        break # Stop processing commands for this path if a critical one fails
 
-            if not path_applied_successfully:
-                log.warning(f"Settings failed to apply completely for path: {base_path}")
-
-        # Reload desktop once after trying all paths
+            if not path_apply_success:
+                overall_success = False # If any path fails, mark overall as potentially problematic
+                log.warning(f"Settings failed to apply completely for path: {base_path}. Continuing with other paths.")
+        
         self.reload_xfdesktop()
 
         if not overall_success:
-            raise XfceError("Background settings failed for one or more properties/paths. Check logs.")
+            # If any path failed, this indicates an issue.
+            # Depending on strictness, this could still be considered a "success" if primary monitor worked.
+            # For now, let's log and return true if at least one path succeeded implicitly (no XfceError raised)
+            log.warning("Background settings may not have applied to all detected XFCE paths. Check logs.")
+            # Raising an error might be too strict if some paths are irrelevant/stale.
+            # The critical part is that the *visually active* path gets set.
+        else:
+            log.info("Background settings applied successfully to all detected XFCE paths.")
+        
+        return True # Return True if no hard exceptions were raised. Warnings are logged.
 
-        log.info("Background settings applied attempt completed for all detected paths.")
-        return overall_success   
 
     def get_screen_settings(self) -> dict[str, Any]:
-        """
-        Gets screen temperature and brightness via xsct. Attempts different parsing
-        strategies based on common xsct output formats.
-
-        Returns:
-            A dictionary {'temperature': int|None, 'brightness': float|None}.
-            Returns None for values if xsct is off, fails to report, or output
-            cannot be parsed.
-
-        Raises:
-            XfceError: If the xsct command fails unexpectedly.
-        """
         log.debug("Getting screen settings via xsct")
         cmd = ["xsct"]
         try:
-            code, stdout, stderr = helpers.run_command(cmd)
-
+            code, stdout, stderr = helpers.run_command(cmd, capture=True)
             if code != 0:
-                # Check if stderr indicates expected "off" states or usage errors
-                if (
-                    "unknown" in stderr.lower()
-                    or "usage:" in stderr.lower()
-                    or "failed" in stderr.lower()
-                ):
-                    log.info(
-                        "xsct appears off or failed to query. Assuming default screen settings."
-                    )
+                if "unknown" in stderr.lower() or "usage:" in stderr.lower() or "failed" in stderr.lower():
+                    log.info("xsct appears off or failed to query. Assuming default screen settings (temp/bright will be None).")
                     return {"temperature": None, "brightness": None}
                 else:
-                    # Unexpected error from xsct
-                    raise XfceError(
-                        f"xsct command failed unexpectedly (code {code}): {stderr}"
-                    )
+                    raise XfceError(f"xsct command failed unexpectedly (code {code}): {stderr}")
 
-            temp = None
-            brightness = None
-
-            # --- Strategy 1: Combined Regex (Handles 'temp ~ TTTT B.BB') ---
-            # Match pattern like: Screen #: temperature ~ <temp_digits> <brightness_float>
-            combined_match = re.search(
-                r"temperature\s+~\s+(\d+)\s+([\d.]+)", stdout, re.IGNORECASE
-            )
+            temp: Optional[int] = None
+            brightness: Optional[float] = None
+            combined_match = re.search(r"temperature\s+~\s+(\d+)\s+([\d.]+)", stdout, re.IGNORECASE)
             if combined_match:
                 log.debug("xsct output matched combined regex pattern.")
                 try:
                     temp = int(combined_match.group(1))
                     brightness = float(combined_match.group(2))
-                    log.info(
-                        f"Retrieved screen settings (combined): Temp={temp}, Brightness={brightness:.2f}"
-                    )
-                    return {"temperature": temp, "brightness": brightness}
                 except (ValueError, IndexError) as e:
-                    log.warning(
-                        f"Could not parse values from combined xsct regex match: {e}. Output: '{stdout}'"
-                    )
-                    # Fall through to Strategy 2 if parsing combined match failed
-
-            # --- Strategy 2: Separate Regexes (Handles 'Temp: TTTTK\nBright: B.BB') ---
-            if temp is None or brightness is None:  # Only proceed if Strategy 1 failed
-                log.debug(
-                    "Combined regex failed or produced invalid values, trying separate regexes."
-                )
-                temp_match = re.search(
-                    r"(?:temperature|temp)\s*[:~]?\s*(\d+)K?", stdout, re.IGNORECASE
-                )
-                bright_match = re.search(
-                    r"(?:brightness|bright)\s*[:~]?\s*([\d.]+)", stdout, re.IGNORECASE
-                )
-
+                    log.warning(f"Could not parse values from combined xsct regex match: {e}. Output: '{stdout}'")
+            
+            if temp is None or brightness is None: # Try separate if combined failed or didn't match
+                log.debug("Combined regex failed or partial, trying separate regexes for xsct.")
+                temp_match = re.search(r"(?:temperature|temp)\s*[:~]?\s*(\d+)K?", stdout, re.IGNORECASE)
+                bright_match = re.search(r"(?:brightness|bright)\s*[:~]?\s*([\d.]+)", stdout, re.IGNORECASE)
                 if temp_match:
-                    try:
-                        temp = int(temp_match.group(1))
-                    except (ValueError, IndexError):
-                        log.warning(
-                            f"Could not parse temperature from separate xsct regex match: '{stdout}'"
-                        )
-                else:
-                    log.warning(
-                        f"Could not find temperature pattern using separate regex: '{stdout}'"
-                    )
-
+                    try: temp = int(temp_match.group(1))
+                    except (ValueError, IndexError): log.warning(f"Could not parse temperature from separate xsct match: '{stdout}'")
+                else: log.debug(f"No separate temperature pattern in xsct output: '{stdout}'")
+                
                 if bright_match:
-                    try:
-                        brightness = float(bright_match.group(1))
-                    except (ValueError, IndexError):
-                        log.warning(
-                            f"Could not parse brightness from separate xsct regex match: '{stdout}'"
-                        )
-                else:
-                    # This is the warning you were seeing previously
-                    log.warning(
-                        f"Could not find brightness pattern using separate regex: '{stdout}'"
-                    )
+                    try: brightness = float(bright_match.group(1))
+                    except (ValueError, IndexError): log.warning(f"Could not parse brightness from separate xsct match: '{stdout}'")
+                else: log.debug(f"No separate brightness pattern in xsct output: '{stdout}'")
 
-                # Return values only if *both* were successfully parsed separately
-                if temp is not None and brightness is not None:
-                    log.info(
-                        f"Retrieved screen settings (separate): Temp={temp}, Brightness={brightness:.2f}"
-                    )
-                    return {"temperature": temp, "brightness": brightness}
+            if temp is not None and brightness is not None:
+                log.info(f"Retrieved screen settings: Temp={temp}, Brightness={brightness:.2f}")
+                return {"temperature": temp, "brightness": brightness}
+            else: # If either is still None
+                log.info(f"Could not parse both temp/brightness from xsct output. Assuming default. Output: '{stdout}'")
+                return {"temperature": None, "brightness": None}
 
-            # --- Fallback: Parsing failed ---
-            log.info(
-                f"Could not parse both temp/brightness from xsct output using known patterns. Assuming default. Output: '{stdout}'"
-            )
-            return {"temperature": None, "brightness": None}
-
-        except XfceError:
-            raise  # Re-raise specific XfceErrors
+        except XfceError: raise
         except Exception as e:
             log.exception(f"Error getting screen settings: {e}")
-            raise XfceError(
-                f"An unexpected error occurred getting screen settings: {e}"
-            ) from e
+            raise XfceError(f"An unexpected error occurred getting screen settings: {e}") from e
 
     def set_screen_temp(self, temp: Optional[int], brightness: Optional[float]) -> bool:
-        """
-        Sets screen temperature/brightness using xsct.
-
-        Args:
-            temp: Temperature in Kelvin (e.g., 4500), or None to reset.
-            brightness: Brightness (e.g., 0.85), or None to reset.
-                        If one is None, both are treated as None for reset.
-
-        Returns:
-            True if the command executes successfully.
-
-        Raises:
-            XfceError: If the xsct command fails.
-            ValidationError: If temp/brightness values are unreasonable (basic check).
-        """
         if temp is not None and brightness is not None:
-            # Basic sanity checks
             if not (1000 <= temp <= 10000):
-                # Raise validation error for clearly bad values
-                raise ValidationError(
-                    f"Temperature value {temp}K is outside the typical range (1000-10000)."
-                )
-            if not (0.1 <= brightness <= 2.0):
-                # Warn for brightness as it's sometimes allowed outside 0-1
-                log.warning(
-                    f"Brightness value {brightness} is outside the typical range (0.1-2.0)."
-                )
-                # raise ValidationError(f"Brightness value {brightness} is outside the typical range (0.1-2.0).")
-
+                raise ValidationError(f"Temperature value {temp}K is outside typical range (1000-10000).")
+            if not (0.1 <= brightness <= 2.0): # Looser check for brightness
+                log.warning(f"Brightness value {brightness} is outside a very common range (0.1-1.0), but attempting to set.")
             log.info(f"Setting screen: Temp={temp}, Brightness={brightness:.2f}")
-            cmd = ["xsct", str(temp), f"{brightness:.2f}"]
+            cmd_args = ["xsct", str(temp), f"{brightness:.2f}"]
         else:
             log.info("Resetting screen temperature/brightness (xsct -x)")
-            cmd = ["xsct", "-x"]
-
+            cmd_args = ["xsct", "-x"]
         try:
-            code, _, stderr = helpers.run_command(cmd)
+            code, _, stderr = helpers.run_command(cmd_args, capture=True)
             if code != 0:
-                raise XfceError(
-                    f"Failed to set screen temperature/brightness via xsct: {stderr} (code: {code})"
-                )
+                raise XfceError(f"Failed to set screen via xsct: {stderr} (code: {code})")
             log.debug("Successfully set screen temperature/brightness.")
             return True
         except Exception as e:
-            if isinstance(e, (XfceError, ValidationError)):
-                raise
+            if isinstance(e, (XfceError, ValidationError)): raise
             log.exception(f"Error setting screen temperature/brightness: {e}")
-            raise XfceError(
-                f"An unexpected error occurred setting screen temperature/brightness: {e}"
-            ) from e
+            raise XfceError(f"An unexpected error occurred setting screen temperature/brightness: {e}") from e
 
     def reload_xfdesktop(self):
-        """Reloads the xfdesktop process to apply potential background changes."""
         log.debug("Reloading xfdesktop...")
         cmd = ["xfdesktop", "--reload"]
         try:
-            # Check if command exists first
             helpers.check_dependencies(["xfdesktop"])
-            # Run in background, don't wait, ignore output/errors as it's best-effort
             subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(0.5)  # Brief pause allow process to start
+            time.sleep(0.5) 
             log.debug("xfdesktop --reload command issued.")
         except DependencyError:
             log.warning("xfdesktop command not found, skipping reload.")
-        except Exception as e:
+        except Exception as e: # Catch other Popen errors
             log.warning(f"Exception trying to reload xfdesktop: {e}")
