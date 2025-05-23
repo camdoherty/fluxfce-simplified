@@ -21,6 +21,9 @@ from .exceptions import ConfigError, FluxFceError, ValidationError, XfceError
 
 log = logging.getLogger(__name__)
 
+# Module-level ConfigManager instance for desktop operations
+_cfg_mgr_desktop = cfg.ConfigManager()
+
 # --------------------------------------------------------------------------- #
 # private helpers
 # --------------------------------------------------------------------------- #
@@ -68,8 +71,8 @@ def handle_run_login_check() -> bool:
         return False
 
 def _load_cfg() -> cfg.configparser.ConfigParser:
-    """Return the current config (with in-memory defaults)."""
-    return cfg.ConfigManager().load_config()
+    """Return the current config (with in-memory defaults) using the module-level manager."""
+    return _cfg_mgr_desktop.load_config()
 
 
 def _settings_from_cfg(
@@ -145,8 +148,8 @@ def set_defaults_from_current(mode: Literal["day", "night"]) -> bool:
     This does **not** modify the desktop; only the configuration file.
     """
     xfce_handler = xfce.XfceHandler()
-    conf_mgr = cfg.ConfigManager()
-    conf = _load_cfg()
+    # Use the module-level ConfigManager instance
+    conf = _load_cfg() 
 
     # read current desktop ---------------------------------------------------
     theme = xfce_handler.get_gtk_theme()
@@ -159,28 +162,28 @@ def set_defaults_from_current(mode: Literal["day", "night"]) -> bool:
 
     changed = False
     if conf.get("Themes", theme_key, fallback="") != theme:
-        conf_mgr.set_setting(conf, "Themes", theme_key, theme)
+        _cfg_mgr_desktop.set_setting(conf, "Themes", theme_key, theme)
         changed = True
 
     if bg:
         for src, dst in (("dir", "BG_DIR"), ("hex1", "BG_HEX1"), ("hex2", "BG_HEX2")):
             if conf.get(bg_section, dst, fallback="") != (bg[src] or ""):
-                conf_mgr.set_setting(conf, bg_section, dst, bg[src] or "")
+                _cfg_mgr_desktop.set_setting(conf, bg_section, dst, bg[src] or "")
                 changed = True
 
     if screen:
         new_temp = "" if screen["temperature"] is None else str(screen["temperature"])
         new_bri = "" if screen["brightness"] is None else f"{screen['brightness']:.2f}"
         if conf.get(screen_section, "XSCT_TEMP", fallback="") != new_temp:
-            conf_mgr.set_setting(conf, screen_section, "XSCT_TEMP", new_temp)
+            _cfg_mgr_desktop.set_setting(conf, screen_section, "XSCT_TEMP", new_temp)
             changed = True
         if conf.get(screen_section, "XSCT_BRIGHT", fallback="") != new_bri:
-            conf_mgr.set_setting(conf, screen_section, "XSCT_BRIGHT", new_bri)
+            _cfg_mgr_desktop.set_setting(conf, screen_section, "XSCT_BRIGHT", new_bri)
             changed = True
 
     if changed:
         log.info("Desktop defaults updated for %s mode — saving config.ini", mode)
-        return conf_mgr.save_config(conf)
+        return _cfg_mgr_desktop.save_config(conf)
     log.info("Configuration already matches the current desktop; nothing to do.")
     return True
 

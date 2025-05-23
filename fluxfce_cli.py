@@ -184,6 +184,7 @@ def ask_yes_no_cli(prompt: str, default_yes: bool = False) -> bool:
 
 # --- Main Execution Logic ---
 def main():
+    """Parses command-line arguments and dispatches to appropriate command handlers."""
     parser = argparse.ArgumentParser(
         description="fluxfce (CLI): Manage XFCE appearance via sunrise/sunset timing (Systemd Timer Version).",
         formatter_class=argparse.RawTextHelpFormatter,

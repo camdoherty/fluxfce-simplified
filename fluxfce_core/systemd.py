@@ -1,4 +1,12 @@
 # ~/dev/fluxfce-simplified/fluxfce_core/systemd.py
+"""
+Systemd user unit management for FluxFCE.
+
+This module is responsible for creating, installing, managing, and removing
+the systemd user units (timers and services) required for FluxFCE's
+automatic scheduling and theme application on login/resume.
+It defines the templates for these units and interacts with `systemctl`.
+"""
 
 import logging
 import pathlib
@@ -111,8 +119,9 @@ StandardError=journal
 _LOGIN_SERVICE_TEMPLATE = """\
 [Unit]
 Description={app_name}: Apply theme on login
-After=graphical-session.target plasma-workspace.target gnome-session.target
+After=graphical-session.target xfce4-session.target plasma-workspace.target gnome-session.target
 Requires=graphical-session.target
+ConditionEnvironment=DISPLAY
 [Service]
 Type=oneshot
 ExecStartPre=/bin/sleep 20
@@ -127,6 +136,7 @@ _RESUME_SERVICE_TEMPLATE = """\
 Description={app_name} - Apply theme after system resume
 After=sleep.target graphical-session.target
 Requires=graphical-session.target
+ConditionEnvironment=DISPLAY
 
 [Service]
 Type=oneshot
@@ -211,18 +221,25 @@ class SystemdManager:
         status_output = stdout.strip().lower()
 
         if code == 0: # is-system-running returns 0 for "running", "degraded", etc.
-            if status_output in ["running", "degraded"]: # "degraded" is often acceptable
+            if status_output == "running":
                 log.info(f"Systemd user instance reported: '{status_output}'.")
                 return True
-            else:
-                # States like "stopping", "offline", "initializing", "starting" might be problematic
-                error_msg = (
-                    f"Systemd user instance is in state '{status_output}' (code {code}), "
-                    f"which might not be fully usable. Stderr: '{stderr.strip()}'. "
-                    f"{self.app_name} operations might be affected."
+            elif status_output == "degraded":
+                log.warning(
+                    f"Systemd user instance reported: '{status_output}'. "
+                    f"{self.app_name} functionality might be limited or unreliable."
                 )
-                log.warning(error_msg) # Warn instead of raising error for ambiguous states
-                return True # Allow proceeding but with a warning.
+                return True # Still allow proceeding but with a stronger warning.
+            else:
+                # Other states like "stopping", "offline", "initializing", "starting"
+                error_msg = (
+                    f"Systemd user instance is in an ambiguous state: '{status_output}' (exit code {code}). "
+                    f"While not a fatal error state according to 'is-system-running', "
+                    f"this state may prevent {self.app_name} from operating correctly. "
+                    f"Stderr: '{stderr.strip()}'"
+                )
+                log.warning(error_msg) 
+                return True # Allow proceeding but highlight potential issues.
         else: # Non-zero usually means a more significant issue or "offline"
             error_msg = (
                 f"Systemd user instance is not in a usable state "

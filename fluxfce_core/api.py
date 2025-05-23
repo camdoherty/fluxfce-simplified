@@ -1,4 +1,12 @@
 # fluxfce_core/api.py
+"""
+Public API Facade for the fluxfce_core library.
+
+This module provides the primary interface for external callers (like the CLI)
+to interact with the core functionalities of FluxFCE, including configuration,
+scheduling, desktop appearance management, and systemd integration.
+It orchestrates calls to other internal modules within `fluxfce_core`.
+"""
 
 import configparser
 import logging

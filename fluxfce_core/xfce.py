@@ -1,4 +1,12 @@
 # ~/dev/fluxfce-simplified/fluxfce_core/xfce.py
+"""
+XFCE desktop environment interaction for FluxFCE.
+
+This module provides the `XfceHandler` class, which encapsulates all
+direct interactions with XFCE settings. This includes getting/setting
+GTK themes, desktop background colors/gradients, and screen
+temperature/brightness using `xfconf-query` and `xsct` utilities.
+"""
 
 import logging
 import re
@@ -209,48 +217,97 @@ class XfceHandler:
                 return None
         
         # --- Iterate through candidate paths ---
+        valid_settings_found = [] # List to store (path, settings_dict)
+
         for path_to_check in candidate_paths:
             log.debug(f"Checking candidate path for background settings: {path_to_check}")
             
             image_style = _get_prop_for_path(path_to_check, "image-style")
-            if image_style != "1":
+            if image_style != "1": # "1" is for 'Color' mode
                 log.debug(f"Path {path_to_check} not in 'Color' mode (image-style: {image_style}). Skipping.")
                 continue
 
             color_style = _get_prop_for_path(path_to_check, "color-style")
-            if color_style is None or color_style not in ("0", "1", "2"):
+            if color_style is None or color_style not in ("0", "1", "2"): # solid, horizontal, vertical
                 log.debug(f"Path {path_to_check} has invalid/missing color-style ({color_style}). Skipping.")
                 continue
 
-            log.info(f"Found suitable path for color settings: {path_to_check}")
             current_settings_from_path = {"hex1": None, "hex2": None, "dir": None}
 
             rgba1_floats = _parse_rgba_for_path(path_to_check, "rgba1")
             current_settings_from_path["hex1"] = _floats_to_hex(rgba1_floats)
             if not current_settings_from_path["hex1"]:
-                log.warning(f"Failed to get primary color (rgba1) from active path {path_to_check}. Skipping this path.")
+                log.warning(f"Failed to parse primary color (rgba1) from path {path_to_check}. Skipping this path.")
                 continue 
 
             if color_style == "0":  # Solid
                 current_settings_from_path["dir"] = "s"
-                current_settings_from_path["hex2"] = None # Explicitly None for solid
-            elif color_style in ("1", "2"):  # Gradient
+                current_settings_from_path["hex2"] = None 
+            elif color_style in ("1", "2"):  # Gradient (horizontal or vertical)
                 current_settings_from_path["dir"] = "h" if color_style == "1" else "v"
                 rgba2_floats = _parse_rgba_for_path(path_to_check, "rgba2")
                 current_settings_from_path["hex2"] = _floats_to_hex(rgba2_floats)
                 if not current_settings_from_path["hex2"]:
-                    log.warning(f"Path {path_to_check} is gradient mode but failed to get secondary color (rgba2). Skipping this path.")
+                    log.warning(f"Path {path_to_check} is gradient mode but failed to parse secondary color (rgba2). Skipping this path.")
                     continue
             
             log.info(
-                f"Successfully retrieved background from {path_to_check}: "
+                f"Successfully parsed background settings from {path_to_check}: "
                 f"Dir={current_settings_from_path['dir']}, Hex1={current_settings_from_path['hex1']}, "
                 f"Hex2={current_settings_from_path.get('hex2', 'N/A')}"
             )
-            return current_settings_from_path # Return settings from the first valid path found
+            valid_settings_found.append((path_to_check, current_settings_from_path))
 
-        # If loop finishes, no suitable path was found
-        raise XfceError("Could not find any xfconf path actively configured for color background settings among candidates.")
+        if not valid_settings_found:
+            raise XfceError("Could not find any xfconf path actively configured for color background settings among candidates.")
+
+        if len(valid_settings_found) == 1:
+            # Only one valid path found, return its settings
+            path, settings = valid_settings_found[0]
+            log.info(f"Using background settings from the only valid path: {path}")
+            return settings
+
+        # Multiple valid paths found, check for discrepancies and prioritize
+        # Sort by path length (descending) to prioritize more specific paths
+        valid_settings_found.sort(key=lambda item: len(item[0]), reverse=True)
+
+        # Check if all settings are identical
+        first_settings = valid_settings_found[0][1]
+        all_same = True
+        for _, settings in valid_settings_found[1:]:
+            if settings != first_settings:
+                all_same = False
+                break
+        
+        chosen_path, chosen_settings = valid_settings_found[0] # Default to the longest path
+
+        if not all_same:
+            log.warning(
+                "Multiple XFCE paths have different valid background color settings. "
+                "This might indicate a misconfiguration or varied settings across workspaces/monitors."
+            )
+            # Log all differing settings
+            for path, settings in valid_settings_found:
+                log.warning(
+                    f"  Path: {path}, Settings: Dir={settings['dir']}, "
+                    f"Hex1={settings['hex1']}, Hex2={settings.get('hex2', 'N/A')}"
+                )
+            
+            # Check if there are multiple paths with the same maximum length but different settings
+            max_len = len(chosen_path)
+            ties_with_max_len_and_diff_settings = []
+            for path, settings in valid_settings_found:
+                if len(path) == max_len and settings != chosen_settings:
+                    ties_with_max_len_and_diff_settings.append((path,settings))
+            
+            if ties_with_max_len_and_diff_settings:
+                 log.warning(
+                    f"Multiple paths have the same maximum length ({max_len}) but different settings. "
+                    f"Arbitrarily choosing settings from path: {chosen_path}"
+                 )
+        
+        log.info(f"Prioritizing background settings from path: {chosen_path} (Dir={chosen_settings['dir']}, Hex1={chosen_settings['hex1']}, Hex2={chosen_settings.get('hex2', 'N/A')})")
+        return chosen_settings
 
 
     def set_background(self, hex1: str, hex2: Optional[str], direction: str) -> bool:
@@ -338,7 +395,7 @@ class XfceHandler:
         else:
             log.info("Background settings applied successfully to all detected XFCE paths.")
         
-        return True # Return True if no hard exceptions were raised. Warnings are logged.
+        return overall_success
 
 
     def get_screen_settings(self) -> dict[str, Any]:
@@ -418,8 +475,11 @@ class XfceHandler:
         try:
             helpers.check_dependencies(["xfdesktop"])
             subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Adding a small delay to give xfdesktop a moment to process the reload.
+            # This is a heuristic and might not be sufficient in all system load conditions.
+            # If issues persist with background not updating, this delay might be a factor.
             time.sleep(0.5) 
-            log.debug("xfdesktop --reload command issued.")
+            log.debug("xfdesktop --reload command issued and initial delay passed.")
         except DependencyError:
             log.warning("xfdesktop command not found, skipping reload.")
         except Exception as e: # Catch other Popen errors

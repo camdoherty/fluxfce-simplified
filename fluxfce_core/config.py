@@ -1,4 +1,12 @@
 # ~/dev/fluxfce-simplified/fluxfce_core/config.py
+"""
+Configuration management for FluxFCE.
+
+This module handles the loading, saving, and default value application
+for FluxFCE's configuration file (`config.ini`). It defines the
+structure of the default configuration and provides the ConfigManager
+class to interact with configuration settings.
+"""
 
 import configparser
 import logging
