@@ -99,7 +99,7 @@ class XfceHandler:
                     raise XfceError("Could not find any XFCE background property paths.")
 
             # Sort for consistent processing order, though XFCE's priority is not based on this sort.
-            sorted_paths = sorted(list(paths), key=len, reverse=True) # Try longer (more specific) paths first
+            sorted_paths = sorted(list(paths), key=len, reverse=False) # Try shorter (often more general or primary) paths first
             log.info(f"Found {len(sorted_paths)} potential background paths: {sorted_paths}")
             return sorted_paths
 
@@ -268,8 +268,8 @@ class XfceHandler:
             return settings
 
         # Multiple valid paths found, check for discrepancies and prioritize
-        # Sort by path length (descending) to prioritize more specific paths
-        valid_settings_found.sort(key=lambda item: len(item[0]), reverse=True)
+        # Sort by path length (ascending) to prioritize shorter (often more general or primary) paths when multiple settings are found.
+        valid_settings_found.sort(key=lambda item: len(item[0]), reverse=False)
 
         # Check if all settings are identical
         first_settings = valid_settings_found[0][1]
@@ -279,7 +279,7 @@ class XfceHandler:
                 all_same = False
                 break
         
-        chosen_path, chosen_settings = valid_settings_found[0] # Default to the longest path
+        chosen_path, chosen_settings = valid_settings_found[0] # Default to the shortest path after sorting
 
         if not all_same:
             log.warning(
@@ -293,20 +293,23 @@ class XfceHandler:
                     f"Hex1={settings['hex1']}, Hex2={settings.get('hex2', 'N/A')}"
                 )
             
-            # Check if there are multiple paths with the same maximum length but different settings
-            max_len = len(chosen_path)
-            ties_with_max_len_and_diff_settings = []
+            # Check if there are multiple paths with the same minimum length but different settings
+            min_len = len(chosen_path)
+            ties_with_min_len_and_diff_settings = []
             for path, settings in valid_settings_found:
-                if len(path) == max_len and settings != chosen_settings:
-                    ties_with_max_len_and_diff_settings.append((path,settings))
+                if len(path) == min_len and settings != chosen_settings:
+                    ties_with_min_len_and_diff_settings.append((path,settings))
             
-            if ties_with_max_len_and_diff_settings:
+            if ties_with_min_len_and_diff_settings:
                  log.warning(
-                    f"Multiple paths have the same maximum length ({max_len}) but different settings. "
+                    f"Multiple paths have the same minimum length ({min_len}) but different settings. "
                     f"Arbitrarily choosing settings from path: {chosen_path}"
                  )
         
-        log.info(f"Prioritizing background settings from path: {chosen_path} (Dir={chosen_settings['dir']}, Hex1={chosen_settings['hex1']}, Hex2={chosen_settings.get('hex2', 'N/A')})")
+        log_message = f"Using background settings from path: {chosen_path} (Dir={chosen_settings['dir']}, Hex1={chosen_settings['hex1']}, Hex2={chosen_settings.get('hex2', 'N/A')})"
+        if not all_same:
+            log_message += " (chosen based on shortest path length among differing configurations)"
+        log.info(log_message)
         return chosen_settings
 
 
