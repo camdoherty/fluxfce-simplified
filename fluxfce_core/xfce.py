@@ -500,6 +500,8 @@ class XfceHandler:
 
             temp = None
             brightness = None
+            temp_found = False
+            brightness_found = False
 
             # --- Strategy 1: Combined Regex (Handles 'temp ~ TTTT B.BB') ---
             # Match pattern like: Screen #: temperature ~ <temp_digits> <brightness_float>
@@ -508,68 +510,102 @@ class XfceHandler:
             )
             if combined_match:
                 log.debug("xsct output matched combined regex pattern.")
+                parsed_temp_combined = None
+                parsed_brightness_combined = None
                 try:
-                    temp = int(combined_match.group(1))
-                    brightness = float(combined_match.group(2))
+                    parsed_temp_combined = int(combined_match.group(1))
+                    temp = parsed_temp_combined
+                    temp_found = True
+                except (ValueError, IndexError):
+                    log.warning(
+                        f"Could not parse temperature from combined xsct regex match. Output: '{stdout}'"
+                    )
+                try:
+                    parsed_brightness_combined = float(combined_match.group(2))
+                    brightness = parsed_brightness_combined
+                    brightness_found = True
+                except (ValueError, IndexError):
+                    log.warning(
+                        f"Could not parse brightness from combined xsct regex match. Output: '{stdout}'"
+                    )
+                
+                if temp_found and brightness_found:
                     log.info(
                         f"Retrieved screen settings (combined): Temp={temp}, Brightness={brightness:.2f}"
                     )
                     return {"temperature": temp, "brightness": brightness}
-                except (ValueError, IndexError) as e:
-                    log.warning(
-                        f"Could not parse values from combined xsct regex match: {e}. Output: '{stdout}'"
-                    )
-                    # Fall through to Strategy 2 if parsing combined match failed
+                elif temp_found:
+                    log.debug("Combined regex only found temperature. Will try separate for brightness.")
+                elif brightness_found:
+                    log.debug("Combined regex only found brightness. Will try separate for temperature.")
+                else:
+                    log.debug("Combined regex failed to parse both temperature and brightness.")
+
 
             # --- Strategy 2: Separate Regexes (Handles 'Temp: TTTTK\nBright: B.BB') ---
-            if temp is None or brightness is None:  # Only proceed if Strategy 1 failed
+            # Only proceed if one or both values are still needed
+            if not temp_found or not brightness_found:
                 log.debug(
-                    "Combined regex failed or produced invalid values, trying separate regexes."
+                    "Attempting separate regexes for missing values."
                 )
-                temp_match = re.search(
-                    r"(?:temperature|temp)\s*[:~]?\s*(\d+)K?", stdout, re.IGNORECASE
-                )
-                bright_match = re.search(
-                    r"(?:brightness|bright)\s*[:~]?\s*([\d.]+)", stdout, re.IGNORECASE
-                )
-
-                if temp_match:
-                    try:
-                        temp = int(temp_match.group(1))
-                    except (ValueError, IndexError):
-                        log.warning(
-                            f"Could not parse temperature from separate xsct regex match: '{stdout}'"
-                        )
-                else:
-                    log.warning(
-                        f"Could not find temperature pattern using separate regex: '{stdout}'"
+                if not temp_found:
+                    temp_match = re.search(
+                        r"(?:temperature|temp)\s*[:~]?\s*(\d+)K?", stdout, re.IGNORECASE
                     )
-
-                if bright_match:
-                    try:
-                        brightness = float(bright_match.group(1))
-                    except (ValueError, IndexError):
+                    if temp_match:
+                        try:
+                            temp = int(temp_match.group(1))
+                            temp_found = True
+                        except (ValueError, IndexError):
+                            log.warning(
+                                f"Could not parse temperature from separate xsct regex match: '{stdout}'"
+                            )
+                    else:
                         log.warning(
-                            f"Could not parse brightness from separate xsct regex match: '{stdout}'"
+                            f"Could not find temperature pattern using separate regex: '{stdout}'"
                         )
-                else:
-                    # This is the warning you were seeing previously
-                    log.warning(
-                        f"Could not find brightness pattern using separate regex: '{stdout}'"
-                    )
 
-                # Return values only if *both* were successfully parsed separately
-                if temp is not None and brightness is not None:
+                if not brightness_found:
+                    bright_match = re.search(
+                        r"(?:brightness|bright)\s*[:~]?\s*([\d.]+)", stdout, re.IGNORECASE
+                    )
+                    if bright_match:
+                        try:
+                            brightness = float(bright_match.group(1))
+                            brightness_found = True
+                        except (ValueError, IndexError):
+                            log.warning(
+                                f"Could not parse brightness from separate xsct regex match: '{stdout}'"
+                            )
+                    else:
+                        # This warning is now conditional
+                        log.warning(
+                            f"Could not find brightness pattern using separate regex: '{stdout}'"
+                        )
+
+                # Return values if *both* were successfully parsed by any strategy
+                if temp_found and brightness_found:
                     log.info(
-                        f"Retrieved screen settings (separate): Temp={temp}, Brightness={brightness:.2f}"
+                        f"Retrieved screen settings (temp from {'combined' if temp == parsed_temp_combined else 'separate'}, bright from {'combined' if brightness == parsed_brightness_combined else 'separate'}): Temp={temp}, Brightness={brightness:.2f}"
                     )
                     return {"temperature": temp, "brightness": brightness}
 
-            # --- Fallback: Parsing failed ---
-            log.info(
-                f"Could not parse both temp/brightness from xsct output using known patterns. Assuming default. Output: '{stdout}'"
-            )
-            return {"temperature": None, "brightness": None}
+            # --- Fallback: Parsing failed for one or both ---
+            if temp_found and not brightness_found:
+                log.info(
+                    f"Successfully parsed temperature ({temp}K) but not brightness from xsct output. Output: '{stdout}'"
+                )
+                return {"temperature": temp, "brightness": None}
+            elif not temp_found and brightness_found:
+                log.info(
+                    f"Successfully parsed brightness ({brightness:.2f}) but not temperature from xsct output. Output: '{stdout}'"
+                )
+                return {"temperature": None, "brightness": brightness}
+            else: # Neither found
+                log.info(
+                    f"Could not parse both temp/brightness from xsct output using known patterns. Assuming default. Output: '{stdout}'"
+                )
+                return {"temperature": None, "brightness": None}
 
         except XfceError:
             raise  # Re-raise specific XfceErrors

@@ -135,63 +135,6 @@ def check_dependencies(deps: list[str]) -> bool:
     return True
 
 
-def check_atd_service() -> bool:
-    """
-    Checks if the 'atd' service appears to be running via systemctl.
-
-    Returns:
-        True if the service is detected as active.
-
-    Raises:
-        DependencyError: If 'systemctl' command is not found.
-        FluxFceError: For unexpected errors during the check or if the
-                      service is confirmed not to be active.
-    """
-    log.debug("Checking if atd service is active...")
-    # Ensure systemctl exists first
-    check_dependencies(["systemctl"])
-
-    try:
-        # Check system service first
-        code_sys, _, err_sys = run_command(
-            ["systemctl", "is-active", "--quiet", "atd.service"]
-        )
-        # --quiet: return code 0 for active, non-zero otherwise (usually 3 for inactive)
-
-        if code_sys == 0:
-            log.debug("System 'atd' service reported as active.")
-            return True
-
-        log.debug(
-            f"System 'atd' not active (code: {code_sys}). Checking user service..."
-        )
-        # Check user service as fallback (less common for atd)
-        code_user, _, err_user = run_command(
-            ["systemctl", "--user", "is-active", "--quiet", "atd.service"]
-        )
-
-        if code_user == 0:
-            log.debug("User 'atd' service reported as active.")
-            return True
-
-        # If neither is active
-        error_msg = "The 'atd' service (system or user) is not active. Automatic scheduling requires 'atd'. Please install and enable it (e.g., 'sudo systemctl enable --now atd')."
-        log.error(error_msg)
-        # Use FluxFceError as it's a runtime state issue, not a missing binary
-        raise FluxFceError(error_msg)
-
-    except (
-        FileNotFoundError
-    ):  # Should be caught by check_dependencies, but belts and suspenders
-        raise DependencyError(
-            "The 'systemctl' command was not found, cannot check 'atd' status."
-        )
-    except Exception as e:
-        # Catch potential errors from run_command itself or re-raised CalledProcessError
-        log.exception(f"Failed to check 'atd' status: {e}")
-        raise FluxFceError(f"Failed to check 'atd' status: {e}") from e
-
-
 # --- Detect timezone ---
 def detect_system_timezone() -> Optional[str]:
     """

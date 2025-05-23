@@ -122,29 +122,35 @@ def print_status(status_data: dict):
         log.info(f"  Error checking systemd timers: {schedule_info['error']}")
     else:
         timers = schedule_info.get("timers", {})
-        if not timers and not schedule_info.get("info"): # No timers and no specific info message
-             log.info("  Scheduler status unknown or no fluxfce timers found.")
-        elif schedule_info.get("info"): # E.g. "No fluxfce timers found or listed."
-             log.info(f"  Status: {schedule_info.get('info')}")
+        specific_info_message = schedule_info.get("info")
 
-        for timer_name, details in timers.items():
-            log.info(f"  Timer: {timer_name}")
-            log.info(f"    Status:    {details.get('enabled', 'N/A')}, {details.get('active', 'N/A')}")
-            log.info(f"    Next Run:  {details.get('next_run', 'N/A')}")
-            log.info(f"    Time Left: {details.get('time_left', 'N/A')}")
-            log.info(f"    Last Run:  {details.get('last_run', 'N/A')}")
-            log.info(f"    Activates: {details.get('activates', 'N/A')}")
-        
-        is_enabled = any(
-            SCHEDULER_TIMER_NAME in name and ("Enabled" in details.get("enabled","") and "Active" in details.get("active",""))
-            for name, details in timers.items()
-        )
-        if not timers and not schedule_info.get("error") and not schedule_info.get("info"):
-             log.info("  Status: Disabled (No fluxfce timers configured or found)")
-        elif not is_enabled and not schedule_info.get("error"):
-            log.info("  Overall Status: Scheduling may be disabled or timers not active.")
-            log.info("  (Run 'fluxfce enable' to enable automatic scheduling)")
-
+        if not timers:
+            if specific_info_message: # E.g. "0 timers listed." or "Systemd not available"
+                log.info(f"  Status: {specific_info_message}")
+            else: # No timers and no specific info message from core
+                log.info("  Status: Scheduling is disabled or no FluxFCE timers are active/configured.")
+            # In this "no timers" case, the "Overall Status" and "Run 'fluxfce enable'" messages
+            # are generally redundant or less clear than the above, so we might skip them
+            # or ensure they only print if relevant (e.g. if specific_info_message indicated an error)
+            # For now, if no timers, the specific message above is considered sufficient.
+        else: # Timers exist, list them
+            for timer_name, details in timers.items():
+                log.info(f"  Timer: {timer_name}")
+                log.info(f"    Status:    {details.get('enabled', 'N/A')}, {details.get('active', 'N/A')}")
+                log.info(f"    Next Run:  {details.get('next_run', 'N/A')}")
+                log.info(f"    Time Left: {details.get('time_left', 'N/A')}")
+                log.info(f"    Last Run:  {details.get('last_run', 'N/A')}")
+                log.info(f"    Activates: {details.get('activates', 'N/A')}")
+            
+            # Check overall status only if timers were listed
+            is_enabled = any(
+                SCHEDULER_TIMER_NAME in name and 
+                ("Enabled" in details.get("enabled","") and "Active" in details.get("active",""))
+                for name, details in timers.items()
+            )
+            if not is_enabled: # This implies timers exist, but the main one might be off/failed
+                log.info("  Overall Status: Main scheduling timer may be disabled or not active.")
+                log.info("  (Run 'fluxfce enable' to ensure automatic scheduling is active)")
 
     log.info("\n[Systemd Services (Login/Resume/Scheduler)]")
     systemd_services = status_data.get("systemd_services", {})
