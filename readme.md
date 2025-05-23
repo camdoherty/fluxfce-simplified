@@ -1,6 +1,3 @@
-Okay, here is the complete, updated, and verified `README.md`. I've incorporated the suggestions from our discussion to align it with the current Systemd-based version of `fluxfce`.
-
-```markdown
 # fluxfce - XFCE Auto-Theming Utility
 
 **Fluxfce** automates switching XFCE desktop appearance (GTK Theme, Background Color/Gradient, Screen Temperature/Brightness) between configured Day and Night modes based on local sunrise and sunset times. It uses an adapted NOAA algorithm to calculate transition times. **Systemd user timers** are used for precise, low-resource scheduling and applying themes on login/resume.
@@ -208,4 +205,3 @@ xsct_bright = 0.85
 ## License
 
 MIT
-```
