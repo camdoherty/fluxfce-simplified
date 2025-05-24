@@ -151,13 +151,22 @@ def set_defaults_from_current(mode: Literal["day", "night"]) -> bool:
     # Use the module-level ConfigManager instance
     conf = _load_cfg() 
 
+    bg_section_name = "BackgroundDay" if mode == "day" else "BackgroundNight"
+
+    # Load current background settings from config for the given mode
+    current_config_bg = {
+        "hex1": conf.get(bg_section_name, "BG_HEX1", fallback=None),
+        "hex2": conf.get(bg_section_name, "BG_HEX2", fallback=None),
+        "dir": conf.get(bg_section_name, "BG_DIR", fallback=None)
+    }
+
     # read current desktop ---------------------------------------------------
     theme = xfce_handler.get_gtk_theme()
-    bg = xfce_handler.get_background_settings()  # may raise XfceError
+    bg = xfce_handler.get_background_settings(current_config_bg=current_config_bg)  # may raise XfceError
     screen = xfce_handler.get_screen_settings()
 
     theme_key = "LIGHT_THEME" if mode == "day" else "DARK_THEME"
-    bg_section = "BackgroundDay" if mode == "day" else "BackgroundNight"
+    # bg_section_name is already defined above
     screen_section = "ScreenDay" if mode == "day" else "ScreenNight"
 
     changed = False
@@ -167,8 +176,8 @@ def set_defaults_from_current(mode: Literal["day", "night"]) -> bool:
 
     if bg:
         for src, dst in (("dir", "BG_DIR"), ("hex1", "BG_HEX1"), ("hex2", "BG_HEX2")):
-            if conf.get(bg_section, dst, fallback="") != (bg[src] or ""):
-                _cfg_mgr_desktop.set_setting(conf, bg_section, dst, bg[src] or "")
+            if conf.get(bg_section_name, dst, fallback="") != (bg[src] or ""): # Use bg_section_name
+                _cfg_mgr_desktop.set_setting(conf, bg_section_name, dst, bg[src] or "") # Use bg_section_name
                 changed = True
 
     if screen:
