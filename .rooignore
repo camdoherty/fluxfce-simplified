@@ -1,7 +1,7 @@
 /tmp/
 /.ruff_cache/
 /fluxfce_core/__pycache__/
-/notes
+/notes/
 
 todo
 srss.py
