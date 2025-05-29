@@ -282,84 +282,103 @@ class XfceHandler:
                 break
         
         # Default to the shortest path after sorting, can be overridden by deviation logic
-        chosen_path, chosen_settings = valid_settings_found[0] 
-        choice_reason = "shortest path"
+        chosen_path, chosen_settings = valid_settings_found[0]
+        choice_reason = "shortest path heuristic" # Default reason
 
-        if not all_same:
+        if current_config_bg: # Log current_config_bg if provided, early in the decision process
+            log.debug(f"Received current_config_bg for reference: {current_config_bg}")
+
+        if len(valid_settings_found) == 1:
+            choice_reason = "only valid path"
+            # chosen_path and chosen_settings are already correctly set from valid_settings_found[0]
+            # This case was technically handled before this block, but re-stating for logical flow.
+        elif all_same:
+            choice_reason = "all settings identical"
+            # chosen_path and chosen_settings are correct (from the first item, as all are same)
+        else: # This is the complex case: multiple valid_settings_found with differing configurations
             log.warning(
                 "Multiple XFCE paths have different valid background color settings. "
-                "This might indicate a misconfiguration or varied settings across workspaces/monitors."
+                "Attempting to determine the best choice..."
             )
-            # Log all differing settings for debugging
+            # Log all differing settings for full context before decision logic
             for path, settings in valid_settings_found:
                 log.warning(
-                    f"  Path: {path}, Settings: Dir={settings['dir']}, "
+                    f"  Path candidate: {path}, Settings: Dir={settings['dir']}, "
                     f"Hex1={settings['hex1']}, Hex2={settings.get('hex2', 'N/A')}"
                 )
 
             if current_config_bg:
-                log.debug(f"Provided current_config_bg for comparison: {current_config_bg}")
-                deviating_settings = []
+                # current_config_bg is available, use it to find a unique deviation
+                deviating_settings_list = [] # Renamed to avoid conflict with the log variable name
+                log.debug("Starting deviation checks against current_config_bg:")
                 for item_path, item_settings in valid_settings_found:
-                    # Robust comparison for item_settings and current_config_bg
+                    log.debug(f"  Comparing Path: {item_path}, Settings: {item_settings}")
                     are_different = not (
                         item_settings['hex1'] == current_config_bg.get('hex1') and
                         item_settings['dir'] == current_config_bg.get('dir') and
                         (item_settings.get('hex2') or None) == (current_config_bg.get('hex2') or None)
                     )
+                    log.debug(f"    Are different from current_config_bg? {are_different}")
                     if are_different:
-                        deviating_settings.append((item_path, item_settings))
+                        deviating_settings_list.append((item_path, item_settings))
                 
-                if len(deviating_settings) == 1:
-                    chosen_path, chosen_settings = deviating_settings[0]
+                log.debug(f"List of settings deviating from current_config_bg: {deviating_settings_list}")
+
+                if len(deviating_settings_list) == 1:
+                    chosen_path, chosen_settings = deviating_settings_list[0]
                     choice_reason = "unique deviation from saved config"
+                elif len(deviating_settings_list) == 0:
+                    # No settings deviate from current_config_bg. All are same as current_config_bg.
+                    # Stick with the shortest path among them (already default).
+                    choice_reason = "no deviation from saved config, using shortest path heuristic"
                     log.info(
-                        f"Prioritizing settings from path {chosen_path} as it's the unique one "
-                        f"deviating from saved config: {chosen_settings}"
+                        "All differing XFCE settings match the provided current_config_bg. "
+                        "Using the shortest path as per default heuristic."
                     )
-                    # Proceed to return this chosen_settings
-                elif len(deviating_settings) == 0:
-                    log.info(
-                        "No settings found deviating from saved config. "
-                        "Falling back to shortest path heuristic."
-                    )
-                    # chosen_path, chosen_settings already set to shortest path
-                else: # len(deviating_settings) > 1
+                else: # len(deviating_settings_list) > 1
+                    # Multiple settings deviate from current_config_bg.
+                    # Fallback to shortest path AMONG THE DEVIATING ONES.
                     log.warning(
-                        f"{len(deviating_settings)} configurations deviate from saved settings. "
-                        "Falling back to shortest path heuristic among all valid paths."
+                        f"{len(deviating_settings_list)} configurations deviate from saved config. "
+                        "Choosing the shortest path among these deviating ones."
                     )
-                    # chosen_path, chosen_settings already set to shortest path
+                    deviating_settings_list.sort(key=lambda item: len(item[0]), reverse=False)
+                    chosen_path, chosen_settings = deviating_settings_list[0]
+                    choice_reason = "shortest path among multiple deviations"
             else:
-                # No current_config_bg provided, stick with the shortest path default
-                log.info("No current_config_bg provided, using shortest path heuristic for differing settings.")
-
-
-            # Tie-breaking for shortest path if not overridden by deviation logic
-            if choice_reason == "shortest path": # Only run this if still on shortest path
-                min_len = len(chosen_path)
-                ties_with_min_len_and_diff_settings = []
-                for path, settings in valid_settings_found:
-                    if len(path) == min_len and settings != chosen_settings:
-                        # This condition implies chosen_settings (from valid_settings_found[0])
-                        # is not the only one at this min_len.
-                        # We are just logging this tie, the first one (chosen_path) is kept.
-                        ties_with_min_len_and_diff_settings.append((path,settings))
+                # No current_config_bg provided. Stick with the default (shortest path of all valid_settings_found).
+                choice_reason = "no current_config_bg, using shortest path heuristic among all differing"
+                log.info(
+                    "No current_config_bg provided. Defaulting to the shortest path among "
+                    "the differing XFCE settings."
+                )
+            
+            # Log tie-breaking if the chosen reason involves "shortest path"
+            if "shortest path" in choice_reason:
+                paths_for_tie_check = valid_settings_found
+                if "among multiple deviations" in choice_reason:
+                    paths_for_tie_check = deviating_settings_list # type: ignore
                 
-                if ties_with_min_len_and_diff_settings:
+                min_len_for_chosen = len(chosen_path)
+                tied_shortest_paths_with_diff_settings = []
+                for p_path, p_settings in paths_for_tie_check:
+                    if len(p_path) == min_len_for_chosen and p_settings != chosen_settings:
+                        tied_shortest_paths_with_diff_settings.append((p_path, p_settings))
+                
+                if tied_shortest_paths_with_diff_settings:
                     log.warning(
-                        f"Multiple paths have the same minimum length ({min_len}) but different settings. "
-                        f"Arbitrarily choosing settings from the first shortest path encountered: {chosen_path}"
+                        f"Path '{chosen_path}' was chosen based on '{choice_reason}'. "
+                        f"However, other paths with the same length ({min_len_for_chosen}) "
+                        f"and different settings exist: {tied_shortest_paths_with_diff_settings}. "
+                        "The choice among these ties was due to sort order."
                     )
-        
-        log_message = (
-            f"Using background settings from path: {chosen_path} "
+
+        # Final log message including the explicit choice_reason
+        log.info(
+            f"Final decision: Using background settings from path '{chosen_path}' "
             f"(Dir={chosen_settings['dir']}, Hex1={chosen_settings['hex1']}, "
-            f"Hex2={chosen_settings.get('hex2', 'N/A')}) - Chosen based on: {choice_reason}."
+            f"Hex2={chosen_settings.get('hex2', 'N/A')}) - Reason: {choice_reason}."
         )
-        if not all_same and choice_reason == "shortest path":
-             log_message += " (among differing configurations)"
-        log.info(log_message)
         return chosen_settings
 
 
