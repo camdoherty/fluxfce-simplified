@@ -192,6 +192,21 @@ def handle_schedule_dynamic_transitions_command(python_exe_path: str, script_exe
 
 # --- DESKTOP APPEARANCE FAÇADE (via desktop_manager) ---
 
+def apply_temporary_mode(mode: str) -> bool:
+    """
+    API Façade: Applies an appearance mode temporarily, WITHOUT disabling scheduling.
+    """
+    log.info(f"API Facade: Applying temporary mode '{mode}' (scheduling remains active)...")
+    try:
+        # Step 1: Apply the visual mode using the desktop manager
+        return desktop_manager.apply_mode(mode)
+    except exc.FluxFceError as e_apply: # Catch errors from desktop_manager.apply_mode
+        log.error(f"API Facade: desktop_manager.apply_mode('{mode}') failed: {e_apply}")
+        raise # Re-raise the original apply error
+    except Exception as e_apply_unexpected:
+        log.exception(f"API Facade: Unexpected error from desktop_manager.apply_mode('{mode}'): {e_apply_unexpected}")
+        raise exc.FluxFceError(f"Unexpected error applying temporary mode '{mode}'") from e_apply_unexpected
+
 def apply_manual_mode(mode: str) -> bool:
     """
     API Façade: Applies a manual appearance mode and disables scheduling.
@@ -428,4 +443,3 @@ def get_status() -> dict[str, Any]:
         status["systemd_services"]["error"] = "One or more services could not be checked reliably."
             
     return status
-    

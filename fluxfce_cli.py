@@ -192,6 +192,8 @@ def main():
 Examples:
   fluxfce install          # Interactive setup, install units, and enable scheduling
   fluxfce status           # Show current status and configuration
+  fluxfce day              # Apply Day mode now without disabling auto switching
+  fluxfce night            # Apply Night mode now without disabling auto switching
   fluxfce enable           # Enable automatic scheduling (sets up systemd timers)
   fluxfce disable          # Disable automatic scheduling (clears systemd timers)
   fluxfce force-day        # Apply Day mode now and disable auto switching
@@ -207,6 +209,8 @@ Examples:
 
     subparsers.add_parser("install", help="Install systemd units and enable automatic scheduling.")
     subparsers.add_parser("uninstall", help="Remove systemd units & clear schedule (prompts to remove config).")
+    subparsers.add_parser("day", help="Apply Day Mode settings now (leaves automatic scheduling enabled).")
+    subparsers.add_parser("night", help="Apply Night Mode settings now (leaves automatic scheduling enabled).")
     subparsers.add_parser("enable", help="Enable automatic scheduling (configures systemd timers).")
     subparsers.add_parser("disable", help="Disable automatic scheduling (clears relevant systemd timers).")
     subparsers.add_parser("status", help="Show config, calculated times, and schedule status.")
@@ -363,6 +367,16 @@ Examples:
                 else:
                     log.info("Configuration directory kept.")
             log.info("\n--- Uninstallation Complete ---")
+
+        elif args.command == "day":
+            log.info("Applying Day mode (scheduling will remain active)...")
+            fluxfce_core.apply_temporary_mode("day")
+            log.info("Day mode applied. Automatic scheduling remains active.")
+
+        elif args.command == "night":
+            log.info("Applying Night mode (scheduling will remain active)...")
+            fluxfce_core.apply_temporary_mode("night")
+            log.info("Night mode applied. Automatic scheduling remains active.")
 
         elif args.command == "enable":
             log.info("Enabling scheduling via systemd timers...")

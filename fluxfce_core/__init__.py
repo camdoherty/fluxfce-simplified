@@ -14,6 +14,7 @@ from .exceptions import (
 # Make public API functions (now via the api.py facade) available
 from .api import (
     apply_manual_mode,
+    apply_temporary_mode,
     disable_scheduling,
     enable_scheduling,
     get_current_config,
@@ -63,6 +64,7 @@ __all__ = [
     "XfceError",
     # API Functions (from api.py facade)
     "apply_manual_mode",
+    "apply_temporary_mode",
     "disable_scheduling",
     "enable_scheduling",
     "get_current_config",

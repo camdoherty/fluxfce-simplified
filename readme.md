@@ -52,41 +52,45 @@ This is a refactored and simplified version focusing on core functionality, reli
 ## Installation
 
 1.  **Clone the repository (or download the source code):**
+
     ```bash
     git clone https://github.com/camdoherty/fluxfce-simplified.git
     cd fluxfce
     ```
 
 2.  **Run the install command:**
+
     ```bash
     python3 fluxfce_cli.py install
     ```
     The script will:
-    *   Check for Python version.
-    *   Check for required system dependencies using `fluxfce_deps_check.py` and guide you through installing missing ones (like `xsct` via `apt`).
-    *   Prompt you for location (latitude/longitude) and attempt to detect your timezone for accurate sun time calculations if a configuration file doesn't exist.
-    *   Install systemd user units for automatic operation.
-    *   Enable scheduling, which sets up timers for the next sunrise/sunset and ensures the current desktop appearance matches the current solar period.
+    - Check for Python version.
+    - Check for required system dependencies using `fluxfce_deps_check.py` and guide you through installing missing ones (like `xsct` via `apt`).
+    - Prompt you for location (latitude/longitude) and attempt to detect your timezone for accurate sun time calculations if a configuration file doesn't exist.
+    - Install systemd user units for automatic operation.
+    - Enable scheduling, which sets up timers for the next sunrise/sunset and ensures the current desktop appearance matches the current solar period.
 
 3.  **Make the `fluxfce` command easily accessible (if not using `pip install .` in the future):**
+
     The `install` script will provide instructions. A common method is:
-    *   Ensure `~/.local/bin` is in your `PATH`. Add if necessary:
-        ```bash
-        # Add to your ~/.bashrc or ~/.zshrc, then source it or restart terminal
-        export PATH="$HOME/.local/bin:$PATH"
-        ```
-    *   Make the main script executable:
-        ```bash
-        chmod +x ./fluxfce_cli.py
-        ```
-    *   Create a symbolic link:
-        ```bash
-        SCRIPT_ABS_PATH=$(readlink -f ./fluxfce_cli.py) # Or use: SCRIPT_ABS_PATH=$(pwd)/fluxfce_cli.py
-        mkdir -p ~/.local/bin
-        ln -s -f "$SCRIPT_ABS_PATH" ~/.local/bin/fluxfce # -f forces overwrite if symlink exists
-        ```
+    - Ensure `~/.local/bin` is in your `PATH`. Add if necessary:
+      ```bash
+      # Add to your ~/.bashrc or ~/.zshrc, then source it or restart terminal
+      export PATH="$HOME/.local/bin:$PATH"
+      ```
+    - Make the main script executable:
+      ```bash
+      chmod +x ./fluxfce_cli.py
+      ```
+    - Create a symbolic link:
+      ```bash
+      SCRIPT_ABS_PATH=$(readlink -f ./fluxfce_cli.py) # Or use: SCRIPT_ABS_PATH=$(pwd)/fluxfce_cli.py
+      mkdir -p ~/.local/bin
+      ln -s -f "$SCRIPT_ABS_PATH" ~/.local/bin/fluxfce # -f forces overwrite if symlink exists
+      ```
 
 4.  **(Recommended) Configure Day/Night Appearance:**
+
     Set your desired XFCE theme, background color/gradient, and screen temperature/brightness for **Daytime**, then run:
     ```bash
     fluxfce set-default --mode day
@@ -104,16 +108,20 @@ fluxfce <command> [options]
 ```
 
 **Commands:**
+
 - `install` — Performs dependency checks, interactive setup (if needed), installs systemd units, and enables automatic scheduling.
 - `uninstall` — Removes systemd units and clears schedule (prompts to remove config).
+- `day` — Apply Day Mode settings now without disabling automatic scheduling.
+- `night` — Apply Night Mode settings now without disabling automatic scheduling.
 - `enable` — Enables automatic scheduling (sets up systemd timers for sunrise/sunset and ensures current appearance matches the solar period).
 - `disable` — Disable automatic scheduling (stops and disables relevant systemd timers).
 - `status` — Show config, calculated times, and systemd timer/service status.
-- `force-day` — Apply Day Mode settings now (disables automatic scheduling).
-- `force-night` — Apply Night Mode settings now (disables automatic scheduling).
+- `force-day` — Apply Day Mode settings now **and disable** automatic scheduling.
+- `force-night` — Apply Night Mode settings now **and disable** automatic scheduling.
 - `set-default --mode {day,night}` — Save current desktop look as the new default for Day or Night mode.
 
 **Options:**
+
 - `-h`, `--help` — Show this help message and exit.
 - `-v`, `--verbose` — Enable detailed logging output for `fluxfce` operations.
 
