@@ -425,15 +425,16 @@ class SystemdManager:
 Description={self.app_name}: Event Timer for {mode.capitalize()} Transition (Dynamic)
 # This timer requires the corresponding apply-transition@mode.service instance
 Requires={service_instance_to_trigger}
-# If the service it triggers is removed/fails, this timer might also be affected.
-# PartOf can be used if desired, but Requires is explicit for the specific instance.
 
 [Timer]
 Unit={service_instance_to_trigger}
 OnCalendar={on_calendar_utc_str}
-Persistent=true  # So it runs if the machine was off at the scheduled time
-AccuracySec=1s   # Timer accuracy
-WakeSystem=false # Don't wake the system just for this timer
+# Run if the machine was off at the scheduled time
+Persistent=true
+# Timer accuracy
+AccuracySec=1s
+# Don't wake a sleeping system just for this timer
+WakeSystem=false
 
 [Install]
 # Dynamic timers are not typically "WantedBy" other targets directly.

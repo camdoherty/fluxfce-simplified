@@ -14,6 +14,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timedelta
 
 # Import the refactored core library API and exceptions
 try:
@@ -87,74 +88,81 @@ def setup_cli_logging(verbose: bool):
 
 
 # --- Output Formatting ---
-def print_status(status_data: dict):
+def print_status(status_data: dict, verbose: bool = False):
     """Formats and prints the status dictionary."""
     log.info("--- fluxfce Status ---")
+    summary = status_data.get("summary", {})
 
-    log.info("\n[Configuration]")
-    if status_data["config"].get("error"):
-        log.info(f"  Error loading config: {status_data['config']['error']}")
-    else:
-        log.info(f"  Location:      {status_data['config'].get('latitude', 'N/A')}, {status_data['config'].get('longitude', 'N/A')}")
-        log.info(f"  Timezone:      {status_data['config'].get('timezone', 'N/A')}")
-        log.info(f"  Light Theme:   {status_data['config'].get('light_theme', 'N/A')}")
-        log.info(f"  Dark Theme:    {status_data['config'].get('dark_theme', 'N/A')}")
+    # --- Always-on Summary View ---
+    log.info("\n[Scheduling Status]")
+    if summary.get("overall_status"):
+        log.info(f"  Overall Status:  {summary['overall_status']} {summary.get('status_message', '')}")
+    if summary.get("recommendation"):
+        log.info(f"  Recommendation:  {summary['recommendation']}")
 
-    log.info("\n[Calculated Sun Times (Today)]")
-    if status_data["sun_times"].get("error"):
-        log.info(f"  Error: {status_data['sun_times']['error']}")
-    elif status_data["sun_times"].get("sunrise") and status_data["sun_times"].get("sunset"):
-        sunrise_dt = status_data["sun_times"]["sunrise"]
-        sunset_dt = status_data["sun_times"]["sunset"]
-        try:
+    if summary.get("overall_status") == "[OK]":
+        log.info("\n[Upcoming Events]")
+        next_trans_time = summary.get("next_transition_time")
+        next_trans_mode = summary.get("next_transition_mode")
+
+        if next_trans_time and next_trans_mode:
+            now = datetime.now(next_trans_time.tzinfo)
+            delta = next_trans_time - now
+            
+            hours, remainder = divmod(delta.total_seconds(), 3600)
+            minutes, _ = divmod(remainder, 60)
+            
+            time_left_str = ""
+            if delta.total_seconds() < 0:
+                time_left_str = "in the past"
+            elif hours >= 1:
+                time_left_str = f"in approx. {int(hours)}h {int(minutes)}m"
+            elif minutes >= 1:
+                time_left_str = f"in approx. {int(minutes)}m"
+            else:
+                time_left_str = "soon"
+            
+            log.info(f"  Next Transition: Apply '{next_trans_mode}' mode at {next_trans_time.strftime('%H:%M:%S')} ({time_left_str})")
+        
+        resched_time = summary.get("reschedule_time")
+        if resched_time:
+            log.info(f"  Daily Reschedule: Next check at {resched_time.strftime('%a %H:%M:%S')}")
+
+    # --- Verbose View ---
+    if verbose:
+        log.info("\n--- Verbose Details ---")
+        log.info("\n[Configuration]")
+        if status_data["config"].get("error"):
+            log.info(f"  Error loading config: {status_data['config']['error']}")
+        else:
+            log.info(f"  Location:      {status_data['config'].get('latitude', 'N/A')}, {status_data['config'].get('longitude', 'N/A')}")
+            log.info(f"  Timezone:      {status_data['config'].get('timezone', 'N/A')}")
+            log.info(f"  Light Theme:   {status_data['config'].get('light_theme', 'N/A')}")
+            log.info(f"  Dark Theme:    {status_data['config'].get('dark_theme', 'N/A')}")
+
+        log.info("\n[Calculated Sun Times (Today)]")
+        if status_data["sun_times"].get("error"):
+            log.info(f"  Error: {status_data['sun_times']['error']}")
+        elif status_data["sun_times"].get("sunrise") and status_data["sun_times"].get("sunset"):
+            sunrise_dt = status_data["sun_times"]["sunrise"]
+            sunset_dt = status_data["sun_times"]["sunset"]
             log.info(f"  Sunrise:       {sunrise_dt.isoformat(sep=' ', timespec='seconds')}")
             log.info(f"  Sunset:        {sunset_dt.isoformat(sep=' ', timespec='seconds')}")
-        except Exception:
-            log.info(f"  Sunrise:       {sunrise_dt}")
-            log.info(f"  Sunset:        {sunset_dt}")
+        else:
+            log.info("  Could not be calculated (check config/location).")
+        log.info(f"  Current Period:  {status_data.get('current_period', 'unknown').capitalize()}")
+
+        log.info("\n[Systemd Services (Login/Resume/Scheduler)]")
+        systemd_services = status_data.get("systemd_services", {})
+        if systemd_services.get("error"):
+            log.info(f"  Error checking systemd services: {systemd_services['error']}")
+        else:
+            log.info(f"  Scheduler Service ({SCHEDULER_SERVICE_NAME}): {systemd_services.get('scheduler_service', 'Unknown')}")
+            log.info(f"  Login Service ({LOGIN_SERVICE_NAME}): {systemd_services.get('login_service', 'Unknown')}")
+            log.info(f"  Resume Service ({RESUME_SERVICE_NAME}): {systemd_services.get('resume_service', 'Unknown')}")
+            log.info("  (For detailed logs, use 'systemctl --user status ...' or 'journalctl --user -u ...')")
     else:
-        log.info("  Could not be calculated (check config/location).")
-    log.info(f"  Current Period:  {status_data.get('current_period', 'unknown').capitalize()}")
-
-    log.info("\n[Systemd Scheduling Timers]")
-    schedule_info = status_data.get("schedule", {})
-    if schedule_info.get("error"):
-        log.info(f"  Error checking systemd timers: {schedule_info['error']}")
-    else:
-        timers = schedule_info.get("timers", {})
-        if not timers and not schedule_info.get("info"): # No timers and no specific info message
-             log.info("  Scheduler status unknown or no fluxfce timers found.")
-        elif schedule_info.get("info"): # E.g. "No fluxfce timers found or listed."
-             log.info(f"  Status: {schedule_info.get('info')}")
-
-        for timer_name, details in timers.items():
-            log.info(f"  Timer: {timer_name}")
-            log.info(f"    Status:    {details.get('enabled', 'N/A')}, {details.get('active', 'N/A')}")
-            log.info(f"    Next Run:  {details.get('next_run', 'N/A')}")
-            #log.info(f"    Time Left: {details.get('time_left', 'N/A')}")
-            log.info(f"    Last Run:  {details.get('last_run', 'N/A')}")
-            log.info(f"    Activates: {details.get('activates', 'N/A')}")
-        
-        is_enabled = any(
-            SCHEDULER_TIMER_NAME in name and ("Enabled" in details.get("enabled","") and "Active" in details.get("active",""))
-            for name, details in timers.items()
-        )
-        if not timers and not schedule_info.get("error") and not schedule_info.get("info"):
-             log.info("  Status: Disabled (No fluxfce timers configured or found)")
-        elif not is_enabled and not schedule_info.get("error"):
-            log.info("  Overall Status: Scheduling may be disabled or timers not active.")
-            log.info("  (Run 'fluxfce enable' to enable automatic scheduling)")
-
-
-    log.info("\n[Systemd Services (Login/Resume/Scheduler)]")
-    systemd_services = status_data.get("systemd_services", {})
-    if systemd_services.get("error"):
-        log.info(f"  Error checking systemd services: {systemd_services['error']}")
-    else:
-        log.info(f"  Scheduler Timer State Checker ({SCHEDULER_SERVICE_NAME}): {systemd_services.get('scheduler_service', 'Unknown')}")
-        log.info(f"  Login Service ({LOGIN_SERVICE_NAME}): {systemd_services.get('login_service', 'Unknown')}")
-        log.info(f"  Resume Service ({RESUME_SERVICE_NAME}): {systemd_services.get('resume_service', 'Unknown')}")
-        log.info("  (For detailed logs/status, use 'systemctl --user status ...' or 'journalctl --user -u ...')")
+        log.info("\n(Run with -v for detailed configuration and systemd service status)")
 
     log.info("-" * 25)
 
@@ -398,7 +406,7 @@ Examples:
 
         elif args.command == "status":
             status = fluxfce_core.get_status()
-            print_status(status)
+            print_status(status, verbose=args.verbose)
 
         elif args.command == "force-day":
             log.info("Forcing Day mode...")

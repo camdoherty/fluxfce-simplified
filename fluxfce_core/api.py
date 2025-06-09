@@ -11,7 +11,7 @@ It orchestrates calls to other internal modules within `fluxfce_core`.
 import configparser
 import logging
 import re 
-from datetime import datetime # For get_status, timedelta was only in scheduler
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 # Import core components and exceptions
@@ -278,10 +278,12 @@ def get_status() -> dict[str, Any]:
         "config": {},
         "sun_times": {"sunrise": None, "sunset": None, "error": None},
         "current_period": "unknown",
-        "schedule": {"error": None, "timers": {}},
         "systemd_services": {"error": None},
+        "summary": {},
     }
 
+    # --- Part 1: Gather Raw Data ---
+    
     # 1. Get Config
     try:
         config_obj = get_current_config()
@@ -290,14 +292,13 @@ def get_status() -> dict[str, Any]:
         status["config"]["timezone"] = config_obj.get("Location", "TIMEZONE", fallback="Not Set")
         status["config"]["light_theme"] = config_obj.get("Themes", "LIGHT_THEME", fallback="Not Set")
         status["config"]["dark_theme"] = config_obj.get("Themes", "DARK_THEME", fallback="Not Set")
-    except exc.FluxFceError as e: # Catch errors from get_current_config()
+    except exc.FluxFceError as e:
         status["config"]["error"] = str(e)
         log.error(f"API Status: Error loading config for status: {e}")
 
-
     # 2. Calculate Sun Times & Current Period
-    # This part relies on config being loaded.
-    if "error" not in status["config"]: # Only proceed if config was loaded
+    tz_info, lat, lon, tz_name = None, None, None, None
+    if "error" not in status["config"]:
         lat_str = status["config"]["latitude"]
         lon_str = status["config"]["longitude"]
         tz_name = status["config"]["timezone"]
@@ -305,19 +306,6 @@ def get_status() -> dict[str, Any]:
         if all([lat_str, lon_str, tz_name, 
                 lat_str != "Not Set", lon_str != "Not Set", tz_name != "Not Set"]):
             try:
-                # Option 1: Re-use logic from desktop_manager if determine_current_period is there
-                # current_period = desktop_manager.determine_current_period(config_obj)
-                # status["current_period"] = current_period
-                # # Need to get sun_times separately if determine_current_period doesn't return them
-                # lat = helpers.latlon_str_to_float(lat_str)
-                # lon = helpers.latlon_str_to_float(lon_str)
-                # tz_info = ZoneInfo(tz_name)
-                # today = datetime.now(tz_info).date()
-                # sun_times_today = sun.get_sun_times(lat, lon, today, tz_name)
-                # status["sun_times"]["sunrise"] = sun_times_today["sunrise"]
-                # status["sun_times"]["sunset"] = sun_times_today["sunset"]
-
-                # Option 2: Keep logic here for now (as in codebase.txt)
                 lat = helpers.latlon_str_to_float(lat_str)
                 lon = helpers.latlon_str_to_float(lon_str)
                 tz_info = ZoneInfo(tz_name)
@@ -327,119 +315,91 @@ def get_status() -> dict[str, Any]:
                 status["sun_times"]["sunrise"] = sun_times_today["sunrise"]
                 status["sun_times"]["sunset"] = sun_times_today["sunset"]
                 status["current_period"] = "day" if sun_times_today["sunrise"] <= now_local < sun_times_today["sunset"] else "night"
-
             except (exc.ValidationError, exc.CalculationError, ZoneInfoNotFoundError) as e_sun:
                 status["sun_times"]["error"] = str(e_sun)
-                status["current_period"] = "error (sun calculation/config)"
-                log.warning(f"API Status: Error calculating sun times/period: {e_sun}")
             except Exception as e_sun_unexpected: 
-                log.exception("API Status: Unexpected error calculating sun times/period.")
                 status["sun_times"]["error"] = f"Unexpected error in sun times: {e_sun_unexpected}"
-                status["current_period"] = "error (unexpected)"
         else:
             status["sun_times"]["error"] = "Location/Timezone not fully configured."
-            status["current_period"] = "unknown (config incomplete)"
-    else: # Config loading error
+    else:
         status["sun_times"]["error"] = "Cannot calculate sun times (config error)."
-        status["current_period"] = "unknown (config error)"
     
-    # 3. Get Systemd Timer Schedule Status
-    timer_names_to_query = [
-        sysd.SCHEDULER_TIMER_NAME,
-        sysd.SUNRISE_EVENT_TIMER_NAME,
-        sysd.SUNSET_EVENT_TIMER_NAME,
-    ]
-    try:
-        code, stdout_timers, stderr_timers = _sysd_mgr_api._run_systemctl(
-            ["list-timers", "--all", *timer_names_to_query],
-            check_errors=False, capture_output=True
-        )
-        
-        if code != 0 and not ("0 timers listed." in stdout_timers or "No timers found." in stdout_timers):
-            err_msg = f"Failed to list systemd timers (code {code}): {stderr_timers.strip() or stdout_timers.strip()}"
-            status["schedule"]["error"] = err_msg
-            log.warning(f"API Status: {err_msg}")
-        
-        if stdout_timers:
-            parsed_timers = {}
-            lines = stdout_timers.strip().split('\n')
-            # Check if there's a header and at least one data line
-            if len(lines) > 1 and "NEXT" in lines[0].upper():
-                header_line = lines[0].upper()
-                col_indices = {
-                    "NEXT": header_line.find("NEXT"), "LEFT": header_line.find("LEFT"),
-                    "LAST": header_line.find("LAST"), "PASSED": header_line.find("PASSED"),
-                    "UNIT": header_line.find("UNIT"), "ACTIVATES": header_line.find("ACTIVATES"),
-                }
-                # Filter out columns not found and sort them by their start index
-                sorted_cols = sorted([(name, idx) for name, idx in col_indices.items() if idx != -1], key=lambda item: item[1])
-
-                for line_content in lines[1:]: # Skip header line
-                    if not line_content.strip() or not any(tn in line_content for tn in timer_names_to_query):
-                        continue # Skip empty lines or lines not containing our timer names
-                    
-                    timer_data_raw = {}
-                    current_unit_name = "" # Initialize
-                    
-                    # Parse line based on detected column positions
-                    for i, (col_name, start_idx) in enumerate(sorted_cols):
-                        end_idx = sorted_cols[i+1][1] if i + 1 < len(sorted_cols) else len(line_content)
-                        field_value = line_content[start_idx:end_idx].strip()
-                        timer_data_raw[col_name.lower()] = field_value
-                        if col_name == "UNIT": 
-                            current_unit_name = field_value
-                    
-                    if current_unit_name and current_unit_name in timer_names_to_query:
-                        is_enabled_code, _, _ = _sysd_mgr_api._run_systemctl(["is-enabled", current_unit_name], check_errors=False, capture_output=True)
-                        is_active_code, _, _ = _sysd_mgr_api._run_systemctl(["is-active", current_unit_name], check_errors=False, capture_output=True)
-                        
-                        parsed_timers[current_unit_name] = {
-                            "enabled": "Enabled" if is_enabled_code == 0 else "Disabled",
-                            "active": "Active" if is_active_code == 0 else "Inactive",
-                            "next_run": timer_data_raw.get("next", "N/A"),
-                            "time_left": timer_data_raw.get("left", "N/A"),
-                            "last_run": timer_data_raw.get("last", "N/A"),
-                            "activates": timer_data_raw.get("activates", "N/A")
-                        }
-            
-            status["schedule"]["timers"] = parsed_timers
-            if not parsed_timers and not status["schedule"].get("error"):
-                msg_no_timers = "No relevant fluxfce timers found or listed by systemctl."
-                if "0 timers listed." in stdout_timers or "No timers found." in stdout_timers:
-                    status["schedule"]["info"] = msg_no_timers
-                # else if stdout_timers is not empty but parsing yielded nothing, it's also "not found" effectively
-                elif stdout_timers.strip() and not lines[0].upper().startswith("NEXT"): # Handle cases where output is not the expected table
-                    status["schedule"]["info"] = f"Unexpected timer listing format. Output: {stdout_timers[:100]}..."
-                else: # Default "not found" if truly empty or parsing fails
-                    status["schedule"]["info"] = msg_no_timers
-
-
-    except Exception as e_timers:
-        log.exception("API Status: Unexpected error getting systemd timer schedule status.")
-        status["schedule"]["error"] = f"Unexpected error querying timers: {e_timers}"
-
-    # 4. Get Systemd Service Status
+    # 3. Get Systemd Service Status (for verbose view)
     services_to_check = {
         "scheduler_service": sysd.SCHEDULER_SERVICE_NAME,
         "login_service": sysd.LOGIN_SERVICE_NAME,
         "resume_service": sysd.RESUME_SERVICE_NAME,
     }
-    any_service_error_occurred = False
     for key, unit_name in services_to_check.items():
         try:
             enabled_code, _, _ = _sysd_mgr_api._run_systemctl(["is-enabled", unit_name], check_errors=False, capture_output=True)
             active_code, _, _ = _sysd_mgr_api._run_systemctl(["is-active", unit_name], check_errors=False, capture_output=True)
             status["systemd_services"][key] = f"{'Enabled' if enabled_code == 0 else 'Disabled'}, {'Active' if active_code == 0 else 'Inactive'}"
-        except exc.SystemdError as e_svc: # This should ideally not be hit if _run_systemctl handles its errors
-            status["systemd_services"][key] = f"Error checking ({unit_name}): {e_svc}"
-            any_service_error_occurred = True
-            log.warning(f"API Status: SystemdError checking service {unit_name}: {e_svc}")
         except Exception as e_svc_unexpected:
-            log.exception(f"API Status: Unexpected error getting status for service {unit_name}")
             status["systemd_services"][key] = f"Unexpected error checking {unit_name}"
-            any_service_error_occurred = True
+            status["systemd_services"]["error"] = "One or more services could not be checked reliably."
+            log.exception(f"API Status: Unexpected error getting status for service {unit_name}")
+
+    # --- Part 2: Analyze Raw Data and Generate Summary ---
+    summary = {
+        "overall_status": "[UNKNOWN]",
+        "status_message": "Could not determine scheduler status.",
+        "recommendation": "Try running with -v for more details.",
+        "next_transition_time": None,
+        "next_transition_mode": None,
+        "reschedule_time": None,
+    }
+
+    if status["config"].get("error"):
+        summary["overall_status"] = "[ERROR]"
+        summary["status_message"] = f"Configuration error: {status['config']['error']}"
+        summary["recommendation"] = "Please check your configuration file or run 'fluxfce install'."
+    elif status["sun_times"].get("error"):
+        summary["overall_status"] = "[ERROR]"
+        summary["status_message"] = f"Sun calculation error: {status['sun_times']['error']}"
+        summary["recommendation"] = "Please check location/timezone in your configuration."
+    else:
+        try:
+            code, _, _ = _sysd_mgr_api._run_systemctl(["is-enabled", "--quiet", sysd.SCHEDULER_TIMER_NAME], check_errors=False)
+            is_enabled = (code == 0)
             
-    if any_service_error_occurred and not status["systemd_services"].get("error"): # Add a general error if specific one wasn't set
-        status["systemd_services"]["error"] = "One or more services could not be checked reliably."
+            if not is_enabled:
+                summary["overall_status"] = "[DISABLED]"
+                summary["status_message"] = "Automatic scheduling is disabled."
+                summary["recommendation"] = "Run 'fluxfce enable' to activate automatic transitions."
+            else:
+                summary["overall_status"] = "[OK]"
+                summary["status_message"] = "Enabled and scheduling is active."
+                summary["recommendation"] = None
+
+                now = datetime.now(tz_info)
+                sunrise_dt = status["sun_times"].get("sunrise")
+                sunset_dt = status["sun_times"].get("sunset")
+
+                next_sunrise = sunrise_dt if sunrise_dt and sunrise_dt > now else None
+                next_sunset = sunset_dt if sunset_dt and sunset_dt > now else None
+
+                if not next_sunrise or not next_sunset:
+                    try:
+                        tomorrow_sun_times = sun.get_sun_times(lat, lon, now.date() + timedelta(days=1), tz_name)
+                        if not next_sunrise: next_sunrise = tomorrow_sun_times.get("sunrise")
+                        if not next_sunset: next_sunset = tomorrow_sun_times.get("sunset")
+                    except (exc.CalculationError, exc.ValidationError) as e_sun_tmrw:
+                        log.warning(f"Could not calculate tomorrow's sun times for status summary: {e_sun_tmrw}")
+
+                if next_sunrise and (not next_sunset or next_sunrise < next_sunset):
+                    summary["next_transition_time"] = next_sunrise
+                    summary["next_transition_mode"] = "Day"
+                elif next_sunset:
+                    summary["next_transition_time"] = next_sunset
+                    summary["next_transition_mode"] = "Night"
+                
+                next_reschedule = (now + timedelta(days=1)).replace(hour=0, minute=15, second=0, microsecond=0)
+                summary["reschedule_time"] = next_reschedule
+        except exc.SystemdError as e:
+            summary["overall_status"] = "[ERROR]"
+            summary["status_message"] = f"Systemd error: {e}"
+            summary["recommendation"] = "Check systemd user instance with 'systemctl --user status'."
             
+    status["summary"] = summary
     return status
