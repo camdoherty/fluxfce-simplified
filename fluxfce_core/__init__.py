@@ -19,9 +19,10 @@ from .api import (
     enable_scheduling,
     get_current_config,
     get_status,
-    handle_internal_apply, # Called by CLI
-    handle_run_login_check,    # Called by CLI
-    handle_schedule_dynamic_transitions_command, # Called by CLI
+    handle_internal_apply,
+    handle_run_login_check,
+    handle_schedule_dynamic_transitions_command,
+    install_default_background_profiles,  # <-- ADDED THIS LINE
     install_fluxfce,
     save_configuration,
     set_default_from_current,
@@ -29,8 +30,8 @@ from .api import (
 )
 
 # --- Make core constants accessible ---
-from .config import CONFIG_DIR, CONFIG_FILE, DEFAULT_CONFIG # Added DEFAULT_CONFIG for cli.py
-from .helpers import detect_system_timezone # If CLI needs it directly
+from .config import CONFIG_DIR, CONFIG_FILE, DEFAULT_CONFIG
+from .helpers import detect_system_timezone
 
 # --- ADD SYSTEMD CONSTANTS ---
 from .systemd import (
@@ -38,8 +39,8 @@ from .systemd import (
     RESUME_SERVICE_NAME,
     SCHEDULER_SERVICE_NAME,
     SCHEDULER_TIMER_NAME,
-    SUNRISE_EVENT_TIMER_NAME, # For CLI status output if needed
-    SUNSET_EVENT_TIMER_NAME,  # For CLI status output if needed
+    SUNRISE_EVENT_TIMER_NAME,
+    SUNSET_EVENT_TIMER_NAME,
 )
 
 __all__ = [
@@ -47,13 +48,13 @@ __all__ = [
     "CONFIG_DIR",
     "CONFIG_FILE",
     "DEFAULT_CONFIG",
-    # Constants from systemd.py (ensure these are what CLI's print_status needs)
+    # Constants from systemd.py
     "LOGIN_SERVICE_NAME",
     "RESUME_SERVICE_NAME",
     "SCHEDULER_SERVICE_NAME",
     "SCHEDULER_TIMER_NAME",
-    "SUNRISE_EVENT_TIMER_NAME", # Make available if CLI uses them
-    "SUNSET_EVENT_TIMER_NAME",  # Make available if CLI uses them
+    "SUNRISE_EVENT_TIMER_NAME",
+    "SUNSET_EVENT_TIMER_NAME",
     # Exceptions
     "CalculationError",
     "ConfigError",
@@ -69,6 +70,7 @@ __all__ = [
     "enable_scheduling",
     "get_current_config",
     "get_status",
+    "install_default_background_profiles",  # <-- AND ADDED THIS LINE
     "install_fluxfce",
     "save_configuration",
     "set_default_from_current",
