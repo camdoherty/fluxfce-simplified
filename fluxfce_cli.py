@@ -25,7 +25,6 @@ try:
         LOGIN_SERVICE_NAME, RESUME_SERVICE_NAME
     )
     from fluxfce_core import config as core_config
-    # Import the new function for default profile installation
     from fluxfce_core import install_default_background_profiles
 except ImportError as e:
     print(f"Error: Failed to import the fluxfce_core library: {e}", file=sys.stderr)
@@ -39,6 +38,16 @@ PYTHON_EXECUTABLE = sys.executable
 DEPENDENCY_CHECKER_SCRIPT_NAME = "fluxfce_deps_check.py"
 
 log = logging.getLogger("fluxfce_cli")
+
+# --- ANSI Color Codes for Terminal Output ---
+# Check if stdout is a TTY (interactive terminal) to decide whether to use colors.
+IS_TTY = sys.stdout.isatty()
+
+class AnsiColors:
+    GREEN = "\033[92m" if IS_TTY else ""
+    RED = "\033[91m" if IS_TTY else ""
+    YELLOW = "\033[93m" if IS_TTY else ""
+    RESET = "\033[0m" if IS_TTY else ""
 
 
 # --- CLI Logging Setup ---
@@ -83,13 +92,25 @@ def setup_cli_logging(verbose: bool):
 
 # --- Output Formatting ---
 def print_status(status_data: dict, verbose: bool = False):
-    """Formats and prints the status dictionary."""
+    """Formats and prints the status dictionary with colors."""
     log.info("--- fluxfce Status ---")
     summary = status_data.get("summary", {})
 
     log.info("\n[Scheduling Status]")
+    
+    # --- START: Colorized Status Logic ---
+    status_text = summary.get("overall_status", "[UNKNOWN]")
+    if "[OK]" in status_text:
+        status_str = f"{AnsiColors.GREEN}{status_text}{AnsiColors.RESET}"
+    elif "[DISABLED]" in status_text or "[ERROR]" in status_text:
+        status_str = f"{AnsiColors.RED}{status_text}{AnsiColors.RESET}"
+    else:  # For "[UNKNOWN]"
+        status_str = f"{AnsiColors.YELLOW}{status_text}{AnsiColors.RESET}"
+    
     if summary.get("overall_status"):
-        log.info(f"  Overall Status:  {summary['overall_status']} {summary.get('status_message', '')}")
+        log.info(f"  Overall Status:  {status_str} {summary.get('status_message', '')}")
+    # --- END: Colorized Status Logic ---
+
     if summary.get("recommendation"):
         log.info(f"  Recommendation:  {summary['recommendation']}")
 
@@ -228,8 +249,10 @@ Examples:
             log.info("\n--- Step 2: Configuring FluxFCE application settings ---")
             config_existed = fluxfce_core.CONFIG_FILE.exists()
             config_obj = fluxfce_core.get_current_config()
-            # ... Interactive setup logic is complex but remains unchanged ...
-            if not config_existed: fluxfce_core.save_configuration(config_obj)
+            # NOTE: The complex interactive setup logic from the original file would go here.
+            # Assuming it runs and potentially modifies config_obj.
+            if not config_existed: 
+                fluxfce_core.save_configuration(config_obj) # Save if newly created
             log.info("--- FluxFCE application configuration complete ---")
 
             log.info("\n--- Step 2b: Installing default background profiles ---")
@@ -252,9 +275,6 @@ Examples:
 
             config_dir_path = fluxfce_core.CONFIG_DIR
             if config_dir_path.exists():
-                # Also check for the new backgrounds directory
-                bg_profiles_path = config_dir_path / "backgrounds"
-                
                 log.warning(f"\nConfiguration directory found at: {config_dir_path}")
                 if ask_yes_no_cli("Do you want to REMOVE this configuration directory and all profiles?", default_yes=False):
                     try:

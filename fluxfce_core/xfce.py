@@ -51,20 +51,62 @@ class XfceHandler:
         return True
 
     def get_screen_settings(self) -> dict[str, Any]:
+        """Gets screen settings by parsing the output of the `xsct` command."""
         log.debug("Getting screen settings via xsct")
         cmd = ["xsct"]
         code, stdout, stderr = helpers.run_command(cmd, capture=True)
-        if code != 0:
-            log.info("xsct appears off or failed to query. Assuming default screen settings.")
+        if code != 0 or not stdout:
+            if "unknown" in stderr.lower():
+                log.info("xsct appears off or not set. Assuming default screen settings.")
+            else:
+                log.warning(f"xsct command failed or returned empty. Assuming default settings. Stderr: {stderr}")
             return {"temperature": None, "brightness": None}
 
-        temp, brightness = None, None
-        if stdout:
-            temp_match = re.search(r"temperature\s*[:~]?\s*(\d+)", stdout, re.I)
-            bright_match = re.search(r"brightness\s*[:~]?\s*([\d.]+)", stdout, re.I)
-            if temp_match: temp = int(temp_match.group(1))
-            if bright_match: brightness = float(bright_match.group(1))
+        temp: Optional[int] = None
+        brightness: Optional[float] = None
 
+        # --- START: CORRECTED PARSING LOGIC ---
+        # 1. Try a combined regex first, which matches the common single-line output format.
+        #    e.g., "Screen 0: temperature ~ 4500 0.85"
+        combined_pattern = re.compile(r"temperature\s*[~:]?\s*(\d+)\s+([\d.]+)", re.IGNORECASE)
+        combined_match = combined_pattern.search(stdout)
+
+        if combined_match:
+            log.debug("Parsing xsct output with combined regex pattern.")
+            try:
+                temp = int(combined_match.group(1))
+                brightness = float(combined_match.group(2))
+                log.info(f"Retrieved screen settings: Temp={temp}, Brightness={brightness:.2f}")
+                return {"temperature": temp, "brightness": brightness}
+            except (ValueError, IndexError) as e:
+                log.warning(f"Could not parse values from combined xsct regex match: {e}. Output: '{stdout}'")
+
+        # 2. If combined pattern fails, fall back to separate patterns for resilience.
+        #    This handles older or different xsct versions with multi-line output.
+        log.debug("Combined regex failed or was incomplete. Trying separate regex patterns as a fallback.")
+        temp_pattern = re.compile(r"temperature\s*[~:]?\s*(\d+)", re.IGNORECASE)
+        bright_pattern = re.compile(r"brightness\s*[~:]?\s*([\d.]+)", re.IGNORECASE)
+        
+        temp_match = temp_pattern.search(stdout)
+        bright_match = bright_pattern.search(stdout)
+
+        if temp_match:
+            try:
+                temp = int(temp_match.group(1))
+            except (ValueError, IndexError):
+                log.warning(f"Could not parse temperature from separate xsct match: '{stdout}'")
+        
+        if bright_match:
+            try:
+                brightness = float(bright_match.group(1))
+            except (ValueError, IndexError):
+                log.warning(f"Could not parse brightness from separate xsct match: '{stdout}'")
+
+        if temp is None and brightness is None:
+            log.warning(f"Could not parse temperature or brightness from xsct output. Output: '{stdout}'")
+
+        # --- END: CORRECTED PARSING LOGIC ---
+        
         log.info(f"Retrieved screen settings: Temp={temp}, Brightness={brightness}")
         return {"temperature": temp, "brightness": brightness}
 
