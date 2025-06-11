@@ -33,25 +33,17 @@ STYLE_COLOR_MAP = {v: k for k, v in COLOR_STYLE_MAP.items()}
 
 # --- Default Profile Content ---
 DEFAULT_DAY_PROFILE_CONTENT = """
-# Default Day background profile for fluxfce
-# This is a fallback gradient. Use 'fluxfce set-default --mode day' to save your own.
-monitor={primary_monitor}
-workspace=workspace0
-type=gradient
-gradient_direction=vertical
-color1=rgba(0.92,0.98,1.00,1.00)
-color2=rgba(0.37,0.53,0.61,1.00)
+monitor=--span--
+type=image
+image_path=/home/cad/dev/fluxfce-simplified/fluxfce_core/assets/default-day.png
+image_style=span
 """
 
 DEFAULT_NIGHT_PROFILE_CONTENT = """
-# Default Night background profile for fluxfce
-# This is a fallback gradient. Use 'fluxfce set-default --mode night' to save your own.
-monitor={primary_monitor}
-workspace=workspace0
-type=gradient
-gradient_direction=vertical
-color1=rgba(0.12,0.12,0.18,1.00)
-color2=rgba(0.00,0.00,0.00,1.00)
+monitor=--span--
+type=image
+image_path=/home/cad/dev/fluxfce-simplified/fluxfce_core/assets/default-night.png
+image_style=span
 """
 
 

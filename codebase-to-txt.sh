@@ -16,6 +16,7 @@ find . -type f \( -name '*.py' -o -name '*.md' -o -name '*.toml' \) | sort | whi
 
   # Append separator, path, and file content to the output
   {
+    echo
     echo '##############'
     echo "$relpath"
     echo
