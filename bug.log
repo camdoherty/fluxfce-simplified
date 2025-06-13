@@ -1,0 +1,67 @@
+When I click Apply Now while that mode is already active, I see the following lines repeatedly in terminal:
+
+```
+INFO: fluxfce_core.xfce: Retrieved screen settings: Temp=4500, Brightness=1.00
+INFO: fluxfce_core.xfce: Retrieved screen settings: Temp=4500, Brightness=1.00
+INFO: fluxfce_core.xfce: Retrieved screen settings: Temp=4500, Brightness=1.00
+```
+
+The polling was introduced so that the temp control slider updates after changes to the xsct temperature.
+
+Please review and determine the best way to fix the issue.
+
+Provide excellent, functional python code.
+
+, sometimes open windows title bar and border colors don't update -- if I go into the xfce4-settings and click the theme that is already currently applied, the title bar and border color will update correctly.
+
+
+Add a row below Background Profile: 'Color Temperature:  <day|night color temp'
+
+This value should be read from ~/.config/fluxfce/config.ini
+
+config.ini example:
+```
+
+[Location]
+latitude = 43.65N
+longitude = 79.38W
+timezone = America/Toronto
+
+[Appearance]
+light_theme = Arc-Lighter
+dark_theme = Materia-dark-compact
+day_background_profile = default-day
+night_background_profile = default-night
+
+[ScreenDay]
+xsct_temp = 6500 ## THIS VALUE for day
+xsct_bright = 1.00
+
+[ScreenNight]
+xsct_temp = 4500 ## THIS VALUE for night
+xsct_bright = 1.00
+```
+
+Next Transition: countdown timer needs to refresh every 1 minute
+
+
+
+
+Add a button to open xfce4-settings after the <theme name> in both Theme rows. It should be aligned with the 'Open profile in text editor' buttons
+
+the the Theme line for both day and night 
+
+
+right of theme in line with 
+
+--- bug log starts here
+(xed:233957): Gtk-WARNING **: 20:56:52.891: Calling org.xfce.Session.Manager.Inhibit failed: GDBus.Error:org.freedesktop.DBus.Error.UnknownMethod: No such method “Inhibit”
+
+
+# noticed in termainal while the GUI was open:
+(xfwm4:222499): xfwm4-WARNING **: 20:16:20.154: XSync timeout for client "fluxfce" (0x5600007)
+
+
+Appearance Profiles
+
+G

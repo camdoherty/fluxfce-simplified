@@ -1,3 +1,6 @@
+Current code:
+
+```
 #!/usr/bin/env python3
 
 """
@@ -57,6 +60,7 @@ APP_SCRIPT_PATH = Path(__file__).resolve()
 SLIDER_DEBOUNCE_MS = 200
 POLLING_INTERVAL_MS = 200
 POLLING_ATTEMPTS = 25
+UI_REFRESH_INTERVAL_MS = 60 * 1000  # 1 minute
 
 # --- Main Window Class ---
 class FluxFceWindow(Gtk.Window):
@@ -81,189 +85,83 @@ class FluxFceWindow(Gtk.Window):
         self.slider_debounce_id = None
         self.details_widgets = []
         self.action_button_size_group = Gtk.SizeGroup.new(Gtk.SizeGroupMode.HORIZONTAL)
+
+        # --- NEW: Timers for UI updates ---
+        self.periodic_refresh_id = None  # The 1-minute timer for the countdown
+        self.one_shot_refresh_id = None  # The precise timer for post-transition refresh
+        self.connect("show", self._start_ui_timers)
+        self.connect("hide", self._stop_ui_timers)
+
         self._build_ui()
-        self.refresh_ui()
-        self._update_ui_from_backend()
+        # The initial refresh is now handled by the window's 'show' signal
 
     def on_close_button_pressed(self, widget, event):
         self.hide()
         return True
 
-    def _build_ui(self):
-        # Adjusted spacing for a tighter layout
-        main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        self.add(main_vbox)
+    # --- NEW: Consolidated timer management ---
+    def _start_ui_timers(self, widget=None):
+        """Starts the periodic UI refresh timer and does an initial refresh."""
+        self._stop_ui_timers() # Ensure no old timers are running
+        log.info("Window shown. Starting UI refresh timers.")
+        # We do an immediate, full refresh when the window is shown
+        # so the user doesn't have to wait for the first tick.
+        self.refresh_ui()
+        # Start the 1-minute periodic timer
+        self.periodic_refresh_id = GLib.timeout_add(UI_REFRESH_INTERVAL_MS, self._on_periodic_refresh_tick)
 
-        # Frame 1: Status & Scheduling
-        status_frame = Gtk.Frame(label=" Status ")
-        status_frame.set_label_align(0.05, 0.5)
-        main_vbox.pack_start(status_frame, False, True, 0)
-        self._build_status_section(status_frame)
+    def _stop_ui_timers(self, widget=None):
+        """Stops all UI refresh timers."""
+        if self.periodic_refresh_id:
+            log.info("Stopping periodic UI refresh timer.")
+            GLib.source_remove(self.periodic_refresh_id)
+            self.periodic_refresh_id = None
+        if self.one_shot_refresh_id:
+            log.info("Stopping one-shot UI refresh timer.")
+            GLib.source_remove(self.one_shot_refresh_id)
+            self.one_shot_refresh_id = None
 
-        # Frame 2: New Config Frame
-        config_frame = Gtk.Frame(label=" Config ")
-        config_frame.set_label_align(0.05, 0.5)
-        main_vbox.pack_start(config_frame, False, True, 0)
-        self._build_config_section(config_frame)
+    def _on_periodic_refresh_tick(self):
+        """Called by the GLib timer to refresh the UI periodically."""
+        log.debug("Periodic UI refresh tick.")
+        self.refresh_ui()
+        return GLib.SOURCE_CONTINUE # Keep the timer running
 
-        # Bottom Area: Profiles and Temp Control
-        bottom_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        main_vbox.pack_start(bottom_hbox, True, True, 6) # Added a little top margin
-        
-        profiles_frame = Gtk.Frame(label=" Appearance Profiles ")
-        profiles_frame.set_label_align(0.05, 0.5)
-        bottom_hbox.pack_start(profiles_frame, True, True, 0)
-        self._build_profiles_section(profiles_frame)
-        
-        temp_frame = Gtk.Frame(label=" Temp Control ")
-        temp_frame.set_label_align(0.05, 0.5)
-        bottom_hbox.pack_start(temp_frame, False, False, 0)
-        self._build_temp_control_section(temp_frame)
+    # --- NEW: Callback for the one-shot timer ---
+    def _on_transition_occurs(self):
+        """
+        One-shot callback fired just after a scheduled transition.
+        Triggers a full UI refresh to show the new state.
+        """
+        log.info("Scheduled transition time has passed. Refreshing UI.")
+        self.one_shot_refresh_id = None # The timer is now spent
+        self.refresh_ui()
+        return GLib.SOURCE_REMOVE # Ensures the timer only runs once
 
-    def _build_status_section(self, parent_frame):
-        grid = Gtk.Grid(column_spacing=10, row_spacing=6, margin=10)
-        grid.set_column_homogeneous(False)
-        parent_frame.add(grid)
-
-        # --- Row 1: Overall Status ---
-        self.lbl_overall_status = Gtk.Label(label="Fetching status...")
-        self.lbl_overall_status.set_xalign(0)
-        self.lbl_overall_status.set_hexpand(True)
-        self.btn_toggle_schedule = Gtk.Button()
-        self.btn_toggle_schedule.connect("clicked", self.on_toggle_schedule_clicked)
-        self.btn_toggle_schedule.set_halign(Gtk.Align.END)
-        self.action_button_size_group.add_widget(self.btn_toggle_schedule) # CHANGED: Use new name
-        grid.attach(self.lbl_overall_status, 0, 0, 1, 1)
-        grid.attach(self.btn_toggle_schedule, 1, 0, 1, 1)
-
-        # --- Row 2: Next Transition ---
-        lbl_transition_title = Gtk.Label(label="<b>Next Transition:</b>", use_markup=True, xalign=0)
-        lbl_transition_title.set_hexpand(True)
-        self.lbl_next_transition = Gtk.Label(label="N/A", xalign=0, ellipsize=Pango.EllipsizeMode.END)
-        # REMOVED: The label is no longer part of the size group
-        grid.attach(lbl_transition_title, 0, 1, 1, 1)
-        grid.attach(self.lbl_next_transition, 1, 1, 1, 1)
-        self.details_widgets = [lbl_transition_title, self.lbl_next_transition]
-
-    def _build_config_section(self, parent_frame):
-        grid = Gtk.Grid(column_spacing=10, row_spacing=6, margin=10)
-        parent_frame.add(grid)
-
-        lbl_edit_title = Gtk.Label(label="Open config.ini in editor:", use_markup=True, xalign=0)
-        lbl_edit_title.set_hexpand(True)
-
-        btn_open_config = Gtk.Button.new_from_icon_name("document-edit-symbolic", Gtk.IconSize.BUTTON)
-        btn_open_config.set_tooltip_text("Open config.ini in text editor")
-        btn_open_config.connect("clicked", self.on_open_config_clicked)
-        btn_open_config.set_halign(Gtk.Align.END)
-        
-        self.action_button_size_group.add_widget(btn_open_config) # CHANGED: Use new name
-
-        grid.attach(lbl_edit_title, 0, 0, 1, 1)
-        grid.attach(btn_open_config, 1, 0, 1, 1)
-
-    def _create_profile_widget(self, mode, title):
-        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        grid = Gtk.Grid(column_spacing=10, row_spacing=4)
-        title_label = Gtk.Label(xalign=0)
-        title_label.set_markup(f"<b>{title}</b>")
-        grid.attach(title_label, 0, 0, 3, 1)
-        grid.attach(Gtk.Label(label="Theme:", xalign=0), 0, 1, 1, 1)
-        lbl_theme = Gtk.Label(label="N/A", xalign=0, ellipsize=Pango.EllipsizeMode.END)
-        grid.attach(lbl_theme, 1, 1, 2, 1)
-        grid.attach(Gtk.Label(label="Profile:", xalign=0), 0, 2, 1, 1)
-        lbl_profile = Gtk.Label(label="N/A", xalign=0, ellipsize=Pango.EllipsizeMode.END)
-        btn_edit = Gtk.Button.new_from_icon_name("document-edit-symbolic", Gtk.IconSize.BUTTON)
-        btn_edit.set_tooltip_text("Open profile file in text editor")
-        btn_edit.connect("clicked", self.on_edit_profile_clicked, mode)
-        grid.attach(lbl_profile, 1, 2, 1, 1)
-        grid.attach(btn_edit, 2, 2, 1, 1)
-        vbox.pack_start(grid, False, False, 0)
-        btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6, margin_top=4, halign=Gtk.Align.CENTER)
-        btn_set_default = Gtk.Button.new_from_icon_name("document-save-symbolic", Gtk.IconSize.BUTTON)
-        btn_set_default.set_label("Save Current") # Keep the label
-        btn_set_default.set_tooltip_text(f"Save Current Look as {mode.capitalize()} Default")
-        btn_set_default.connect("clicked", self.on_set_default_clicked, mode)
-        btn_apply_now = Gtk.Button.new_from_icon_name("object-select-symbolic", Gtk.IconSize.BUTTON)
-        btn_apply_now.set_label("Apply Now") # Keep the label
-        btn_apply_now.set_tooltip_text(f"Apply {mode.capitalize()} Mode Temporarily")
-        btn_apply_now.connect("clicked", self.on_apply_temporary_clicked, mode)
-        btn_box.pack_start(btn_set_default, True, True, 0)
-        btn_box.pack_start(btn_apply_now, True, True, 0)
-        vbox.pack_start(btn_box, False, False, 0)
-        return vbox, lbl_theme, lbl_profile
-        
-    def _build_profiles_section(self, parent_frame):
-        main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=10)
-        parent_frame.add(main_vbox)
-        day_box, self.lbl_day_theme, self.lbl_day_profile = self._create_profile_widget("day", "☀️ Day Mode")
-        main_vbox.pack_start(day_box, False, False, 0)
-        main_vbox.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL, margin_top=5, margin_bottom=5), False, False, 0)
-        night_box, self.lbl_night_theme, self.lbl_night_profile = self._create_profile_widget("night", "🌙 Night Mode")
-        main_vbox.pack_start(night_box, False, False, 0)
-
-    def _build_temp_control_section(self, parent_frame):
-        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=10)
-        parent_frame.add(vbox)
-        self.lbl_temp_readout = Gtk.Label()
-        self.lbl_temp_readout.set_markup("<span size='x-large' weight='bold'>... K</span>")
-        vbox.pack_start(self.lbl_temp_readout, False, True, 5)
-        
-        control_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5, halign=Gtk.Align.CENTER)
-        vbox.pack_start(control_hbox, False, False, 5)
-        
-        # Define a new, shorter target height for alignment
-        TARGET_HEIGHT = 155
-        image_height = TARGET_HEIGHT # Use this as the height for both image and slider
-        
-        try:
-            asset_path = resources.files("fluxfce_core.assets").joinpath("temp-slider.png")
-            
-            # Load the image as a pixbuf to scale it
-            original_pixbuf = GdkPixbuf.Pixbuf.new_from_file(str(asset_path))
-            
-            # Calculate the new width to maintain aspect ratio
-            original_width = original_pixbuf.get_width()
-            original_height = original_pixbuf.get_height()
-            scaled_width = int(original_width * (TARGET_HEIGHT / original_height))
-            
-            # Create a new, scaled pixbuf
-            scaled_pixbuf = original_pixbuf.scale_simple(scaled_width, TARGET_HEIGHT, GdkPixbuf.InterpType.BILINEAR)
-            
-            # Create the Gtk.Image from the scaled pixbuf
-            img_temp_gradient = Gtk.Image.new_from_pixbuf(scaled_pixbuf)
-            
-            control_hbox.pack_start(img_temp_gradient, False, False, 0)
-        except (FileNotFoundError, NotADirectoryError):
-            log.warning("Temperature gradient image not found in package assets.")
-        
-        adjustment = Gtk.Adjustment(
-            value=6500, lower=1000, upper=10000, 
-            step_increment=50, page_increment=500, page_size=0
-        )
-        self.slider = Gtk.Scale(orientation=Gtk.Orientation.VERTICAL, adjustment=adjustment)
-        self.slider.set_inverted(True)
-        self.slider.set_draw_value(False)
-        self.slider.set_size_request(-1, image_height) # Set slider height to our new target
-        self.slider_handler_id = self.slider.connect("value-changed", self.on_slider_value_changed)
-        control_hbox.pack_start(self.slider, False, False, 0)
-
-        btn_reset = Gtk.Button(label="Reset")
-        btn_reset.connect("clicked", self.on_reset_clicked)
-        # self.action_button_size_group.add_widget(btn_reset) # This remains commented out
-        vbox.pack_start(btn_reset, False, True, 5)
-
+    # --- MODIFIED: `refresh_ui` now manages the one-shot timer ---
     def refresh_ui(self):
+        """
+        Refreshes the entire UI by fetching the latest status from the core library.
+        Also schedules a one-shot timer to refresh again after the next transition.
+        """
+        # First, cancel any pending one-shot timer before we create a new one.
+        if self.one_shot_refresh_id:
+            GLib.source_remove(self.one_shot_refresh_id)
+            self.one_shot_refresh_id = None
+
         try:
             status = fluxfce_core.get_status()
             summary = status.get("summary", {})
             config = status.get("config", {})
             is_enabled = summary.get("overall_status") == "[OK]"
+
             self.app.update_status(is_enabled)
+
             if is_enabled:
                 self.lbl_overall_status.set_markup("<b><span color='#2E8B57'>Enabled</span></b>")
                 self.btn_toggle_schedule.set_label("Disable Scheduling")
                 for widget in self.details_widgets: widget.show()
+
                 next_time = summary.get("next_transition_time")
                 if next_time:
                     delta = next_time - datetime.now(next_time.tzinfo)
@@ -271,6 +169,16 @@ class FluxFceWindow(Gtk.Window):
                     next_mode = GLib.markup_escape_text(summary.get('next_transition_mode', ''))
                     next_time_str = GLib.markup_escape_text(f"{next_time.strftime('%H:%M')} ({time_left_str})")
                     self.lbl_next_transition.set_markup(f"<b>{next_mode}</b> at <b>{next_time_str}</b>")
+
+                    # --- NEW: Schedule the anticipatory refresh ---
+                    delta_ms = delta.total_seconds() * 1000
+                    if delta_ms > 0:
+                        # Schedule a refresh 2 seconds *after* the transition to ensure
+                        # the backend script has had time to complete.
+                        refresh_delay_ms = int(delta_ms) + 2000
+                        log.info(f"Scheduling a one-shot UI refresh in {refresh_delay_ms / 1000:.1f} seconds.")
+                        self.one_shot_refresh_id = GLib.timeout_add(refresh_delay_ms, self._on_transition_occurs)
+
                 else:
                     self.lbl_next_transition.set_text("Not scheduled")
             else:
@@ -278,31 +186,23 @@ class FluxFceWindow(Gtk.Window):
                 self.lbl_overall_status.set_markup(f"<span color='red'><b>Disabled</b></span>: {GLib.markup_escape_text(status_message)}")
                 self.btn_toggle_schedule.set_label("Enable Scheduling")
                 for widget in self.details_widgets: widget.hide()
+
             self.lbl_day_theme.set_text(config.get("light_theme", "N/A"))
             day_profile_name = config.get("day_bg_profile", "N/A")
             self.lbl_day_profile.set_text(day_profile_name)
             self.lbl_day_profile.set_tooltip_text(f"Profile file: {day_profile_name}.profile")
+
             self.lbl_night_theme.set_text(config.get("dark_theme", "N/A"))
             night_profile_name = config.get("night_bg_profile", "N/A")
             self.lbl_night_profile.set_text(night_profile_name)
             self.lbl_night_profile.set_tooltip_text(f"Profile file: {night_profile_name}.profile")
+
+            # --- MODIFIED: Ensure temp slider updates during a refresh ---
+            self._update_ui_from_backend()
+
         except core_exc.FluxFceError as e:
             self.show_error_dialog("Core Error", f"Failed to get status: {e}")
 
-    def _update_ui_from_backend(self):
-        log.debug("Updating UI from backend screen state.")
-        try:
-            settings = self.xfce_handler.get_screen_settings()
-            temp = settings.get("temperature", 6500)
-            self.current_brightness = settings.get("brightness", 1.0)
-            if self.slider_handler_id: self.slider.handler_block(self.slider_handler_id)
-            self.lbl_temp_readout.set_markup(f"<span size='x-large' weight='bold'>{int(temp)} K</span>")
-            self.slider.get_adjustment().set_value(temp)
-        except core_exc.XfceError as e:
-            log.error(f"Could not get screen settings: {e}")
-        finally:
-            if self.slider_handler_id: self.slider.handler_unblock(self.slider_handler_id)
-    
     def on_toggle_schedule_clicked(self, widget=None):
         try:
             status = fluxfce_core.get_status()
@@ -313,6 +213,7 @@ class FluxFceWindow(Gtk.Window):
                 fluxfce_core.enable_scheduling(sys.executable, str(APP_SCRIPT_PATH))
         except core_exc.FluxFceError as e:
             self.show_error_dialog("Scheduling Error", f"Operation failed: {e}")
+        # Trigger a full refresh to update the UI and schedule the next one-shot timer
         self.refresh_ui()
 
     def on_set_default_clicked(self, widget, mode):
@@ -356,6 +257,34 @@ class FluxFceWindow(Gtk.Window):
         except core_exc.XfceError as e:
             self.show_error_dialog("Reset Error", f"Failed to reset screen settings: {e}")
             self._stop_polling()
+
+    def _on_ui_refresh_tick(self):
+        """Called by the GLib timer to refresh the UI."""
+        log.debug("UI refresh timer tick.")
+        self.refresh_ui()
+        # Return True (or GLib.SOURCE_CONTINUE) to keep the timer running
+        return GLib.SOURCE_CONTINUE
+
+    def _start_ui_refresh_timer(self, widget=None):
+        """Starts the periodic UI refresh timer."""
+        # First, ensure any existing timer is stopped before starting a new one.
+        self._stop_ui_refresh_timer()
+        
+        # We do an immediate refresh when the window is shown
+        # so the user doesn't have to wait for the first tick.
+        self.refresh_ui()
+        
+        log.info("Starting UI refresh timer.")
+        self.ui_refresh_timer_id = GLib.timeout_add(
+            UI_REFRESH_INTERVAL_MS, self._on_ui_refresh_tick
+        )
+
+    def _stop_ui_refresh_timer(self, widget=None):
+        """Stops the periodic UI refresh timer."""
+        if self.ui_refresh_timer_id:
+            log.info("Stopping UI refresh timer.")
+            GLib.source_remove(self.ui_refresh_timer_id)
+            self.ui_refresh_timer_id = None
 
     def on_edit_profile_clicked(self, widget, mode):
         try:
@@ -430,7 +359,8 @@ class Application:
         self.toggle_item = None
         self.window = FluxFceWindow(self)
         self._init_indicator()
-        self.window.refresh_ui()
+        # The initial refresh is now handled by the window's 'show' signal
+        # self.window.refresh_ui() 
 
     def _init_indicator(self):
         self.indicator = AppIndicator3.Indicator.new(
@@ -487,5 +417,23 @@ if __name__ == "__main__":
     app = Application()
     # Call show_all() before present() to make the window contents visible.
     app.window.show_all()
+    # Note: present() will trigger the 'show' signal, which in turn calls
+    # our _start_ui_refresh_timer method for the first time.
     app.window.present()
     app.run()
+
+```
+
+I noticed some odd behavior: when the timer reached zero (sunset systemd unit was triggered), the timer didn't immediately update to re, but it did update after a minute or so. the ideal behavior would be for the timer to update the Next Transition time and mode immediately after the transitions. the temp control slider should also update to reflect the new value after a transition.
+
+Does this make sense?
+
+Is it possible to detect changes to the xfce environment to trigger a UI refresh 
+
+(btw, Would you recommend only refreshing specific elements, namely the countdown timer and the temp control slider?)
+
+Alternatively we could hard code a window refresh or UI elements refresh when the timer reaches zero.
+
+Also, Ideally the temp control slider would reflect the real time value but I'm not sure that's possible without constant polling. I don't want to make changes to fluxfce_core.
+
+Please review the code and determine the best way to approach this.
