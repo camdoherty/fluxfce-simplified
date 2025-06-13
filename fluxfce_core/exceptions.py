@@ -1,4 +1,11 @@
 # fluxfce_core/exceptions.py
+"""
+Custom exception classes for the FluxFCE core library.
+
+These exceptions provide more specific error information than built-in
+exceptions, allowing for more targeted error handling by callers.
+All custom exceptions inherit from the base `FluxFceError`.
+"""
 class FluxFceError(Exception):
     """Base exception for fluxfce core errors."""
 
