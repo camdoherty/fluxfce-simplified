@@ -1,25 +1,6 @@
-When I click Apply Now while that mode is already active, I see the following lines repeatedly in terminal:
-
-```
-INFO: fluxfce_core.xfce: Retrieved screen settings: Temp=4500, Brightness=1.00
-INFO: fluxfce_core.xfce: Retrieved screen settings: Temp=4500, Brightness=1.00
-INFO: fluxfce_core.xfce: Retrieved screen settings: Temp=4500, Brightness=1.00
-```
-
-The polling was introduced so that the temp control slider updates after changes to the xsct temperature.
-
-Please review and determine the best way to fix the issue.
-
-Provide excellent, functional python code.
-
-, sometimes open windows title bar and border colors don't update -- if I go into the xfce4-settings and click the theme that is already currently applied, the title bar and border color will update correctly.
+When the secheduler service ran 
 
 
-Add a row below Background Profile: 'Color Temperature:  <day|night color temp'
-
-This value should be read from ~/.config/fluxfce/config.ini
-
-config.ini example:
 ```
 
 [Location]

@@ -3,7 +3,7 @@
 /fluxfce_core/__pycache__/
 /notes
 
-todo
+todo*
 srss.py
 setup_format_lint.sh
 codebase-to-txt.sh
@@ -11,4 +11,6 @@ codebase-to-txt.sh
 hand-over-prompt
 codebase.txt
 .gitignore
-codebase.txt
+/codebase.txt
+
+todo.md

@@ -55,8 +55,8 @@ log = logging.getLogger("fluxfce_gui")
 APP_ID = "com.github.youruser.fluxfce"
 APP_SCRIPT_PATH = Path(__file__).resolve()
 SLIDER_DEBOUNCE_MS = 200
-POLLING_INTERVAL_MS = 200
-POLLING_ATTEMPTS = 25
+# Removed polling constants, as the logic is replaced
+UI_UPDATE_DELAY_MS = 250 # Delay for UI to update after an async action
 
 # --- Main Window Class ---
 class FluxFceWindow(Gtk.Window):
@@ -77,8 +77,8 @@ class FluxFceWindow(Gtk.Window):
         # State variables
         self.current_brightness = 1.0
         self.slider_handler_id = None
-        self.polling_source_id = None
         self.slider_debounce_id = None
+        self.ui_update_source_id = None # Replaces polling_source_id
         self.details_widgets = []
         self.action_button_size_group = Gtk.SizeGroup.new(Gtk.SizeGroupMode.HORIZONTAL)
         self._build_ui()
@@ -109,12 +109,12 @@ class FluxFceWindow(Gtk.Window):
         # Bottom Area: Profiles and Temp Control
         bottom_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         main_vbox.pack_start(bottom_hbox, True, True, 6) # Added a little top margin
-        
+
         profiles_frame = Gtk.Frame(label=" Appearance Profiles ")
         profiles_frame.set_label_align(0.05, 0.5)
         bottom_hbox.pack_start(profiles_frame, True, True, 0)
         self._build_profiles_section(profiles_frame)
-        
+
         temp_frame = Gtk.Frame(label=" Temp Control ")
         temp_frame.set_label_align(0.05, 0.5)
         bottom_hbox.pack_start(temp_frame, False, False, 0)
@@ -132,7 +132,7 @@ class FluxFceWindow(Gtk.Window):
         self.btn_toggle_schedule = Gtk.Button()
         self.btn_toggle_schedule.connect("clicked", self.on_toggle_schedule_clicked)
         self.btn_toggle_schedule.set_halign(Gtk.Align.END)
-        self.action_button_size_group.add_widget(self.btn_toggle_schedule) # CHANGED: Use new name
+        self.action_button_size_group.add_widget(self.btn_toggle_schedule)
         grid.attach(self.lbl_overall_status, 0, 0, 1, 1)
         grid.attach(self.btn_toggle_schedule, 1, 0, 1, 1)
 
@@ -140,7 +140,6 @@ class FluxFceWindow(Gtk.Window):
         lbl_transition_title = Gtk.Label(label="<b>Next Transition:</b>", use_markup=True, xalign=0)
         lbl_transition_title.set_hexpand(True)
         self.lbl_next_transition = Gtk.Label(label="N/A", xalign=0, ellipsize=Pango.EllipsizeMode.END)
-        # REMOVED: The label is no longer part of the size group
         grid.attach(lbl_transition_title, 0, 1, 1, 1)
         grid.attach(self.lbl_next_transition, 1, 1, 1, 1)
         self.details_widgets = [lbl_transition_title, self.lbl_next_transition]
@@ -156,8 +155,8 @@ class FluxFceWindow(Gtk.Window):
         btn_open_config.set_tooltip_text("Open config.ini in text editor")
         btn_open_config.connect("clicked", self.on_open_config_clicked)
         btn_open_config.set_halign(Gtk.Align.END)
-        
-        self.action_button_size_group.add_widget(btn_open_config) # CHANGED: Use new name
+
+        self.action_button_size_group.add_widget(btn_open_config)
 
         grid.attach(lbl_edit_title, 0, 0, 1, 1)
         grid.attach(btn_open_config, 1, 0, 1, 1)
@@ -192,7 +191,7 @@ class FluxFceWindow(Gtk.Window):
         btn_box.pack_start(btn_apply_now, True, True, 0)
         vbox.pack_start(btn_box, False, False, 0)
         return vbox, lbl_theme, lbl_profile
-        
+
     def _build_profiles_section(self, parent_frame):
         main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=10)
         parent_frame.add(main_vbox)
@@ -206,39 +205,39 @@ class FluxFceWindow(Gtk.Window):
         vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=10)
         parent_frame.add(vbox)
         self.lbl_temp_readout = Gtk.Label()
-        self.lbl_temp_readout.set_markup("<span size='x-large' weight='bold'>... K</span>")
+        self.lbl_temp_readout.set_markup("<span size='large' weight='bold'>... K</span>")
         vbox.pack_start(self.lbl_temp_readout, False, True, 5)
-        
+
         control_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5, halign=Gtk.Align.CENTER)
         vbox.pack_start(control_hbox, False, False, 5)
-        
+
         # Define a new, shorter target height for alignment
-        TARGET_HEIGHT = 155
+        TARGET_HEIGHT = 165
         image_height = TARGET_HEIGHT # Use this as the height for both image and slider
-        
+
         try:
             asset_path = resources.files("fluxfce_core.assets").joinpath("temp-slider.png")
-            
+
             # Load the image as a pixbuf to scale it
             original_pixbuf = GdkPixbuf.Pixbuf.new_from_file(str(asset_path))
-            
+
             # Calculate the new width to maintain aspect ratio
             original_width = original_pixbuf.get_width()
             original_height = original_pixbuf.get_height()
             scaled_width = int(original_width * (TARGET_HEIGHT / original_height))
-            
+
             # Create a new, scaled pixbuf
             scaled_pixbuf = original_pixbuf.scale_simple(scaled_width, TARGET_HEIGHT, GdkPixbuf.InterpType.BILINEAR)
-            
+
             # Create the Gtk.Image from the scaled pixbuf
             img_temp_gradient = Gtk.Image.new_from_pixbuf(scaled_pixbuf)
-            
+
             control_hbox.pack_start(img_temp_gradient, False, False, 0)
         except (FileNotFoundError, NotADirectoryError):
             log.warning("Temperature gradient image not found in package assets.")
-        
+
         adjustment = Gtk.Adjustment(
-            value=6500, lower=1000, upper=10000, 
+            value=6500, lower=1000, upper=10000,
             step_increment=50, page_increment=500, page_size=0
         )
         self.slider = Gtk.Scale(orientation=Gtk.Orientation.VERTICAL, adjustment=adjustment)
@@ -250,7 +249,6 @@ class FluxFceWindow(Gtk.Window):
 
         btn_reset = Gtk.Button(label="Reset")
         btn_reset.connect("clicked", self.on_reset_clicked)
-        # self.action_button_size_group.add_widget(btn_reset) # This remains commented out
         vbox.pack_start(btn_reset, False, True, 5)
 
     def refresh_ui(self):
@@ -296,13 +294,13 @@ class FluxFceWindow(Gtk.Window):
             temp = settings.get("temperature", 6500)
             self.current_brightness = settings.get("brightness", 1.0)
             if self.slider_handler_id: self.slider.handler_block(self.slider_handler_id)
-            self.lbl_temp_readout.set_markup(f"<span size='x-large' weight='bold'>{int(temp)} K</span>")
+            self.lbl_temp_readout.set_markup(f"<span size='large' weight='bold'>{int(temp)} K</span>")
             self.slider.get_adjustment().set_value(temp)
         except core_exc.XfceError as e:
             log.error(f"Could not get screen settings: {e}")
         finally:
             if self.slider_handler_id: self.slider.handler_unblock(self.slider_handler_id)
-    
+
     def on_toggle_schedule_clicked(self, widget=None):
         try:
             status = fluxfce_core.get_status()
@@ -329,15 +327,16 @@ class FluxFceWindow(Gtk.Window):
 
     def on_apply_temporary_clicked(self, widget, mode):
         try:
-            self._start_polling_for_temp_change()
             fluxfce_core.apply_temporary_mode(mode)
+            # BUGFIX: Instead of complex polling, just schedule a UI update
+            # after a short delay. This is simpler and handles all cases.
+            self._schedule_ui_update()
         except core_exc.FluxFceError as e:
             self.show_error_dialog("Apply Error", f"Failed to apply {mode} mode: {e}")
-            self._stop_polling()
 
     def on_slider_value_changed(self, slider):
         new_temp = int(slider.get_value())
-        self.lbl_temp_readout.set_markup(f"<span size='x-large' weight='bold'>{new_temp} K</span>")
+        self.lbl_temp_readout.set_markup(f"<span size='large' weight='bold'>{new_temp} K</span>")
         if self.slider_debounce_id: GLib.source_remove(self.slider_debounce_id)
         self.slider_debounce_id = GLib.timeout_add(SLIDER_DEBOUNCE_MS, self._apply_slider_temp, new_temp)
 
@@ -351,59 +350,55 @@ class FluxFceWindow(Gtk.Window):
 
     def on_reset_clicked(self, widget):
         try:
-            self._start_polling_for_temp_change()
             self.xfce_handler.set_screen_temp(None, None)
+            # BUGFIX: Use the same simple delayed update as apply_temporary.
+            self._schedule_ui_update()
         except core_exc.XfceError as e:
             self.show_error_dialog("Reset Error", f"Failed to reset screen settings: {e}")
-            self._stop_polling()
 
     def on_edit_profile_clicked(self, widget, mode):
         try:
-            # 1. Get the current status which contains config info
             status = fluxfce_core.get_status()
             config = status.get("config", {})
-
-            # 2. Get the specific profile name for the mode ('day' or 'night')
-            # The key in config.ini is like 'day_bg_profile'
             profile_key = f"{mode}_bg_profile"
             profile_name = config.get(profile_key)
-
             if not profile_name:
                 raise core_exc.FluxFceError(f"Could not find '{profile_key}' in your configuration.")
-
-            # 3. Construct the full path, including the 'backgrounds' subdirectory
             config_dir = fluxfce_core.CONFIG_FILE.parent
             backgrounds_dir = config_dir / "backgrounds"
             profile_path = backgrounds_dir / f"{profile_name}.profile"
-            
             self.open_file_in_editor(profile_path)
-            
         except core_exc.FluxFceError as e:
             self.show_error_dialog("Error", f"Could not determine profile path:\n{e}")
 
     def on_open_config_clicked(self, widget): self.open_file_in_editor(fluxfce_core.CONFIG_FILE)
-    def _stop_polling(self):
-        if self.polling_source_id:
-            GLib.source_remove(self.polling_source_id)
-            self.polling_source_id = None
-    def _start_polling_for_temp_change(self):
-        self._stop_polling()
-        try:
-            initial_temp = self.xfce_handler.get_screen_settings().get("temperature", 6500)
-        except core_exc.XfceError:
-            initial_temp = self.slider.get_value()
-        self.polling_source_id = GLib.timeout_add(POLLING_INTERVAL_MS, self._poll_until_temp_changes, initial_temp, POLLING_ATTEMPTS)
-    def _poll_until_temp_changes(self, initial_temp, attempts_left):
-        try:
-            current_temp = self.xfce_handler.get_screen_settings().get("temperature", initial_temp)
-        except core_exc.XfceError:
-            current_temp = initial_temp
-        if current_temp != initial_temp or attempts_left <= 0:
-            if attempts_left <= 0: log.warning("Polling timed out. Forcing UI update.")
-            self._update_ui_from_backend()
-            self.polling_source_id = None
-            return GLib.SOURCE_REMOVE
-        return GLib.SOURCE_CONTINUE
+
+    # --- START: New and Removed Methods for Bugfix ---
+
+    # REMOVED: _stop_polling, _start_polling_for_temp_change, _poll_until_temp_changes
+    # These methods created a complex, stateful polling mechanism that failed
+    # when the value being polled did not change.
+
+    def _schedule_ui_update(self):
+        """
+        Schedules a one-shot call to _update_ui_from_backend after a short delay.
+        This robustly updates the UI after an asynchronous backend action
+        (like applying a mode) without complex polling.
+        """
+        if self.ui_update_source_id:
+            GLib.source_remove(self.ui_update_source_id)
+
+        self.ui_update_source_id = GLib.timeout_add(
+            UI_UPDATE_DELAY_MS, self._perform_scheduled_ui_update
+        )
+
+    def _perform_scheduled_ui_update(self):
+        """The callback that performs the UI update and cleans up the timer."""
+        self._update_ui_from_backend()
+        self.ui_update_source_id = None
+        return GLib.SOURCE_REMOVE # Ensures the timer only runs once
+
+    # --- END: New and Removed Methods for Bugfix ---
 
     def show_error_dialog(self, title, message):
         dialog = Gtk.MessageDialog(transient_for=self, flags=0, message_type=Gtk.MessageType.ERROR, buttons=Gtk.ButtonsType.OK, text=title)
@@ -436,7 +431,7 @@ class Application:
         self.indicator = AppIndicator3.Indicator.new(
             APP_ID, "emblem-synchronizing-symbolic", AppIndicator3.IndicatorCategory.APPLICATION_STATUS)
         self.indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
-        
+
         menu = Gtk.Menu()
         show_item = Gtk.MenuItem()
         show_item_label = Gtk.Label(label="<b>Show/Hide fluxfce</b>", use_markup=True, xalign=0)
