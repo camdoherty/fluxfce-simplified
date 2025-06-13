@@ -20,12 +20,14 @@ LOGIN_SERVICE_NAME = f"{_APP_NAME}-login.service"
 SCHEDULER_SERVICE_NAME = f"{_APP_NAME}-scheduler.service"
 SCHEDULER_TIMER_NAME = f"{_APP_NAME}-scheduler.timer"
 RESUME_SERVICE_NAME = f"{_APP_NAME}-resume.service"  # <-- ADDED
+TRANSITION_SERVICE_TEMPLATE_NAME = f"{_APP_NAME}-transition@.service"
 
 # Systemd Unit File Paths
 LOGIN_SERVICE_FILE = SYSTEMD_USER_DIR / LOGIN_SERVICE_NAME
 SCHEDULER_SERVICE_FILE = SYSTEMD_USER_DIR / SCHEDULER_SERVICE_NAME
 SCHEDULER_TIMER_FILE = SYSTEMD_USER_DIR / SCHEDULER_TIMER_NAME
 RESUME_SERVICE_FILE = SYSTEMD_USER_DIR / RESUME_SERVICE_NAME  # <-- ADDED
+TRANSITION_SERVICE_TEMPLATE_FILE = SYSTEMD_USER_DIR / TRANSITION_SERVICE_TEMPLATE_NAME
 
 # List of units managed by this module
 MANAGED_UNITS = [
@@ -33,12 +35,14 @@ MANAGED_UNITS = [
     SCHEDULER_SERVICE_NAME,
     LOGIN_SERVICE_NAME,
     RESUME_SERVICE_NAME,  # <-- ADDED
+    TRANSITION_SERVICE_TEMPLATE_NAME,
 ]
 MANAGED_UNIT_FILES = [
     SCHEDULER_TIMER_FILE,
     SCHEDULER_SERVICE_FILE,
     LOGIN_SERVICE_FILE,
     RESUME_SERVICE_FILE,  # <-- ADDED
+    TRANSITION_SERVICE_TEMPLATE_FILE,
 ]
 
 
@@ -107,6 +111,20 @@ StandardError=journal
 WantedBy=sleep.target
 """
 # --- END ADDED TEMPLATE ---
+
+_TRANSITION_SERVICE_TEMPLATE = """\
+[Unit]
+Description={app_name}: Gradual Screen Transition to %I Mode
+After=graphical-session.target
+PartOf=graphical-session.target
+ConditionEnvironment=DISPLAY
+
+[Service]
+Type=simple
+ExecStart={python_executable} "{script_path}" internal-transition --mode %i
+StandardOutput=journal
+StandardError=journal
+"""
 
 
 class SystemdManager:
@@ -214,6 +232,11 @@ class SystemdManager:
                 script_path=script_abs_path,
             ),
             # --- END ADD ---
+            TRANSITION_SERVICE_TEMPLATE_FILE: _TRANSITION_SERVICE_TEMPLATE.format(
+                app_name=_APP_NAME,
+                python_executable=py_exe,
+                script_path=script_abs_path
+            ),
         }
 
         # Create directory

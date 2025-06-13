@@ -15,15 +15,205 @@ except ImportError:
     )
 
 # Import helpers, sun calculation, and exceptions
-from . import helpers, sun
+from . import helpers, sun, exceptions # Added exceptions for SchedulerError
 from .exceptions import (
     CalculationError,
     DependencyError,
     SchedulerError,
     ValidationError,
 )
+import configparser # Added for type hinting
+from .systemd import SystemdManager, SYSTEMD_USER_DIR, TRANSITION_SERVICE_TEMPLATE_NAME # Added systemd imports
+import pathlib # Added pathlib
 
 log = logging.getLogger(__name__)
+
+# --- New Constants for Dynamic Timers ---
+FLUXFCE_DAY_TRANSITION_TIMER = "fluxfce-start-day-transition.timer"
+FLUXFCE_NIGHT_TRANSITION_TIMER = "fluxfce-start-night-transition.timer"
+DYNAMIC_TIMER_NAMES = [FLUXFCE_DAY_TRANSITION_TIMER, FLUXFCE_NIGHT_TRANSITION_TIMER]
+_APP_NAME = "fluxfce" # Local app name, consider if this should be from a central place
+
+# --- Helper function for timer content ---
+def _get_transition_timer_content(mode: str, calendar_time_str: str, app_name: str) -> str:
+    """Generates the content for a transition timer unit file."""
+    # Assuming TRANSITION_SERVICE_TEMPLATE_NAME is "fluxfce-transition@.service"
+    # Construct instance name like "fluxfce-transition@day.service"
+    instance_name_base = TRANSITION_SERVICE_TEMPLATE_NAME.split('@.')[0]
+    transition_service_instance = f"{instance_name_base}@{mode}.service"
+
+    return f"""\
+[Unit]
+Description={app_name}: Gradual Screen Transition Trigger for {mode.capitalize()}
+Unit={transition_service_instance}
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Timer]
+OnCalendar={calendar_time_str}
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
+"""
+
+# --- New public function to schedule dynamic systemd timers ---
+def schedule_dynamic_transitions(config: configparser.ConfigParser, systemd_mgr: SystemdManager, sun_times: dict, app_name: str = _APP_NAME) -> bool:
+    log.info("Scheduling dynamic systemd transitions...")
+    try:
+        enabled = config.getboolean("Transitions", "ENABLED", fallback=True)
+        duration_minutes = config.getint("Transitions", "DURATION_MINUTES", fallback=15)
+
+        if not enabled or duration_minutes <= 0:
+            log.info("Gradual transitions are disabled or duration is invalid. Removing any existing dynamic timers.")
+            _remove_dynamic_transition_timers(systemd_mgr)
+            return True # Successfully did nothing or cleaned up
+
+        # Ensure timezone is available for localizing 'now'
+        try:
+            tz_str = config.get("Location", "TIMEZONE")
+            if not tz_str: # Fallback if empty string
+                tz_str = "UTC"
+                log.warning("Timezone in config is empty, falling back to UTC for transition scheduling.")
+            tz = ZoneInfo(tz_str)
+        except (configparser.NoOptionError, configparser.NoSectionError):
+            log.warning("Timezone not found in config, falling back to UTC for transition scheduling.")
+            tz = ZoneInfo("UTC") # Default to UTC if not found
+        except ZoneInfoNotFoundError:
+            log.error(f"Invalid timezone '{tz_str}' in config. Cannot schedule dynamic transitions.")
+            _remove_dynamic_transition_timers(systemd_mgr) # Attempt cleanup
+            return False
+
+        now_local = datetime.now(tz)
+
+        timers_to_create = []
+        if "sunrise" in sun_times and sun_times["sunrise"]:
+            sunrise_transition_start = sun_times["sunrise"] - timedelta(minutes=duration_minutes)
+            if sunrise_transition_start > now_local:
+                timers_to_create.append({
+                    "file_path": SYSTEMD_USER_DIR / FLUXFCE_DAY_TRANSITION_TIMER,
+                    "content": _get_transition_timer_content("day", sunrise_transition_start.strftime("%Y-%m-%d %H:%M:%S"), app_name),
+                    "name": FLUXFCE_DAY_TRANSITION_TIMER
+                })
+            else:
+                log.info(f"Calculated day transition start time {sunrise_transition_start.strftime('%Y-%m-%d %H:%M:%S')} is in the past. Not scheduling.")
+
+
+        if "sunset" in sun_times and sun_times["sunset"]:
+            sunset_transition_start = sun_times["sunset"] - timedelta(minutes=duration_minutes)
+            if sunset_transition_start > now_local:
+                timers_to_create.append({
+                    "file_path": SYSTEMD_USER_DIR / FLUXFCE_NIGHT_TRANSITION_TIMER,
+                    "content": _get_transition_timer_content("night", sunset_transition_start.strftime("%Y-%m-%d %H:%M:%S"), app_name),
+                    "name": FLUXFCE_NIGHT_TRANSITION_TIMER
+                })
+            else:
+                log.info(f"Calculated night transition start time {sunset_transition_start.strftime('%Y-%m-%d %H:%M:%S')} is in the past. Not scheduling.")
+
+
+        if not timers_to_create:
+            log.info("No future transition start times to schedule. Ensuring old dynamic timers are removed.")
+            _remove_dynamic_transition_timers(systemd_mgr) # Clean up any existing ones
+            return True
+
+        files_changed = False
+        for timer_def in timers_to_create:
+            try:
+                if timer_def["file_path"].exists():
+                    existing_content = timer_def["file_path"].read_text(encoding="utf-8")
+                    if existing_content == timer_def["content"]:
+                        log.debug(f"Timer file {timer_def['name']} already exists with correct content.")
+                    else:
+                        timer_def["file_path"].write_text(timer_def["content"], encoding="utf-8")
+                        log.info(f"Updated systemd timer unit file: {timer_def['file_path']}")
+                        files_changed = True
+                else:
+                    timer_def["file_path"].write_text(timer_def["content"], encoding="utf-8")
+                    log.info(f"Created systemd timer unit file: {timer_def['file_path']}")
+                    files_changed = True
+            except OSError as e:
+                log.error(f"Failed to write systemd timer unit file {timer_def['file_path']}: {e}")
+                # If one file write fails, it's critical, attempt cleanup of what might have been written
+                _remove_dynamic_transition_timers(systemd_mgr)
+                return False
+
+        if files_changed:
+            code_reload, _, err_reload = systemd_mgr._run_systemctl(["daemon-reload"])
+            if code_reload != 0:
+                log.error(f"systemctl daemon-reload failed: {err_reload}")
+                _remove_dynamic_transition_timers(systemd_mgr) # Attempt cleanup
+                return False
+
+        all_timers_started = True
+        for timer_def in timers_to_create:
+            code_enable, _, err_enable = systemd_mgr._run_systemctl(["enable", "--now", timer_def["name"]])
+            if code_enable != 0:
+                log.error(f"Failed to enable/start timer {timer_def['name']}: {err_enable}")
+                all_timers_started = False
+            else:
+                log.info(f"Enabled and started timer: {timer_def['name']}")
+
+        if not all_timers_started:
+             log.warning("One or more dynamic transition timers failed to start. State may be inconsistent.")
+             # Depending on desired atomicity, may want to _remove_dynamic_transition_timers here and return False
+             # For now, consider it a partial success if files were written and daemon reloaded.
+
+        log.info("Dynamic transition timers scheduling process completed.")
+        return True # Returns true if process completed, even if some timers failed to start (they are logged)
+
+    except (configparser.NoSectionError, configparser.NoOptionError, ValueError) as e:
+        log.error(f"Configuration error for dynamic transitions: {e}")
+        _remove_dynamic_transition_timers(systemd_mgr)
+        return False
+    except ZoneInfoNotFoundError as e: # Already handled above, but as a safeguard
+        log.error(f"ZoneInfo error during dynamic transition scheduling: {e}")
+        _remove_dynamic_transition_timers(systemd_mgr)
+        return False
+    except Exception as e:
+        log.exception(f"Unexpected error scheduling dynamic transitions: {e}")
+        _remove_dynamic_transition_timers(systemd_mgr)
+        return False
+
+# --- Helper function to remove dynamic systemd timers ---
+def _remove_dynamic_transition_timers(systemd_mgr: SystemdManager) -> bool:
+    log.info("Attempting to remove dynamic transition timers...")
+    removed_any_files = False
+    any_timers_existed = False
+
+    for timer_name in DYNAMIC_TIMER_NAMES:
+        timer_file = SYSTEMD_USER_DIR / timer_name
+        if timer_file.exists():
+            any_timers_existed = True
+            log.debug(f"Found dynamic timer file: {timer_file}. Attempting to stop, disable, and remove.")
+            # Stop and disable the timer first
+            code_stop, _, err_stop = systemd_mgr._run_systemctl(["disable", "--now", timer_name], check_errors=False)
+            if code_stop != 0:
+                log.warning(f"Failed to disable/stop timer {timer_name}: {err_stop}")
+
+            try:
+                timer_file.unlink()
+                log.info(f"Successfully removed dynamic timer file: {timer_file}")
+                removed_any_files = True
+            except OSError as e:
+                log.error(f"Failed to remove dynamic timer file {timer_file}: {e}")
+                # If unlinking fails, this is an issue, but try to continue with others.
+
+    if any_timers_existed: # Only reload if timers were found (even if removal failed for some)
+        log.debug("Dynamic timers existed, reloading systemd daemon and resetting failed states.")
+        code_reload, _, err_reload = systemd_mgr._run_systemctl(["daemon-reload"])
+        if code_reload != 0:
+            log.error(f"systemctl daemon-reload failed after attempting to remove timers: {err_reload}")
+            # This is problematic for system state, but function should report based on file removal.
+
+        # Reset failed state for these timers regardless of whether they were successfully removed
+        systemd_mgr._run_systemctl(["reset-failed", *DYNAMIC_TIMER_NAMES], check_errors=False)
+    else:
+        log.info("No dynamic transition timer files found to remove.")
+
+    # Success means we tried to remove everything we found. If unlink failed, it's logged.
+    # If daemon-reload failed, it's logged.
+    return True # Best effort removal
 
 # --- Constants ---
 # Tag used to identify jobs scheduled by this application in the 'at' queue
@@ -45,6 +235,7 @@ class AtdScheduler:
             helpers.check_dependencies(
                 ["systemd-cat", "systemctl"]
             )  # <--- ADDED systemctl check
+            self.systemd_mgr = SystemdManager() # Instantiate SystemdManager
         except DependencyError as e:
             raise SchedulerError(f"Cannot initialize AtdScheduler: {e}") from e
         # Ensure atd service itself is running
@@ -177,7 +368,17 @@ class AtdScheduler:
         log.info(
             f"Finished clearing jobs ({cleared_count} removed). Success: {all_cleared}"
         )
-        return all_cleared
+
+        # Additionally remove dynamic systemd transition timers
+        log.info("Additionally removing dynamic systemd transition timers...")
+        dynamic_timers_cleared_ok = _remove_dynamic_transition_timers(self.systemd_mgr)
+        if not dynamic_timers_cleared_ok:
+            # _remove_dynamic_transition_timers logs its own errors, this is just a summary
+            log.warning("Removal of dynamic systemd transition timers encountered issues or reported partial success.")
+            # Depending on how critical this is, you might want to ensure all_cleared reflects this.
+            # For now, _remove_dynamic_transition_timers is best-effort and returns True unless it hits a major snag.
+
+        return all_cleared and dynamic_timers_cleared_ok # True if both 'at' and dynamic timers cleared successfully
 
     def schedule_transitions(
         self,

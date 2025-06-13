@@ -12,10 +12,16 @@ from .api import (
     handle_internal_apply,
     handle_run_login_check,
     handle_schedule_jobs_command,
+    handle_internal_transition, # Added
     install_fluxfce,
     save_configuration,
     set_default_from_current,
     uninstall_fluxfce,
+)
+from .scheduler import ( # Added
+    schedule_dynamic_transitions,
+    FLUXFCE_DAY_TRANSITION_TIMER,
+    FLUXFCE_NIGHT_TRANSITION_TIMER
 )
 
 # --- Make core constants accessible ---
@@ -40,7 +46,9 @@ from .systemd import (  # Import specific names
     RESUME_SERVICE_NAME,  # <--- ADD THIS LINE
     SCHEDULER_SERVICE_NAME,
     SCHEDULER_TIMER_NAME,
+    TRANSITION_SERVICE_TEMPLATE_NAME, # Added
 )
+from .scheduler import FLUXFCE_DAY_TRANSITION_TIMER, FLUXFCE_NIGHT_TRANSITION_TIMER # Ensure they are imported for __all__ if not done above
 
 # Optionally define __all__ to control wildcard imports and document public interface
 __all__ = [
@@ -51,6 +59,9 @@ __all__ = [
     "RESUME_SERVICE_NAME",  # <--- ADD THIS LINE
     "SCHEDULER_SERVICE_NAME",
     "SCHEDULER_TIMER_NAME",
+    "TRANSITION_SERVICE_TEMPLATE_NAME", # Added
+    "FLUXFCE_DAY_TRANSITION_TIMER", # Added
+    "FLUXFCE_NIGHT_TRANSITION_TIMER", # Added
     "CalculationError",
     "ConfigError",
     "DependencyError",
@@ -70,6 +81,8 @@ __all__ = [
     "handle_internal_apply",
     "handle_run_login_check",
     "handle_schedule_jobs_command",
+    "handle_internal_transition", # Added
+    "schedule_dynamic_transitions", # Added
     # API Functions
     "install_fluxfce",
     "save_configuration",

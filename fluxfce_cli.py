@@ -273,6 +273,18 @@ Examples:
     parser_internal.add_argument(
         "--mode", choices=["day", "night"], required=True, dest="internal_mode"
     )
+    # Add new hidden command for internal transitions
+    parser_internal_transition = subparsers.add_parser(
+        "internal-transition",
+        help=argparse.SUPPRESS  # Hidden from help
+    )
+    parser_internal_transition.add_argument(
+        "--mode",
+        choices=["day", "night"],
+        required=True,
+        dest="internal_transition_mode", # Use a distinct destination
+        help="Specify the mode for the transition (day or night)."
+    )
     subparsers.add_parser("schedule-jobs", help=argparse.SUPPRESS)
     subparsers.add_parser("run-login-check", help=argparse.SUPPRESS)
 
@@ -485,6 +497,53 @@ Examples:
                     fluxfce_core.save_configuration(config)
             # else: # config_existed_before_setup was true and user skipped interactive
             #     log.info(f"Using existing configuration from {fluxfce_core.CONFIG_FILE}")
+
+            # --- Additional Interactive Setup for Transitions ---
+            log.info("\n--- Transition Settings ---")
+            if not config.has_section("Transitions"):
+                config.add_section("Transitions")
+                config_needs_saving_after_interactive_setup = True
+
+            enable_transitions = ask_yes_no_cli("Enable gradual screen transitions?", default_yes=True)
+            if config.get("Transitions", "ENABLED", fallback="true" if enable_transitions else "false") != str(enable_transitions).lower():
+                config.set("Transitions", "ENABLED", str(enable_transitions).lower())
+                config_needs_saving_after_interactive_setup = True
+            log.info(f"Gradual transitions will be {'enabled' if enable_transitions else 'disabled'}.")
+
+            if enable_transitions:
+                current_duration_str = config.get("Transitions", "DURATION_MINUTES", fallback="15")
+                while True:
+                    try:
+                        print(f"Enter transition duration in minutes (e.g., 15) [{current_duration_str}]: ", end="", flush=True)
+                        duration_input = input().strip()
+                        if not duration_input:
+                            chosen_duration_str = current_duration_str
+                            break
+                        chosen_duration_int = int(duration_input)
+                        if chosen_duration_int > 0:
+                            chosen_duration_str = duration_input
+                            break
+                        else:
+                            print("[WARN] Duration must be a positive integer (minutes).")
+                    except ValueError:
+                        print("[WARN] Invalid input. Please enter a number for duration (minutes).")
+                    except (EOFError, KeyboardInterrupt):
+                        print("\nInput skipped. Using previous/default duration.")
+                        chosen_duration_str = current_duration_str
+                        break
+
+                if config.get("Transitions", "DURATION_MINUTES", fallback="15") != chosen_duration_str:
+                    config.set("Transitions", "DURATION_MINUTES", chosen_duration_str)
+                    config_needs_saving_after_interactive_setup = True
+                log.info(f"Transition duration set to {chosen_duration_str} minutes.")
+
+            # Re-check if saving is needed after transition settings
+            if config_needs_saving_after_interactive_setup and not (run_interactive_setup and (config_needs_saving_after_interactive_setup or not config_existed_before_setup)):
+                # This condition ensures we only log and save if the previous block didn't already cover it
+                # OR if transition settings specifically triggered a save when location settings didn't.
+                log.info("Saving updated FluxFCE configuration for transition settings...")
+                fluxfce_core.save_configuration(config)
+
             log.info("--- FluxFCE application configuration complete ---")
 
             # --- Step 3: Install Systemd Units ---
@@ -632,6 +691,14 @@ Examples:
             # The core library's handle_internal_apply should do its own logging.
             # log.info(f"CLI: Executing internal-apply for mode '{mode}'") # Already logged by core
             success = fluxfce_core.handle_internal_apply(mode)
+            exit_code = 0 if success else 1
+
+        elif args.command == "internal-transition":
+            mode = args.internal_transition_mode
+            # This command is intended to be run by a systemd service.
+            # Logging should primarily be handled by the core API function.
+            # log.debug(f"CLI: Executing internal-transition for mode '{mode}'") # Optional debug log
+            success = fluxfce_core.handle_internal_transition(mode)
             exit_code = 0 if success else 1
 
         elif args.command == "schedule-jobs":

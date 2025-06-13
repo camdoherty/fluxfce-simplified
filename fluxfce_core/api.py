@@ -11,6 +11,11 @@ from . import exceptions as exc
 from . import helpers, sun, xfce
 from . import scheduler as sched
 from . import systemd as sysd
+from . import desktop_manager # Added for internal transitions
+from .scheduler import schedule_dynamic_transitions # Added for dynamic timer scheduling
+# sun.get_sun_times is available via 'from . import sun' then sun.get_sun_times
+# datetime, ZoneInfo, ZoneInfoNotFoundError are already imported
+# configparser is already imported
 
 # zoneinfo needed here for status/period calculation
 try:
@@ -45,6 +50,19 @@ def _load_config_with_defaults() -> configparser.ConfigParser:
     except Exception as e:
         log.exception(f"API Helper: Unexpected error loading configuration: {e}")
         raise exc.FluxFceError(f"Unexpected error loading configuration: {e}") from e
+
+
+def handle_internal_transition(mode: str) -> bool:
+    """
+    Called by the transition service to perform the gradual transition.
+    Delegates to desktop_manager.
+    """
+    log.info(f"API: Handling internal transition for mode '{mode}'...")
+    try:
+        return desktop_manager.handle_gradual_transition(mode)
+    except Exception as e: # Catch any unexpected error from desktop_manager
+        log.exception(f"API: Unexpected error during handle_internal_transition for mode '{mode}': {e}")
+        return False
 
 
 # Updated internal helper to use the renamed config loader
@@ -766,15 +784,55 @@ def handle_schedule_jobs_command(python_exe_path: str, script_exe_path: str) -> 
     Calculates and schedules the next 'at' jobs. Returns True on success.
     """
     log.info("API: Handling schedule-jobs command...")
+    at_jobs_scheduled_ok = False
     try:
-        # enable_scheduling returns True if >0 jobs scheduled
-        return enable_scheduling(python_exe_path, script_exe_path)
+        at_jobs_scheduled_ok = enable_scheduling(python_exe_path, script_exe_path)
     except exc.FluxFceError as e:
-        log.error(f"API: Error during schedule-jobs command: {e}")
-        return False
+        log.error(f"API: Error during at-job scheduling part of schedule-jobs command: {e}")
+        at_jobs_scheduled_ok = False # Explicitly set to false
+    except Exception as e: # Catch any other unexpected error
+        log.exception(f"API: Unexpected error during at-job scheduling: {e}")
+        at_jobs_scheduled_ok = False
+
+    log.info("API: Proceeding to schedule dynamic systemd transition timers...")
+    dynamic_transitions_ok = False
+    try:
+        config = get_current_config() # Load config
+        systemd_mgr_for_dynamic = sysd.SystemdManager()
+
+        lat_str = config.get("Location", "LATITUDE")
+        lon_str = config.get("Location", "LONGITUDE")
+        tz_name = config.get("Location", "TIMEZONE")
+
+        if not all([lat_str, lon_str, tz_name]):
+            raise exc.ConfigError("Location latitude, longitude, or timezone not configured for dynamic timers.")
+
+        lat = helpers.latlon_str_to_float(lat_str)
+        lon = helpers.latlon_str_to_float(lon_str)
+
+        try:
+            tz = ZoneInfo(tz_name)
+        except ZoneInfoNotFoundError:
+            raise exc.ValidationError(f"Invalid timezone in configuration for dynamic timers: {tz_name}")
+
+        today_date = datetime.now(tz).date()
+        # Use sun.get_sun_times as get_sun_times is not directly imported with that name
+        calculated_sun_times = sun.get_sun_times(lat, lon, today_date, tz_name)
+
+        dynamic_transitions_ok = schedule_dynamic_transitions(config, systemd_mgr_for_dynamic, calculated_sun_times)
+        if dynamic_transitions_ok:
+            log.info("API: Dynamic systemd transition timers scheduled successfully.")
+        else:
+            log.warning("API: Scheduling dynamic systemd transition timers reported issues or no timers scheduled.")
+
+    except (exc.ConfigError, exc.ValidationError, exc.CalculationError, exc.SystemdError) as e:
+        log.error(f"API: Error during the process of scheduling dynamic transition timers: {e}")
+        dynamic_transitions_ok = False
     except Exception as e:
-        log.exception(f"API: Unexpected error during schedule-jobs command: {e}")
-        return False
+        log.exception(f"API: Unexpected error scheduling dynamic transition timers: {e}")
+        dynamic_transitions_ok = False
+
+    return at_jobs_scheduled_ok and dynamic_transitions_ok
 
 
 def handle_run_login_check() -> bool:

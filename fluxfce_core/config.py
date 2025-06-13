@@ -52,6 +52,11 @@ DEFAULT_CONFIG: dict[str, dict[str, str]] = (
             "XSCT_TEMP": "4500",
             "XSCT_BRIGHT": "0.85",
         },
+        # Add the new section here
+        "Transitions": {
+            "ENABLED": "true",
+            "DURATION_MINUTES": "15",
+        },
     }
 )
 
