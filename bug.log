@@ -1,5 +1,10 @@
-When the secheduler service ran 
+Create a new row under the 'Open config.ini in editor:' row. The text in the first column of the new row is 'Open system Appearance settings: ', and in the second column is a button (matching the appearance of the config.ini button) that opens 'xfce4-settings'
 
+
+
+When the secheduler service ran just after midnight xsct reset
+
+countdown timer off by one hour.
 
 ```
 
