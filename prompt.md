@@ -1,8 +1,64 @@
 **Your role:**
 You are a veteran Python programmer and Linux (XFCE) developer. You possess all skills and knowledge necessary to assist with debugging and development of the `fluxfce` python project.
 
-**Task 1:**
-Thoroughly analyze the `fluxfce` code base and the three config files below. The code base is attached as a single text file, `codebase-2025-06-10.txt`. The config files are 'built' during install (`fluxfce install`)
+**Task:**
+Thoroughly analyze the `fluxfce` code base and the three config files below. The code base is attached as a single text file, `codebase-2025-06-14.txt`. The config files are 'built' during install (`fluxfce install`)
+
+You should have a complete understanding of how `fluxfce` works. 
+
+Assist with debugging the following issue:
+
+
+**Issue:**
+Currently, if a day or night desktop background profile is saved with background color(s), eg:
+
+```
+cat ~/.config/fluxfce/backgrounds/default-day.profile
+monitor=HDMI-0
+workspace=workspace0
+type=solid_color
+color1=rgba(Value is an array with 4 items:,,1.000000,1.000000,1.000000,1.000000)
+
+monitor=DP-0
+workspace=workspace0
+type=solid_color
+color1=rgba(Value is an array with 4 items:,,1.000000,1.000000,1.000000,1.000000)
+
+monitor=DP-2
+workspace=workspace0
+type=solid_color
+color1=rgba(Value is an array with 4 items:,,1.000000,1.000000,1.000000,1.000000)
+
+```
+
+When I try to apply that profile with the `Apply Now` button, I get:
+
+```
+INFO: fluxfce_core.api: API Facade: Applying temporary mode 'day' (scheduling remains active)...
+INFO: fluxfce_core.desktop_manager: Applying day mode appearance...
+INFO: fluxfce_core.xfce: Setting GTK theme to: Adwaita
+INFO: fluxfce_core.background_manager: Applying background profile 'default-day'...
+WARNING: fluxfce_core.background_manager: Could not parse RGBA string: rgba(Value is an array with 4 items:,,1.000000,1.000000,1.000000,1.000000)
+WARNING: fluxfce_core.background_manager: Could not parse RGBA string: rgba(Value is an array with 4 items:,,1.000000,1.000000,1.000000,1.000000)
+WARNING: fluxfce_core.background_manager: Could not parse RGBA string: rgba(Value is an array with 4 items:,,1.000000,1.000000,1.000000,1.000000)
+INFO: fluxfce_core.background_manager: Profile 'default-day' applied successfully.
+```
+
+I suspect this is related to the way the `Apply Now` logic parses the saved profile file.
+
+
+Review the relevant code and propose a solution.
+
+
+
+
+
+
+
+
+
+
+
 
  - config.ini: installed to `~/.config/fluxfce/config.ini` 
 ```

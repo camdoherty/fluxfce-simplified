@@ -154,10 +154,31 @@ class BackgroundManager:
             for workspace in workspaces:
                 ws_path = f"{base_path}/{workspace}"
                 
+                def get_parsed_rgba_string(raw_output: str | None) -> str | None:
+                    """Parses xfconf-query output to extract only float values."""
+                    if not raw_output:
+                        return None
+                    
+                    values = []
+                    for line in raw_output.splitlines():
+                        line = line.strip()
+                        try:
+                            # Attempt to convert to float to validate it's a number
+                            float(line)
+                            values.append(line)
+                        except (ValueError, TypeError):
+                            # Ignore non-numeric lines like "Value is an array..." and empty lines
+                            continue
+                    
+                    # Only return a formatted string if we found valid values
+                    return f"rgba({','.join(values)})" if values else None
+
                 rgba1_raw = self._get_prop(f"{ws_path}/rgba1")
-                rgba1_str = f"rgba({','.join(rgba1_raw.splitlines())})" if rgba1_raw else None
+                rgba1_str = get_parsed_rgba_string(rgba1_raw)
+                
                 rgba2_raw = self._get_prop(f"{ws_path}/rgba2")
-                rgba2_str = f"rgba({','.join(rgba2_raw.splitlines())})" if rgba2_raw else None
+                rgba2_str = get_parsed_rgba_string(rgba2_raw)
+                # --- END OF BUG FIX ---
 
                 settings = {
                     "image_path": self._get_prop(f"{ws_path}/last-image"),
