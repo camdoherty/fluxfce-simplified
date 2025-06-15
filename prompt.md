@@ -1,4 +1,79 @@
 **Your role:**
+You are a veteran Python programmer and Linux (XFCE) developer. You possess all skills and knowledge necessary to assist with debugging the included `fluxfce` Python project.
+
+**Pre-work:**
+Thoroughly analyze the `fluxfce` code base included as a single text file `codebase-2025-06-15.txt`. You should have a complete understanding of how `fluxfce` works. 
+
+**Issue:**
+Focus on the code related to systemd and scheduling. The scheduler service that runs shortly after midnight schedules the dynamic timers for upcoming sunrise/sunset events, but **when the scheduler service ran between 12:10 AM and 12:13 AM, 'Day Mode' was partially applied (xsct temperature and desktop background changed but Gtk theme did not.)
+
+
+**Task:**
+Review all relevant code and diagnose the issue.
+
+
+
+When generating code, provide complete functions or methods, etc, or complete scripts if substantial changes are required.
+
+
+
+
+
+
+Assist with debugging the following issue:
+
+
+
+Example config files for reference:
+
+```
+~ ❯ cat ~/.config/fluxfce/config.ini
+[Location]
+latitude = 43.65N
+longitude = 79.38W
+timezone = America/Toronto
+
+[Appearance]
+light_theme = Arc-Lighter
+dark_theme = Materia-dark-compact
+day_background_profile = default-day
+night_background_profile = default-night
+
+[ScreenDay]
+xsct_temp = 6500
+xsct_bright = 1.00
+
+[ScreenNight]
+xsct_temp = 5000
+xsct_bright = 1.00
+
+
+~ ❯ cat ~/.config/fluxfce/backgrounds/default-day.profile
+monitor=HDMI-0
+workspace=workspace0
+type=gradient
+gradient_direction=vertical
+color1=rgba(0.870588,0.866667,0.854902,1.000000)
+color2=rgba(0.000000,0.000000,0.000000,1.000000)
+
+monitor=DP-0
+workspace=workspace0
+type=gradient
+gradient_direction=vertical
+color1=rgba(0.870588,0.866667,0.854902,1.000000)
+color2=rgba(0.000000,0.000000,0.000000,1.000000)
+
+monitor=DP-2
+workspace=workspace0
+type=image
+image_path=/home/cad/Pictures/purpAbstract-4k-wide-cropped.jpg
+image_style=span
+```
+
+---
+
+
+**Your role:**
 You are a veteran Python programmer and Linux (XFCE) developer. You possess all skills and knowledge necessary to assist with debugging and development of the `fluxfce` python project.
 
 **Task:**

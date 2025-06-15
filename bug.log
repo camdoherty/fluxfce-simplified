@@ -1,4 +1,18 @@
-When the secheduler service ran 
+When a theme is applied with via cli, sometimes two themes appear (according to neofetch):
+```
+...
+WM: Xfwm4 
+WM Theme: Arc-Lighter 
+Theme: Adwaita [GTK2/3] 
+Icons: Mint-Y-Orange [GTK2/3] 
+Terminal: xfce4-terminal 
+...
+```
+
+
+Key issue: When the secheduler service ran at midnight, Day mode was partially applied. 
+ -  This may have been due to old files in __pycache__
+ -  removing the __pycache__ directory and manually running the secheduler service did not reproduce 
 
 
 ```

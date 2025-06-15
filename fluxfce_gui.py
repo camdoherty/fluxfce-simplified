@@ -181,7 +181,7 @@ class FluxFceWindow(Gtk.Window):
         
         btn_set_default = Gtk.Button()
         btn_set_default_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6, margin=3)
-        btn_set_default_box.pack_start(Gtk.Image.new_from_icon_name("document-save-symbolic", Gtk.IconSize.BUTTON), False, False, 0)
+        #btn_set_default_box.pack_start(Gtk.Image.new_from_icon_name("document-save-symbolic", Gtk.IconSize.BUTTON), False, False, 0)
         # MODIFICATION 2: Shortened button label for a cleaner look
         btn_set_default_box.pack_start(Gtk.Label(label="Save"), False, False, 0)
         btn_set_default.add(btn_set_default_box)
@@ -190,7 +190,7 @@ class FluxFceWindow(Gtk.Window):
         
         btn_apply_now = Gtk.Button()
         btn_apply_now_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6, margin=3)
-        btn_apply_now_box.pack_start(Gtk.Image.new_from_icon_name("object-select-symbolic", Gtk.IconSize.BUTTON), False, False, 0)
+       # btn_apply_now_box.pack_start(Gtk.Image.new_from_icon_name("object-select-symbolic", Gtk.IconSize.BUTTON), False, False, 0)
         # MODIFICATION 2: Shortened button label for a cleaner look
         btn_apply_now_box.pack_start(Gtk.Label(label="Apply"), False, False, 0)
         btn_apply_now.add(btn_apply_now_box)
@@ -227,18 +227,25 @@ class FluxFceWindow(Gtk.Window):
         
         # Row 0: Screen Temp
         grid.attach(Gtk.Label(label="Screen Temp:", xalign=1), 0, 0, 1, 1)
-        lbl_temp = Gtk.Label(label="N/A", xalign=0, ellipsize=Pango.EllipsizeMode.END, margin_start=10)
-        grid.attach(lbl_temp, 1, 0, 1, 1)
+        btn_temp = Gtk.Button(relief=Gtk.ReliefStyle.NONE, halign=Gtk.Align.START)
+        btn_temp.set_margin_top(0)
+        btn_temp.set_margin_bottom(0)
+        # No connect signal needed as per requirement
+        btn_temp.set_can_focus(False) # Disable focus to prevent hover outline
+        btn_temp_label = Gtk.Label(label="N/A", xalign=0, ellipsize=Pango.EllipsizeMode.END)
+        btn_temp.add(btn_temp_label)
+        grid.attach(btn_temp, 1, 0, 1, 1)
 
         # Row 1: Gtk Theme
         grid.attach(Gtk.Label(label="Gtk Theme:", xalign=1), 0, 1, 1, 1)
         btn_theme = Gtk.Button(relief=Gtk.ReliefStyle.NONE, halign=Gtk.Align.START)
+        btn_theme.set_tooltip_text("Open system theme settings (xfce4-settings)")
         btn_theme.set_margin_top(0)
         btn_theme.set_margin_bottom(0)
         btn_theme.connect("clicked", self.on_open_appearance_settings_clicked)
         btn_theme.add(Gtk.Label(label="N/A", xalign=0))
         grid.attach(btn_theme, 1, 1, 1, 1)
-        
+
         # Row 2: Background Profile
         grid.attach(Gtk.Label(label="Background Profile:", xalign=1), 0, 2, 1, 1)
         btn_profile = Gtk.Button(relief=Gtk.ReliefStyle.NONE, halign=Gtk.Align.START)
@@ -253,7 +260,7 @@ class FluxFceWindow(Gtk.Window):
         
         # The old button box packing is now removed as it's in the header.
         
-        return vbox, btn_theme, lbl_temp, btn_profile
+        return vbox, btn_theme, btn_temp, btn_profile
 
     def _build_profiles_section(self, parent_frame):
         main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=10)
@@ -341,19 +348,19 @@ class FluxFceWindow(Gtk.Window):
             
             day_profile_name = config.get("day_bg_profile", "N/A")
             self.btn_day_profile.get_child().set_markup(link_markup.format(GLib.markup_escape_text(day_profile_name)))
-            self.btn_day_profile.set_tooltip_text(f"Profile file: {day_profile_name}.profile")
-            
+            self.btn_day_profile.set_tooltip_text(f"Open {day_profile_name}.profile in text editor")
+
             night_theme_name = config.get("dark_theme", "N/A")
             self.btn_night_theme.get_child().set_markup(link_markup.format(GLib.markup_escape_text(night_theme_name)))
 
             night_profile_name = config.get("night_bg_profile", "N/A")
             self.btn_night_profile.get_child().set_markup(link_markup.format(GLib.markup_escape_text(night_profile_name)))
-            self.btn_night_profile.set_tooltip_text(f"Profile file: {night_profile_name}.profile")
+            self.btn_night_profile.set_tooltip_text(f"Open {night_profile_name}.profile in text editor")
 
             day_temp = config_parser.get("ScreenDay", "XSCT_TEMP", fallback="N/A")
-            self.lbl_day_temp.set_text(f"{day_temp} K" if day_temp and day_temp != "N/A" else "N/A")
+            self.lbl_day_temp.get_child().set_text(f"{day_temp} K" if day_temp and day_temp != "N/A" else "N/A")
             night_temp = config_parser.get("ScreenNight", "XSCT_TEMP", fallback="N/A")
-            self.lbl_night_temp.set_text(f"{night_temp} K" if night_temp and night_temp != "N/A" else "N/A")
+            self.lbl_night_temp.get_child().set_text(f"{night_temp} K" if night_temp and night_temp != "N/A" else "N/A")
 
             self._update_ui_from_backend()
 
