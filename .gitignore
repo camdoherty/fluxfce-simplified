@@ -9,13 +9,10 @@ setup_format_lint.sh
 codebase-to-txt.sh
 
 hand-over-prompt
-codebase.txt
+
 codebase-*
 .gitignore
 /codebase.txt
+
 todo.md
-prompt.md
-
-
-prompt.md
 prompt.md

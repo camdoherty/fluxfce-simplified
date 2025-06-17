@@ -1,14 +1,17 @@
-When a theme is applied with via cli, sometimes two themes appear (according to neofetch):
+
 ```
-...
-WM: Xfwm4 
-WM Theme: Arc-Lighter 
-Theme: Adwaita [GTK2/3] 
-Icons: Mint-Y-Orange [GTK2/3] 
-Terminal: xfce4-terminal 
-...
+Assist with troubleshooting the following Linux XFCE issue.
+
+When a theme is applied via cli with, eg, `xfconf-query -c xsettings -p /Net/ThemeName -s "Materia-dark-compact"`, the theme is applied but the title bar and borders of windows don't update with the theme's colors. Ie the theme, "Materia-dark-compact" has a dark title bars and borders but when I run that command the title bar and borders don't change at all. If I open `xfce4-settings` and click "Materia-dark-compact" theme in the GUI, the title bar and borders then apply correctly.
+
+What causes this behavior and what is the command to fully apply a theme from cli?
+
+
+xfconf-query -c xsettings -p /Net/ThemeName -s "Materia-dark-compact"
+xfconf-query -c xfwm4 -p /general/theme -s "Materia-dark-compact"
 ```
 
+```
 
 Key issue: When the secheduler service ran at midnight, Day mode was partially applied. 
  -  This may have been due to old files in __pycache__

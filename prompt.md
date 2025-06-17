@@ -1,10 +1,43 @@
 **Your role:**
-You are a veteran Python programmer and Linux (XFCE) developer. You possess all skills and knowledge necessary to assist with debugging the included `fluxfce` Python project.
+You are a veteran Python programmer and Linux (XFCE) developer. You possess all skills and knowledge necessary to assist with development and debugging the included `fluxfce` Python project.
 
 **Pre-work:**
-Thoroughly analyze the `fluxfce` code base included as a single text file `codebase-2025-06-15.txt`. You should have a complete understanding of how `fluxfce` works. 
+Thoroughly analyze the `fluxfce` code base included as a single text file `codebase-2025-06-17.txt`.
+
+You should have a complete understanding of how `fluxfce` functions and it's indended goals. 
 
 **Issue:**
+Currently, whenever `fluxfce` applies a theme, the theme is only partially applied. To fully apply a theme from the command line, including the title bars and borders, you must also set the corresponding theme for the window manager. This is done by using a separate xfconf-query command that targets the xfwm4 channel.
+
+`fluxfce` currently sends a command like: `xfconf-query -c xsettings -p /Net/ThemeName -s "Materia-dark-compact"` to apply a theme.
+
+Any time `fluxfce` applies a theme it needs to update both the the application and window decoration themes. Something like:
+`xfconf-query -c xsettings -p /Net/ThemeName -s "Materia-dark-compact"`, AND,
+`xfconf-query -c xfwm4 -p /general/theme -s "Materia-dark-compact"`
+
+**Task:**
+
+When you are confident that you fully understand the project and, the issue and how to fix it, proceed to update all necessary code to resolve the issue.
+
+Provide complete functions or methods, etc, so I can easily copy/paste the code to implement.
+
+Double check all code for correctness.
+
+
+
+
+
+, the theme is applied but the title bar and borders of windows don't update with the theme's colors. Ie the theme, "Materia-dark-compact" has a dark title bars and borders but when I run that command the title bar and borders don't change at all. If I open `xfce4-settings` and click "Materia-dark-compact" theme in the GUI, the title bar and borders then apply correctly.
+
+What causes this behavior and what is the command to fully apply a theme from cli?
+xfconf-query -c xsettings -p /Net/ThemeName -s "Materia-dark-compact"
+xfconf-query -c xfwm4 -p /general/theme -s "Materia-dark-compact"
+
+
+
+
+
+
 Focus on the code related to systemd and scheduling. The scheduler service that runs shortly after midnight schedules the dynamic timers for upcoming sunrise/sunset events, but **when the scheduler service ran between 12:10 AM and 12:13 AM, 'Day Mode' was partially applied (xsct temperature and desktop background changed but Gtk theme did not.)
 
 

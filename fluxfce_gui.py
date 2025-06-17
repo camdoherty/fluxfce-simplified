@@ -19,7 +19,7 @@ except ImportError:
     import importlib_resources as resources
 
 
-# --- GTK and Core Library Imports ---
+# --- Gtk and Core Library Imports ---
 try:
     import gi
     gi.require_version("Gtk", "3.0")
@@ -28,7 +28,7 @@ try:
     from gi.repository import AppIndicator3
 except (ImportError, ValueError) as e:
     if "Gtk" in str(e):
-        print("FATAL: GTK3 bindings are not installed or configured correctly.", file=sys.stderr)
+        print("FATAL: Gtk3 bindings are not installed or configured correctly.", file=sys.stderr)
         print("On Debian/Ubuntu, try: sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0", file=sys.stderr)
     elif "AppIndicator3" in str(e):
         print("FATAL: AppIndicator3 library not found.", file=sys.stderr)
@@ -237,7 +237,7 @@ class FluxFceWindow(Gtk.Window):
         grid.attach(btn_temp, 1, 0, 1, 1)
 
         # Row 1: Gtk Theme
-        grid.attach(Gtk.Label(label="Gtk Theme:", xalign=1), 0, 1, 1, 1)
+        grid.attach(Gtk.Label(label="Gtk, Xfwm Theme:", xalign=1), 0, 1, 1, 1)
         btn_theme = Gtk.Button(relief=Gtk.ReliefStyle.NONE, halign=Gtk.Align.START)
         btn_theme.set_tooltip_text("Open system theme settings (xfce4-settings)")
         btn_theme.set_margin_top(0)
@@ -283,15 +283,22 @@ class FluxFceWindow(Gtk.Window):
         TARGET_HEIGHT = 180
         image_height = TARGET_HEIGHT
         try:
+            # --- START: CORRECTED CODE ---
+            # Reverting to the legacy `resources.path()` which is known to work in your environment,
+            # despite the deprecation warning. This is more robust than a non-functional modern API call.
+            # The package is "fluxfce_core.assets", and the resource is "temp-slider.png".
             with resources.path("fluxfce_core.assets", "temp-slider.png") as asset_path:
+            # --- END: CORRECTED CODE ---
                 original_pixbuf = GdkPixbuf.Pixbuf.new_from_file(str(asset_path))
                 original_width, original_height = original_pixbuf.get_width(), original_pixbuf.get_height()
                 scaled_width = int(original_width * (TARGET_HEIGHT / original_height))
                 scaled_pixbuf = original_pixbuf.scale_simple(scaled_width, TARGET_HEIGHT, GdkPixbuf.InterpType.BILINEAR)
                 img_temp_gradient = Gtk.Image.new_from_pixbuf(scaled_pixbuf)
                 control_hbox.pack_start(img_temp_gradient, False, False, 0)
-        except (FileNotFoundError, NotADirectoryError, ModuleNotFoundError):
-            log.warning("Temperature gradient image not found in package assets.")
+                image_height = scaled_pixbuf.get_height()  # Adjust slider height to match scaled image
+        except (FileNotFoundError, ModuleNotFoundError) as e:
+            log.warning(f"Temperature gradient image not found in package assets: {e}")
+            
         adjustment = Gtk.Adjustment(value=6500, lower=1000, upper=10000, step_increment=50, page_increment=500, page_size=0)
         self.slider = Gtk.Scale(orientation=Gtk.Orientation.VERTICAL, adjustment=adjustment)
         self.slider.set_inverted(True)
@@ -395,7 +402,7 @@ class FluxFceWindow(Gtk.Window):
 
     def on_set_default_clicked(self, widget, mode):
         dialog = Gtk.MessageDialog(transient_for=self, flags=0, message_type=Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.OK_CANCEL, text=f"Confirm: Save Current Look as {mode.capitalize()} Default?")
-        dialog.format_secondary_text(f"This will overwrite the current GTK theme, screen settings, and background profile for '{mode}' mode.")
+        dialog.format_secondary_text(f"This will overwrite the current Gtk theme, screen settings, and background profile for '{mode}' mode.")
         if dialog.run() == Gtk.ResponseType.OK:
             try:
                 fluxfce_core.set_default_from_current(mode)
