@@ -1,3 +1,49 @@
+This is great but there a couple issues.
+
+1. left clicking on the system tray icon should display the window and right clicking should display the tray menu
+2. the window is not displaying in the correct location. it should display like a tray application like the volume control. I suspect the window is currently appearing centered above the mouse cursor but I'm not sure
+
+Please review the relevant code and correct these issues.
+
+3. change the tray menu item Apply Mode 
+
+
+Bug: 
+When the window *first* opens (by clicking the system tray icon) it displays in the center of the screen. Each time after, it opens in the correct location in the bottom right of the screen. Please fix this.
+
+GUI tweaks:
+Instead of having one 'Reset Screen' button, there should be Reset buttons to the right of to both temp <xsct_temp> and bright <xsct_bright> readings. Use a reset icon for the new buttons.
+
+
+
+
+
+
+
+
+Okay, next we need to refactor the Day and Night mode 'frames'. They should not be collapsable, instead should be a compact grid/table, well layed out. Something like this:
+
+
+Profiles		
+☀️ Day Mode (make this the button to apply)	Save Current (button)	Background .profile (button)
+  - <profile theme>		
+  - <profile xsct temp>, <profile xsct brightness>		
+		
+🌙 Night Mode (make this the button to apply)	Save Current (button)	Background .profile (button)
+  - <profile theme>		
+  - <profile xsct temp>, <profile xsct brightness>		
+
+---
+
+- Also the temperature icon next to the slider appears not to be found.
+
+- Also hide the title bar of the GUI window
+
+
+First, 
+
+
+
 
 ```
 Assist with troubleshooting the following Linux XFCE issue.
