@@ -1,0 +1,37 @@
+nohup: ignoring input
+/home/cad/dev/fluxfce-simplified/./fluxfce_gui.py:540: DeprecationWarning: Gtk.StatusIcon.new_from_icon_name is deprecated
+  self.status_icon = Gtk.StatusIcon.new_from_icon_name('emblem-synchronizing-symbolic')
+/home/cad/dev/fluxfce-simplified/./fluxfce_gui.py:541: DeprecationWarning: Gtk.StatusIcon.set_tooltip_text is deprecated
+  self.status_icon.set_tooltip_text("fluxfce")
+/home/cad/dev/fluxfce-simplified/./fluxfce_gui.py:542: DeprecationWarning: Gtk.StatusIcon.set_visible is deprecated
+  self.status_icon.set_visible(True)
+/home/cad/dev/fluxfce-simplified/./fluxfce_gui.py:588: DeprecationWarning: Gtk.StatusIcon.set_from_icon_name is deprecated
+  self.status_icon.set_from_icon_name("weather-clear-symbolic" if is_enabled else "weather-clear-night-symbolic")
+INFO: fluxfce_core.xfce: Retrieved screen settings: Temp=4100, Brightness=0.91
+/home/cad/dev/fluxfce-simplified/./fluxfce_gui.py:480: DeprecationWarning: Gtk.StatusIcon.get_geometry is deprecated
+  success, screen, icon_rect, orient = status_icon.get_geometry()
+/home/cad/dev/fluxfce-simplified/./fluxfce_gui.py:467: DeprecationWarning: Gdk.Screen.get_monitor_at_point is deprecated
+  monitor_index = screen.get_monitor_at_point(icon_rect.x, icon_rect.y)
+INFO: fluxfce_gui: Window shown. Starting UI refresh timers.
+INFO: fluxfce_core.xfce: Retrieved screen settings: Temp=4100, Brightness=0.91
+INFO: fluxfce_gui: Window shown. Starting UI refresh timers.
+INFO: fluxfce_core.xfce: Retrieved screen settings: Temp=4100, Brightness=0.91
+INFO: fluxfce_gui: Window shown. Starting UI refresh timers.
+INFO: fluxfce_core.xfce: Retrieved screen settings: Temp=4100, Brightness=0.91
+INFO: fluxfce_core.api: API Facade: Calling desktop_manager.set_defaults_from_current for mode 'night'.
+INFO: fluxfce_core.desktop_manager: Saving current background to profile: 'default-night'
+INFO: fluxfce_core.background_manager: Scanning settings to save to profile: 'default-night'
+INFO: fluxfce_core.background_manager: Profile saved to /home/cad/.config/fluxfce/backgrounds/default-night.profile with 3 configuration block(s).
+INFO: fluxfce_core.xfce: Current GTK theme: Materia-dark-compact
+INFO: fluxfce_core.xfce: Retrieved screen settings: Temp=4100, Brightness=0.91
+INFO: fluxfce_core.desktop_manager: Theme/Screen defaults updated for night mode — saving config.ini
+INFO: fluxfce_core.config: Saving configuration to /home/cad/.config/fluxfce/config.ini
+INFO: fluxfce_core.xfce: Retrieved screen settings: Temp=4100, Brightness=0.91
+INFO: fluxfce_gui: Window shown. Starting UI refresh timers.
+INFO: fluxfce_core.xfce: Retrieved screen settings: Temp=4100, Brightness=0.91
+INFO: fluxfce_gui: Window shown. Starting UI refresh timers.
+INFO: fluxfce_core.xfce: Retrieved screen settings: Temp=4100, Brightness=0.91
+INFO: fluxfce_gui: Window shown. Starting UI refresh timers.
+INFO: fluxfce_core.xfce: Retrieved screen settings: Temp=4100, Brightness=0.91
+INFO: fluxfce_gui: Window shown. Starting UI refresh timers.
+INFO: fluxfce_core.xfce: Retrieved screen settings: Temp=4100, Brightness=0.91

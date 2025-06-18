@@ -140,7 +140,7 @@ ConditionEnvironment=DISPLAY
 
 [Service]
 Type=oneshot
-ExecStartPre=/bin/sleep 5
+ExecStartPre=/bin/sleep 15
 ExecStart={python_executable} "{script_path}" run-login-check
 StandardError=journal
 
