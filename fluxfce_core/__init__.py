@@ -21,6 +21,7 @@ from .api import (
     get_status,
     handle_internal_apply,
     handle_run_login_check,
+    handle_run_resume_check,
     handle_schedule_dynamic_transitions_command,
     install_default_background_profiles,  # <-- ADDED THIS LINE
     install_fluxfce,
@@ -78,6 +79,7 @@ __all__ = [
     # Internal Handlers (available for CLI, routed through api.py)
     "handle_internal_apply",
     "handle_run_login_check",
+    "handle_run_resume_check",
     "handle_schedule_dynamic_transitions_command",
     # Helper Functions
     "detect_system_timezone",

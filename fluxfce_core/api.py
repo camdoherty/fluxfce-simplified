@@ -122,6 +122,11 @@ def handle_run_login_check() -> bool:
     log.debug("API Facade: Relaying 'run-login-check' to desktop_manager.")
     return desktop_manager.handle_run_login_check()
 
+def handle_run_resume_check() -> bool:
+    """API Façade: Relays to desktop_manager.handle_run_resume_check."""
+    log.debug("API Facade: Relaying 'run-resume-check' to desktop_manager.")
+    return desktop_manager.handle_run_resume_check()
+
 # --- Status Function ---
 
 def get_status() -> dict[str, Any]:

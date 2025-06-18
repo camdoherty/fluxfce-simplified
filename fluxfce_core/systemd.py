@@ -124,7 +124,7 @@ Requires=graphical-session.target
 ConditionEnvironment=DISPLAY
 [Service]
 Type=oneshot
-ExecStartPre=/bin/sleep 20
+ExecStartPre=/bin/sleep 5
 ExecStart={python_executable} "{script_path}" run-login-check
 StandardError=journal
 [Install]
@@ -134,14 +134,13 @@ WantedBy=graphical-session.target
 _RESUME_SERVICE_TEMPLATE = """\
 [Unit]
 Description={app_name} - Apply theme after system resume
-After=sleep.target graphical-session.target
+After=sleep.target graphical-session.target xfce4-session.target
 Requires=graphical-session.target
 ConditionEnvironment=DISPLAY
 
 [Service]
 Type=oneshot
-ExecStartPre=/bin/sleep 15
-ExecStart={python_executable} "{script_path}" run-login-check
+ExecStart={python_executable} "{script_path}" run-resume-check
 StandardError=journal
 
 [Install]

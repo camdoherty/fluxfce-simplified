@@ -9,6 +9,7 @@ for themes/screen and the BackgroundManager for desktop backgrounds.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
 from typing import Literal
 
@@ -149,6 +150,47 @@ def handle_internal_apply(mode: Literal["day", "night"]) -> bool:
     except FluxFceError as e:
         log.error(f"DesktopManager: Error during internal apply for '{mode}': {e}")
         return False
+
+def _wait_for_xfconfd(timeout: int = 45) -> bool:
+    """Waits for xfconfd to be available by pinging it via D-Bus."""
+    log.info("Waiting for xfconfd to become available...")
+    start_time = time.monotonic()
+    while True:
+        current_time = time.monotonic()
+        if current_time - start_time >= timeout:
+            log.error(
+                f"Timeout: xfconfd did not become available within {timeout} seconds."
+            )
+            return False
+
+        exit_code, _, _ = helpers.run_command(
+            "gdbus call --session --dest org.xfce.Xfconf "
+            "--object-path / --method org.freedesktop.DBus.Peer.Ping"
+        )
+
+        if exit_code == 0:
+            log.info("xfconfd is available.")
+            # Recommended: Short delay after xfconfd is confirmed available
+            time.sleep(1)
+            return True
+
+        time.sleep(2)  # Poll every 2 seconds
+
+
+def handle_run_resume_check() -> bool:
+    """Called on resume to apply the correct theme after ensuring xfconfd is ready."""
+    log.info("DesktopManager: Handling 'run-resume-check'...")
+    if _wait_for_xfconfd():
+        log.info(
+            "xfconfd is available. Proceeding with 'run-login-check' logic..."
+        )
+        return handle_run_login_check()
+    else:
+        log.warning(
+            "xfconfd did not become available. Skipping theme application on resume."
+        )
+        return False
+
 
 def handle_run_login_check() -> bool:
     """Called on login/resume to apply the correct theme for the current time."""

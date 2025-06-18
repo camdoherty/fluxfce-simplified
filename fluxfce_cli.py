@@ -225,6 +225,7 @@ Examples:
     parser_internal_apply.add_argument("--mode", choices=["day", "night"], required=True, dest="internal_mode")
     subparsers.add_parser("schedule-dynamic-transitions", help=argparse.SUPPRESS)
     subparsers.add_parser("run-login-check", help=argparse.SUPPRESS)
+    subparsers.add_parser("run-resume-check", help=argparse.SUPPRESS)
 
     args = parser.parse_args()
     setup_cli_logging(args.verbose)
@@ -340,6 +341,10 @@ Examples:
 
         elif args.command == "run-login-check":
             success = fluxfce_core.handle_run_login_check()
+            exit_code = 0 if success else 1
+
+        elif args.command == "run-resume-check":
+            success = fluxfce_core.handle_run_resume_check()
             exit_code = 0 if success else 1
         else:
             log.error(f"Unknown command: {args.command}")

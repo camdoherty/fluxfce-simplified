@@ -1,3 +1,266 @@
+
+**Implement the following targeted code changes into `fluxfce-simplified`. Create a new branch called 'FIX: systemd login / resume logic - June 18th'**
+---
+
+### 1. Update `fluxfce_core/systemd.py`
+
+This is the most critical change. We will modify the `resume` service to call a new, dedicated command and remove the unreliable `sleep`. We will also shorten the excessive `sleep` on the `login` service for a better user experience.
+
+```python
+# ~/dev/fluxfce-simplified/fluxfce_core/systemd.py
+
+# ... (imports and other constants remain the same) ...
+
+# --- Static Unit Names and File Paths ---
+# ... (no changes here) ...
+RESUME_SERVICE_NAME = f"{_APP_NAME}-resume.service" # This is what we're targeting
+
+# ... (other constants remain the same) ...
+
+# --- Unit File Templates ---
+
+_LOGIN_SERVICE_TEMPLATE = """\
+[Unit]
+Description={app_name}: Apply theme on login
+After=graphical-session.target xfce4-session.target plasma-workspace.target gnome-session.target
+Requires=graphical-session.target
+ConditionEnvironment=DISPLAY
+[Service]
+Type=oneshot
+# A 20-second sleep on every login is excessive.
+# We reduce this to a much more reasonable 5 seconds.
+ExecStartPre=/bin/sleep 5
+ExecStart={python_executable} "{script_path}" run-login-check
+StandardError=journal
+[Install]
+WantedBy=graphical-session.target
+"""
+
+_RESUME_SERVICE_TEMPLATE = """\
+[Unit]
+Description={app_name} - Apply theme after system resume
+# Ensure we run after the session itself starts trying to resume.
+After=sleep.target graphical-session.target xfce4-session.target
+Requires=graphical-session.target
+ConditionEnvironment=DISPLAY
+
+[Service]
+Type=oneshot
+# REMOVED: The unreliable ExecStartPre=/bin/sleep 15
+# The new command handles waiting intelligently.
+ExecStart={python_executable} "{script_path}" run-resume-check
+StandardError=journal
+
+[Install]
+WantedBy=sleep.target
+"""
+
+# ... (the rest of the file, including SystemdManager class, remains the same) ...
+```
+
+**Reasoning:**
+
+*   **`_RESUME_SERVICE_TEMPLATE`**:
+    *   `After=... xfce4-session.target`: We add this to be explicit that our service should only run after the main XFCE session process has been started by systemd.
+    *   `ExecStartPre=/bin/sleep 15`: This line is **removed**. It is the source of the unreliability.
+    *   `ExecStart=... run-resume-check`: The service now calls a new, dedicated CLI command. This command will contain the intelligent waiting logic.
+*   **`_LOGIN_SERVICE_TEMPLATE`**:
+    *   `ExecStartPre=/bin/sleep 5`: Reduced the login delay from 20 seconds to 5. This is a quality-of-life improvement, as a 20s delay on every login is very noticeable. The primary bug fix is in the resume service.
+
+---
+
+### 2. Update `fluxfce_core/desktop_manager.py`
+
+Here we will add the core logic for the new `run-resume-check` command. This function will contain the D-Bus polling loop to wait for the XFCE session.
+
+```python
+# fluxfce_core/desktop_manager.py
+
+from __future__ import annotations
+
+import logging
+import time # <-- ADD THIS IMPORT
+from datetime import datetime
+from typing import Literal
+
+from . import config as cfg
+from . import helpers, xfce
+from .background_manager import BackgroundManager
+from .exceptions import FluxFceError, ValidationError
+
+log = logging.getLogger(__name__)
+
+# ... (_cfg_mgr_desktop, _load_cfg, _apply_single_mode, apply_mode, set_defaults_from_current, determine_current_period, handle_internal_apply remain the same) ...
+
+
+def _wait_for_xfconfd(timeout: int = 45) -> bool:
+    """
+    Waits for the xfconfd D-Bus service to be available on the session bus.
+    This is a reliable signal that the XFCE session is ready for configuration changes.
+
+    Args:
+        timeout: Maximum seconds to wait before giving up.
+
+    Returns:
+        True if the service becomes available, False if it times out.
+    """
+    log.info(f"Waiting up to {timeout}s for the XFCE session to become ready...")
+    start_time = time.monotonic()
+    dbus_cmd = [
+        "gdbus", "call", "--session",
+        "--dest", "org.xfce.Xfconf",
+        "--object-path", "/",
+        "--method", "org.freedesktop.DBus.Peer.Ping"
+    ]
+
+    while time.monotonic() - start_time < timeout:
+        # We don't need to check for errors; a non-zero exit code means the service is not ready.
+        code, _, _ = helpers.run_command(dbus_cmd, check_errors=False, capture=True)
+        if code == 0:
+            log.info("XFCE session is ready (xfconfd responded to ping).")
+            # A tiny extra pause for good measure as the final desktop components paint.
+            time.sleep(1)
+            return True
+
+        log.debug("xfconfd not ready yet, waiting...")
+        time.sleep(2)  # Poll every 2 seconds
+
+    log.error(f"Timed out after {timeout} seconds waiting for xfconfd. The desktop may be unstable or failed to resume correctly.")
+    return False
+
+
+def handle_run_login_check() -> bool:
+    """Called on login to apply the correct theme for the current time."""
+    log.info("DesktopManager: Handling 'run-login-check'...")
+    conf = _load_cfg()
+    mode_to_apply = determine_current_period(conf)
+    log.info(f"Login check determined mode '{mode_to_apply}'. Applying now.")
+    return apply_mode(mode_to_apply)
+
+
+def handle_run_resume_check() -> bool:
+    """
+    Called on system resume. Waits for the session to be ready, then applies the theme.
+    This is the core of the bug fix.
+    """
+    log.info("DesktopManager: Handling 'run-resume-check'...")
+    if _wait_for_xfconfd():
+        # The session is ready. Now we can safely run the standard check/apply logic.
+        return handle_run_login_check()
+    else:
+        # The wait timed out, so we do nothing to avoid breaking the session.
+        log.warning("Skipping theme application on resume due to timeout.")
+        return False
+```
+
+**Reasoning:**
+
+*   `_wait_for_xfconfd()`: This new private function implements the robust waiting mechanism. It uses `gdbus` to ping the `org.xfce.Xfconf` service. This is a lightweight, dependency-free (on modern systems) way to verify the session is alive and ready. It will poll for up to 45 seconds before timing out.
+*   `handle_run_resume_check()`: This new public function is called by the `resume` systemd service. It orchestrates the process: first, it calls `_wait_for_xfconfd()`. If successful, it then calls the *existing* `handle_run_login_check()` function to perform the theme application, perfectly reusing your existing code.
+
+---
+
+### 3. Update the API and CLI to expose the new command
+
+We need to plumb the new function through the API facade and add it to the command-line parser so `systemd` can call it.
+
+#### `fluxfce_core/api.py`
+```python
+# fluxfce_core/api.py
+
+# ... (other imports) ...
+
+# ... (other API functions) ...
+
+def handle_run_login_check() -> bool:
+    """API Façade: Relays to desktop_manager.handle_run_login_check."""
+    log.debug("API Facade: Relaying 'run-login-check' to desktop_manager.")
+    return desktop_manager.handle_run_login_check()
+
+
+def handle_run_resume_check() -> bool:
+    """API Façade: Relays to desktop_manager.handle_run_resume_check."""
+    log.debug("API Facade: Relaying 'run-resume-check' to desktop_manager.")
+    return desktop_manager.handle_run_resume_check()
+
+
+# --- Status Function ---
+# ... (rest of the file is unchanged) ...
+```
+
+#### `fluxfce_core/__init__.py`
+```python
+# fluxfce_core/__init__.py
+
+# ... (other imports) ...
+
+from .api import (
+    # ... (all other api functions) ...
+    handle_internal_apply,
+    handle_run_login_check,
+    handle_run_resume_check,  # <-- ADD THIS LINE
+    handle_schedule_dynamic_transitions_command,
+    # ... (all other api functions) ...
+)
+
+# ... (rest of the file) ...
+```
+
+#### `fluxfce_cli.py`
+```python
+# fluxfce_cli.py
+
+# ... (imports and other setup) ...
+
+def main():
+    """Parses command-line arguments and dispatches to appropriate command handlers."""
+    # ... (parser setup) ...
+
+    # Internal commands, hidden from public help
+    parser_internal_apply = subparsers.add_parser("internal-apply", help=argparse.SUPPRESS)
+    parser_internal_apply.add_argument("--mode", choices=["day", "night"], required=True, dest="internal_mode")
+    subparsers.add_parser("schedule-dynamic-transitions", help=argparse.SUPPRESS)
+    subparsers.add_parser("run-login-check", help=argparse.SUPPRESS)
+    subparsers.add_parser("run-resume-check", help=argparse.SUPPRESS) # <-- ADD THIS LINE
+
+    args = parser.parse_args()
+    setup_cli_logging(args.verbose)
+    # ... (try/except block) ...
+
+        # ... (all other elif command blocks) ...
+
+        elif args.command == "run-login-check":
+            success = fluxfce_core.handle_run_login_check()
+            exit_code = 0 if success else 1
+
+        elif args.command == "run-resume-check": # <-- ADD THIS BLOCK
+            success = fluxfce_core.handle_run_resume_check()
+            exit_code = 0 if success else 1
+            
+        else:
+            log.error(f"Unknown command: {args.command}")
+    # ... (rest of the file) ...
+
+if __name__ == "__main__":
+    main()
+```
+
+### Summary of Actions
+
+1.  **Modify the Systemd Unit:** Replaced the unreliable `sleep` in the resume service with a call to a new, dedicated command.
+2.  **Implement the Wait Logic:** Created a new function in `desktop_manager.py` that actively waits for the XFCE session's D-Bus service to be ready before proceeding.
+3.  **Reuse Existing Code:** Once the session is confirmed to be ready, the new function calls the existing theme-application logic, minimizing new code and risk.
+4.  **Plumb the New Command:** Exposed the new function through the API and CLI layers so that the updated systemd unit can call it.
+
+After implementing these changes, you will need to run `fluxfce install` again to write the updated systemd unit files to your system. This will make your application significantly more robust and eliminate the black screen issue on resume.
+
+
+
+
+
+------
+
+
 **Your role:**
 You are a veteran Python programmer and Linux (XFCE) developer. You possess all skills and knowledge necessary to assist with development and debugging the included `fluxfce` Python project.
 
