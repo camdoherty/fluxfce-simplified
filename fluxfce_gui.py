@@ -63,8 +63,9 @@ class FluxFceWindow(Gtk.Window):
         self.connect("focus-out-event", self.on_focus_out_event)
         self.connect("show", self._start_ui_timers)
         self.connect("hide", self._stop_ui_timers)
+        self.connect("size-allocate", self._on_size_allocated)
 
-        # Custom styling with CSS for gradients
+        # Custom styling with CSS for gradients and expanders
         style_provider = Gtk.CssProvider()
         css = b"""
         .dim-label {
@@ -78,6 +79,32 @@ class FluxFceWindow(Gtk.Window):
         .bright-gradient {
             background-image: linear-gradient(to right, black, white);
             border-radius: 4px;
+        }
+        expander > header .expander-arrow {
+            opacity: 0; min-width: 0; padding: 0; border: 0;
+        }
+
+        /*
+         * This is the corrected, more aggressive rule for the slider.
+         * By targeting the 'scale' widget type and its 'trough' sub-node,
+         * we increase specificity to override theme defaults.
+         */
+        scale.transparent-slider.horizontal trough {
+            background-image: none;
+            background-color: transparent;
+            border: none;
+            box-shadow: none;
+            min-height: 0; /* Remove any minimum size the theme enforces */
+        }
+
+        /* We must also hide the colored "fill" or "progress" part of the trough */
+        scale.transparent-slider.horizontal trough > progress,
+        scale.transparent-slider.horizontal trough > fill {
+            background-image: none;
+            background-color: transparent;
+            border: none;
+            box-shadow: none;
+            min-height: 0;
         }
         """
         style_provider.load_from_data(css)
@@ -99,8 +126,26 @@ class FluxFceWindow(Gtk.Window):
         self.slider_debounce_id = None
         self.periodic_refresh_id = None
         self.one_shot_refresh_id = None
+        self._last_height = None
 
         self._build_ui()
+
+    def _on_size_allocated(self, widget, allocation):
+        """
+        Handles window size changes to keep the bottom edge stationary when
+        collapsing/expanding sections.
+        """
+        # On first allocation, just store the height
+        if self._last_height is None:
+            self._last_height = allocation.height
+            return
+
+        # If height has changed, adjust window position
+        if self._last_height != allocation.height:
+            height_delta = allocation.height - self._last_height
+            x, y = self.get_position()
+            self.move(x, y - height_delta)
+            self._last_height = allocation.height
 
     def _build_ui(self):
         """Constructs the entire UI, including a custom title bar and content."""
@@ -133,7 +178,10 @@ class FluxFceWindow(Gtk.Window):
         return box
 
     def _build_profiles_section(self):
-        frame = Gtk.Frame(label=" Profiles ")
+        # Use an expander to allow collapsing this section
+        frame = Gtk.Expander(use_markup=True, label="<b> Profiles </b>")
+        frame.set_expanded(True)
+
         profile_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=10)
         frame.add(profile_box)
         (self.day_grid, self.lbl_day_details, self.btn_edit_day_profile) = self._create_profile_row("day", "☀️", "Day Mode")
@@ -165,50 +213,59 @@ class FluxFceWindow(Gtk.Window):
         return grid, lbl_details, btn_edit_profile
 
     def _build_manual_control_section(self):
-        frame = Gtk.Frame(label=" xsct Control ")
-        # Use a Grid for precise alignment of the sliders and new gradient bars
-        grid = Gtk.Grid(column_spacing=6, row_spacing=4, margin=10, hexpand=True)
+        # Use an expander to allow collapsing this section
+        frame = Gtk.Expander(use_markup=True, label="<b> Manual Control </b>")
+        frame.set_expanded(True)
+
+        # Use a Grid for precise alignment
+        grid = Gtk.Grid(column_spacing=6, row_spacing=8, margin=10, hexpand=True)
         frame.add(grid)
 
         # --- Temperature Control ---
-        temp_gradient_bar = Gtk.Box(hexpand=True, height_request=8, margin_bottom=2)
-        temp_gradient_bar.get_style_context().add_class("temp-gradient")
-        # Place in grid, making it span the same column as the slider
-        grid.attach(temp_gradient_bar, 1, 0, 1, 1)
+        temp_overlay = Gtk.Overlay()
+        grid.attach(temp_overlay, 1, 0, 1, 1)
 
-        adj_temp = Gtk.Adjustment(value=6500, lower=1000, upper=10000, step_increment=50, page_increment=100)
+        temp_gradient_bar = Gtk.Box(hexpand=True, valign=Gtk.Align.CENTER, height_request=8)
+        temp_gradient_bar.get_style_context().add_class("temp-gradient")
+        temp_overlay.add(temp_gradient_bar)
+
+        adj_temp = Gtk.Adjustment(value=6500, lower=1000, upper=10000, step_increment=50, page_increment=500)
         self.slider_temp = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=adj_temp, draw_value=False, hexpand=True)
+        self.slider_temp.get_style_context().add_class("transparent-slider")
         self.temp_slider_handler_id = self.slider_temp.connect("value-changed", self.on_slider_value_changed)
+        temp_overlay.add_overlay(self.slider_temp)
+
         self.lbl_temp_readout = Gtk.Label(label="... K", width_chars=7)
         btn_reset_temp = Gtk.Button.new_from_icon_name("edit-undo-symbolic", Gtk.IconSize.BUTTON)
         btn_reset_temp.set_tooltip_text("Reset Temperature to Default (6500K)")
         btn_reset_temp.connect("clicked", self.on_reset_slider_clicked, "temp")
 
-        grid.attach(Gtk.Image.new_from_icon_name("weather-clear-symbolic", Gtk.IconSize.BUTTON), 0, 1, 1, 1)
-        grid.attach(self.slider_temp, 1, 1, 1, 1)
-        grid.attach(self.lbl_temp_readout, 2, 1, 1, 1)
-        grid.attach(btn_reset_temp, 3, 1, 1, 1)
+        grid.attach(Gtk.Image.new_from_icon_name("weather-clear-symbolic", Gtk.IconSize.BUTTON), 0, 0, 1, 1)
+        grid.attach(self.lbl_temp_readout, 2, 0, 1, 1)
+        grid.attach(btn_reset_temp, 3, 0, 1, 1)
 
         # --- Brightness Control ---
-        # Add some vertical space
-        grid.attach(Gtk.Box(height_request=8), 0, 2, 4, 1)
+        bright_overlay = Gtk.Overlay()
+        grid.attach(bright_overlay, 1, 1, 1, 1)
 
-        bright_gradient_bar = Gtk.Box(hexpand=True, height_request=8, margin_bottom=2)
+        bright_gradient_bar = Gtk.Box(hexpand=True, valign=Gtk.Align.CENTER, height_request=8)
         bright_gradient_bar.get_style_context().add_class("bright-gradient")
-        grid.attach(bright_gradient_bar, 1, 3, 1, 1)
+        bright_overlay.add(bright_gradient_bar)
 
         adj_bright = Gtk.Adjustment(value=1.0, lower=0.1, upper=1.0, step_increment=0.01, page_increment=0.01)
         self.slider_bright = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=adj_bright, draw_value=False, hexpand=True)
+        self.slider_bright.get_style_context().add_class("transparent-slider")
         self.bright_slider_handler_id = self.slider_bright.connect("value-changed", self.on_slider_value_changed)
+        bright_overlay.add_overlay(self.slider_bright)
+
         self.lbl_bright_readout = Gtk.Label(label="... %", width_chars=7)
         btn_reset_bright = Gtk.Button.new_from_icon_name("edit-undo-symbolic", Gtk.IconSize.BUTTON)
         btn_reset_bright.set_tooltip_text("Reset Brightness to Default (100%)")
         btn_reset_bright.connect("clicked", self.on_reset_slider_clicked, "bright")
 
-        grid.attach(Gtk.Image.new_from_icon_name("display-brightness-symbolic", Gtk.IconSize.BUTTON), 0, 4, 1, 1)
-        grid.attach(self.slider_bright, 1, 4, 1, 1)
-        grid.attach(self.lbl_bright_readout, 2, 4, 1, 1)
-        grid.attach(btn_reset_bright, 3, 4, 1, 1)
+        grid.attach(Gtk.Image.new_from_icon_name("display-brightness-symbolic", Gtk.IconSize.BUTTON), 0, 1, 1, 1)
+        grid.attach(self.lbl_bright_readout, 2, 1, 1, 1)
+        grid.attach(btn_reset_bright, 3, 1, 1, 1)
 
         return frame
 
