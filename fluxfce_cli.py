@@ -120,7 +120,8 @@ def print_status(status_data: dict, verbose: bool = False):
             log.info(f"  Next Transition: Apply '{next_trans_mode}' mode at {next_trans_time.strftime('%H:%M:%S')} ({time_left_str})")
         
         if resched_time := summary.get("reschedule_time"):
-            log.info(f"  Daily Reschedule: Next check at {resched_time.strftime('%a %H:%M:%S')}")
+            # The 'resched_time' is now a pre-formatted string from the API
+            log.info(f"  Daily Reschedule: {resched_time}")
 
     if verbose:
         log.info("\n--- Verbose Details ---")
