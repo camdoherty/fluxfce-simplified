@@ -24,3 +24,4 @@ backup/fluxfce-temp-control.py
 backup/detect-backgrounds.sh
 backup/fluxfce-bright-control.py
 bug.log
+.rooignore
