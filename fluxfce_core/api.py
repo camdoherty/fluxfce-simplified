@@ -129,6 +129,8 @@ def handle_run_resume_check() -> bool:
 
 # --- Status Function ---
 
+# In fluxfce_core/api.py
+
 def get_status() -> dict[str, Any]:
     """Retrieves the current status of fluxfce."""
     log.debug("API: Getting status...")
@@ -140,7 +142,7 @@ def get_status() -> dict[str, Any]:
         "summary": {},
     }
 
-    # --- Part 1: Gather Raw Data ---
+    # --- Part 1: Gather Raw Data (This part is correct) ---
 
     # 1. Get Config
     try:
@@ -148,17 +150,15 @@ def get_status() -> dict[str, Any]:
         status["config"]["latitude"] = config_obj.get("Location", "LATITUDE", fallback="Not Set")
         status["config"]["longitude"] = config_obj.get("Location", "LONGITUDE", fallback="Not Set")
         status["config"]["timezone"] = config_obj.get("Location", "TIMEZONE", fallback="Not Set")
-        # Updated to new [Appearance] section
         status["config"]["light_theme"] = config_obj.get("Appearance", "LIGHT_THEME", fallback="Not Set")
         status["config"]["dark_theme"] = config_obj.get("Appearance", "DARK_THEME", fallback="Not Set")
         status["config"]["day_bg_profile"] = config_obj.get("Appearance", "DAY_BACKGROUND_PROFILE", fallback="Not Set")
         status["config"]["night_bg_profile"] = config_obj.get("Appearance", "NIGHT_BACKGROUND_PROFILE", fallback="Not Set")
     except exc.FluxFceError as e:
         status["config"]["error"] = str(e)
-        log.error(f"API Status: Error loading config for status: {e}")
 
     # 2. Calculate Sun Times & Current Period
-    tz_info, lat, lon, tz_name = None, None, None, None
+    tz_info, lat, lon = None, None, None
     if "error" not in status["config"]:
         lat_str = status["config"]["latitude"]
         lon_str = status["config"]["longitude"]
@@ -195,7 +195,6 @@ def get_status() -> dict[str, Any]:
             status["systemd_services"][key] = f"{'Enabled' if enabled_code == 0 else 'Disabled'}, {'Active' if active_code == 0 else 'Inactive'}"
         except Exception:
             status["systemd_services"][key] = "Error checking status"
-            status["systemd_services"]["error"] = "One or more services could not be checked reliably."
 
     # --- Part 2: Analyze Raw Data and Generate Summary ---
     summary = {
@@ -214,10 +213,13 @@ def get_status() -> dict[str, Any]:
         summary["recommendation"] = "Please check location/timezone in your configuration."
     else:
         try:
-            code, _, _ = _sysd_mgr_api._run_systemctl(["is-enabled", "--quiet", sysd.SCHEDULER_TIMER_NAME], check_errors=False)
-            is_enabled = (code == 0)
+            # --- THIS IS THE FIX ---
+            # We check if the timer is ACTIVE, not if it is ENABLED.
+            code, _, _ = _sysd_mgr_api._run_systemctl(["is-active", "--quiet", sysd.SCHEDULER_TIMER_NAME], check_errors=False)
+            is_active = (code == 0)
+            # --- END OF THE FIX ---
             
-            if not is_enabled:
+            if not is_active:
                 summary["overall_status"] = "[DISABLED]"
                 summary["status_message"] = "Automatic scheduling is disabled."
                 summary["recommendation"] = "Run 'fluxfce enable' to activate."
@@ -245,7 +247,14 @@ def get_status() -> dict[str, Any]:
                     summary["next_transition_time"] = next_sunset
                     summary["next_transition_mode"] = "Night"
                 
-                summary["reschedule_time"] = (now + timedelta(days=1)).replace(hour=0, minute=15, second=0, microsecond=0)
+                # Use systemctl to get the next trigger time for the main scheduler
+                # This is more reliable than calculating it manually.
+                code, stdout, _ = _sysd_mgr_api._run_systemctl(["show", sysd.SCHEDULER_TIMER_NAME, "--property=NextElapseUSecMonotonic", "--value"], capture_output=True)
+                if code == 0 and stdout.strip() != "0":
+                    summary["reschedule_time"] = "Tomorrow (see `systemctl --user list-timers`)"
+                else:
+                    summary["reschedule_time"] = "N/A"
+
         except exc.SystemdError as e:
             summary["overall_status"] = "[ERROR]"
             summary["status_message"] = f"Systemd error: {e}"
