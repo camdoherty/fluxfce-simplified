@@ -31,8 +31,11 @@ COLOR_STYLE_MAP = {"solid": 0, "horizontal": 1, "vertical": 2}
 STYLE_IMAGE_MAP = {v: k for k, v in IMAGE_STYLE_MAP.items()}
 STYLE_COLOR_MAP = {v: k for k, v in COLOR_STYLE_MAP.items()}
 
-# --- Default Profile Content ---
-ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+# --- MODIFICATION: Point to system-wide assets location ---
+# The package will install assets here.
+ASSETS_DIR = Path("/usr/share/fluxfce/assets")
+# --- END MODIFICATION ---
+
 DEFAULT_DAY_ASSET = ASSETS_DIR / "default-day.png"
 DEFAULT_NIGHT_ASSET = ASSETS_DIR / "default-night.png"
 

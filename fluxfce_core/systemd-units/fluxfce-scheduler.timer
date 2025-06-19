@@ -1,0 +1,11 @@
+[Unit]
+Description=FluxFCE Scheduler Timer
+PartOf=graphical-session.target
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1h
+Unit=fluxfce-scheduler.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,10 @@
+#!/usr/bin/make -f
+# See debhelper(7) for details.
+
+export PYBUILD_NAME=fluxfce
+
+%:
+	dh $@ --with python3
+
+override_dh_auto_install:
+	dh_auto_install --destdir debian/fluxfce/

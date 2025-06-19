@@ -1,0 +1,9 @@
+# Static Systemd user units
+fluxfce_core/systemd-units/*.service /usr/lib/systemd/user/
+fluxfce_core/systemd-units/*.timer /usr/lib/systemd/user/
+
+# Default background assets
+fluxfce_core/assets/*.png /usr/share/fluxfce/assets/
+
+# Autostart file for the GUI tray icon
+debian/fluxfce-gui.desktop /etc/xdg/autostart/

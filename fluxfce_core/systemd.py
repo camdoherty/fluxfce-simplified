@@ -22,7 +22,12 @@ log = logging.getLogger(__name__)
 
 # --- Constants ---
 _APP_NAME = "fluxfce" # Application name, used in unit descriptions and names
-SYSTEMD_USER_DIR = pathlib.Path.home() / ".config" / "systemd" / "user"
+
+# --- MODIFICATION: Point to the system-wide location for packaged units ---
+# The original path is commented out for reference.
+# SYSTEMD_USER_DIR = pathlib.Path.home() / ".config" / "systemd" / "user"
+SYSTEMD_USER_DIR = pathlib.Path("/usr/lib/systemd/user")
+# --- END MODIFICATION ---
 
 # --- Static Unit Names and File Paths ---
 SCHEDULER_TIMER_NAME = f"{_APP_NAME}-scheduler.timer"

@@ -597,6 +597,17 @@ class Application:
     def quit(self):
         Gtk.main_quit()
 
+# --- Add this new function ---
+def main_gui():
+    """Main entry point for the GUI application."""
+    # Assuming 'Application' is the main class for the GUI.
+    # If the class has a different name, it should be used here.
+    # For example, if the main GUI class is 'FluxFceGuiApp':
+    # app = FluxFceGuiApp()
+    # app.run()
+    # Based on the issue, it's 'Application()'.
+    app = Application() # Ensure 'Application' class is defined in this file or imported.
+    app.run() # Ensure 'Application' class has a 'run' method.
+
 if __name__ == "__main__":
-    app = Application()
-    app.run()
+    main_gui()

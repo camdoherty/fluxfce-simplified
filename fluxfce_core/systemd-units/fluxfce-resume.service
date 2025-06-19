@@ -1,0 +1,13 @@
+[Unit]
+Description=FluxFCE Actions on System Resume
+After=suspend.target hybrid-sleep.target hibernate.target
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/fluxfce on-resume
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=suspend.target hybrid-sleep.target hibernate.target

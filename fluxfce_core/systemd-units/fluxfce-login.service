@@ -1,0 +1,12 @@
+[Unit]
+Description=FluxFCE Actions on User Login
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/fluxfce on-login
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical-session.target

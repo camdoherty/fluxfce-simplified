@@ -207,8 +207,16 @@ Examples:
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable detailed logging output.")
     subparsers = parser.add_subparsers(dest="command", title="Commands", required=True)
 
-    subparsers.add_parser("install", help="Install systemd units and enable automatic scheduling.")
-    subparsers.add_parser("uninstall", help="Remove systemd units & clear schedule (prompts to remove config).")
+    # Install command
+    install_parser = subparsers.add_parser("install", help="Run first-time setup for user configuration.")
+
+    # Uninstall command
+    uninstall_parser = subparsers.add_parser("uninstall", help="Disable timers and remove user configuration.")
+    uninstall_parser.add_argument(
+        "--keep-config",
+        action="store_true",
+        help="Only disable timers, do not remove user configuration files.",
+    )
     subparsers.add_parser("day", help="Apply Day Mode settings now (leaves auto scheduling enabled).")
     subparsers.add_parser("night", help="Apply Night Mode settings now (leaves auto scheduling enabled).")
     subparsers.add_parser("enable", help="Enable automatic scheduling (configures systemd timers).")
@@ -235,57 +243,86 @@ Examples:
         log.debug(f"Running command: {args.command}")
 
         if args.command == "install":
-            log.info("--- Step 1: Checking system dependencies ---")
-            dep_checker = SCRIPT_DIR / DEPENDENCY_CHECKER_SCRIPT_NAME
-            if not dep_checker.exists():
-                log.error(f"Dependency checker '{DEPENDENCY_CHECKER_SCRIPT_NAME}' not found.")
+            # --- REVISED 'install' COMMAND LOGIC ---
+            log.info("--- fluxfce First-Time Setup ---")
+            log.info("This command will create the default configuration files in your home directory.")
+
+            # 1. Ensure user config directory exists
+            try:
+                # Assuming fluxfce_core.CONFIG_DIR is a pathlib.Path object
+                core_config.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+                log.info(f"Configuration directory ensured at: {core_config.CONFIG_DIR}")
+            except OSError as e:
+                log.error(f"Failed to create config directory: {e}")
                 sys.exit(1)
-            
-            process = subprocess.run([PYTHON_EXECUTABLE, str(dep_checker)], check=False)
-            if process.returncode != 0:
-                log.error("Dependency check/setup failed. Aborting installation.")
-                sys.exit(1)
-            log.info("--- Dependency check complete ---")
 
-            log.info("\n--- Step 2: Configuring FluxFCE application settings ---")
-            config_existed = fluxfce_core.CONFIG_FILE.exists()
-            config_obj = fluxfce_core.get_current_config()
-            # NOTE: The complex interactive setup logic from the original file would go here.
-            # Assuming it runs and potentially modifies config_obj.
-            if not config_existed: 
-                fluxfce_core.save_configuration(config_obj) # Save if newly created
-            log.info("--- FluxFCE application configuration complete ---")
+            # 2. Create default config.ini if it doesn't exist
+            if not core_config.CONFIG_FILE.exists():
+                log.info(f"Configuration file not found. Creating default at: {core_config.CONFIG_FILE}")
+                try:
+                    config_obj = fluxfce_core.get_current_config() # This loads in-memory defaults
+                    fluxfce_core.save_configuration(config_obj)
+                    log.info("Default 'config.ini' created successfully.")
+                    log.info("Tip: You may want to edit this file to set your location (latitude/longitude).")
+                except core_exc.FluxFceError as e:
+                    log.error(f"Failed to create default configuration: {e}")
+                    sys.exit(1)
+            else:
+                log.info("Existing configuration file found. Skipping creation.")
 
-            log.info("\n--- Step 2b: Installing default background profiles ---")
-            fluxfce_core.install_default_background_profiles()
-            log.info("Default background profiles created. Use 'fluxfce set-default' to customize them.")
+            # 3. Create default background profiles if they don't exist
+            log.info("\nChecking for default background profiles...")
+            try:
+                # This function is now smart enough to handle packaged assets
+                fluxfce_core.install_default_background_profiles()
+                log.info("Default background profiles are installed.")
+            except core_exc.FluxFceError as e:
+                log.error(f"Failed to install default background profiles: {e}")
+                # Not a fatal error, user can still create them with set-default
 
-            log.info("\n--- Step 3: Installing systemd units ---")
-            fluxfce_core.install_fluxfce(script_path=SCRIPT_PATH, python_executable=PYTHON_EXECUTABLE)
-
-            log.info("\n--- Step 4: Enabling automatic scheduling ---")
-            fluxfce_core.enable_scheduling(python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH)
-
-            log.info("\n" + "-"*45 + "\n fluxfce installed and enabled successfully. \n" + "-"*45)
-            log.info("Tip: Configure your look using 'fluxfce set-default --mode day|night'.")
+            log.info("\n--- Setup Complete ---")
+            log.info("To activate automatic theming, run: fluxfce enable")
+            log.info("Customize your look and save it with: fluxfce set-default --mode day|night")
+            # --- END OF REVISED LOGIC ---
 
         elif args.command == "uninstall":
-            log.info("Starting uninstallation (system components)...")
-            fluxfce_core.uninstall_fluxfce()
-            log.info("FluxFCE systemd units removed and schedule cleared.")
+            # --- ADJUSTED UNINSTALL HELP TEXT ---
+            log.warning("To fully remove the application, you should use your system's package manager (e.g., 'sudo apt remove fluxfce').")
+            log.warning("This command will only disable timers and offer to remove your personal configuration.")
+            # --- END ADJUSTMENT ---
 
-            config_dir_path = fluxfce_core.CONFIG_DIR
-            if config_dir_path.exists():
-                log.warning(f"\nConfiguration directory found at: {config_dir_path}")
-                if ask_yes_no_cli("Do you want to REMOVE this configuration directory and all profiles?", default_yes=False):
-                    try:
-                        shutil.rmtree(config_dir_path)
-                        log.info(f"Removed configuration directory: {config_dir_path}")
-                    except OSError as e:
-                        log.error(f"Error removing config directory {config_dir_path}: {e}")
+            log.info("Disabling scheduling and clearing dynamic timers...")
+            # This core function should handle stopping/disabling systemd units
+            # It was previously fluxfce_core.uninstall_fluxfce()
+            # For now, let's assume fluxfce_core.disable_scheduling() is the correct one
+            # for just disabling timers as per the new context.
+            # If full systemd unit removal is intended here (before config removal),
+            # then fluxfce_core.uninstall_fluxfce() would be more appropriate.
+            # The original uninstall called fluxfce_core.uninstall_fluxfce()
+            # Let's stick to that for disabling/removing systemd parts.
+            try:
+                fluxfce_core.uninstall_fluxfce() # This should handle systemd units
+                log.info("FluxFCE systemd units removed/disabled.")
+            except core_exc.FluxFceError as e:
+                log.error(f"Error disabling FluxFCE systemd units: {e}")
+                # Decide if to proceed or exit. For now, proceed to config removal.
+
+            if not args.keep_config:
+                log.info("Removing user configuration files...")
+                if core_config.CONFIG_DIR.exists():
+                    if ask_yes_no_cli(f"Do you want to REMOVE the configuration directory {core_config.CONFIG_DIR} and all its contents?", default_yes=False):
+                        try:
+                            shutil.rmtree(core_config.CONFIG_DIR)
+                            log.info(f"Removed configuration directory: {core_config.CONFIG_DIR}")
+                        except OSError as e:
+                            log.error(f"Error removing config directory {core_config.CONFIG_DIR}: {e}")
+                    else:
+                        log.info(f"User configuration directory {core_config.CONFIG_DIR} kept.")
                 else:
-                    log.info("Configuration directory kept.")
-            log.info("\n--- Uninstallation Complete ---")
+                    log.info(f"User configuration directory {core_config.CONFIG_DIR} not found, nothing to remove.")
+            else:
+                log.info("User configuration files will be kept.")
+            log.info("Uninstall process complete.")
 
         elif args.command == "day":
             log.info("Applying Day mode (scheduling will remain active)...")

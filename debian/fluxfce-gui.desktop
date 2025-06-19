@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=FluxFCE GUI
+Comment=Manage automatic day/night theming
+Exec=/usr/bin/fluxfce-gui
+Icon=emblem-synchronizing-symbolic
+Terminal=false
+Type=Application
+Categories=Utility;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true

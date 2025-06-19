@@ -1,0 +1,32 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "remove" ]; then
+    # Attempt to stop and disable the units for all logged-in users.
+    for UID_PATH in /run/user/*; do
+        if [ -d "$UID_PATH" ] && [ -S "$UID_PATH/bus" ]; then
+            UID=$(basename "$UID_PATH")
+            # Ensure UID is a number
+            if [ -n "$UID" ] && [ "$UID" -eq "$UID" ] 2>/dev/null; then
+                echo "Processing user $UID for service removal..."
+                HOME_DIR=$(getent passwd "$UID" | cut -d: -f6)
+                if [ -n "$HOME_DIR" ] && [ -d "$HOME_DIR" ]; then
+                    export XDG_RUNTIME_DIR="/run/user/$UID"
+                    export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$UID/bus"
+
+                    # Check if systemd user instance is running
+                    if sudo -u "#$UID" systemctl --user is-system-running >/dev/null 2>&1; then
+                        echo "Disabling and stopping fluxfce services for UID $UID"
+                        sudo -u "#$UID" systemctl --user --now disable fluxfce-scheduler.timer fluxfce-login.service fluxfce-resume.service >/dev/null 2>&1 || echo "Failed to disable/stop services for $UID, continuing..."
+                    else
+                        echo "Systemd user instance not running for UID $UID or not accessible for service removal."
+                    fi
+                else
+                    echo "Could not determine home directory for UID $UID for service removal."
+                fi
+            fi
+        fi
+    done
+fi
+
+exit 0

@@ -1,0 +1,12 @@
+[Unit]
+Description=FluxFCE Scheduler Service
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/fluxfce schedule-dynamic-transitions
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical-session.target

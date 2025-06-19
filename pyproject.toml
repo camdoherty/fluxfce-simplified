@@ -22,3 +22,18 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 docstring-code-format = true
 docstring-code-line-length = "dynamic"
+
+# --- Add this new section ---
+[project]
+name = "fluxfce"
+version = "1.0.0" # Or your desired version
+description = "Simplified XFCE Theming Tool based on sunrise/sunset"
+requires-python = ">=3.9"
+# Dependencies will be handled by the Debian package, but this is good practice
+dependencies = [
+    # Gtk dependencies are system-level, not listed here
+]
+
+[project.scripts]
+fluxfce = "fluxfce_cli:main"
+fluxfce-gui = "fluxfce_gui:main_gui"
