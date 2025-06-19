@@ -2,7 +2,6 @@
 
 import logging
 import pathlib
-import sys
 from datetime import datetime
 from typing import Optional
 
@@ -15,24 +14,22 @@ log = logging.getLogger(__name__)
 _APP_NAME = "fluxfce"
 
 # --- MODIFICATION: Define TWO separate directories ---
-# The location for STATIC units installed by the package
+# The location for STATIC units installed by the package.
+# This path is still needed for context but is not written to by the app.
 SYSTEMD_INSTALL_DIR = pathlib.Path("/usr/lib/systemd/user")
-# The location for DYNAMIC units created by the app at runtime
+# The location for DYNAMIC units created by the app at runtime.
 SYSTEMD_USER_CONFIG_DIR = pathlib.Path.home() / ".config" / "systemd" / "user"
 # --- END MODIFICATION ---
 
-# --- Static Unit Names and File Paths ---
+# --- Unit Names ---
 SCHEDULER_TIMER_NAME = f"{_APP_NAME}-scheduler.timer"
 SCHEDULER_SERVICE_NAME = f"{_APP_NAME}-scheduler.service"
-# ... (rest of the static names are fine)
 LOGIN_SERVICE_NAME = f"{_APP_NAME}-login.service"
 RESUME_SERVICE_NAME = f"{_APP_NAME}-resume.service"
-
-# --- Dynamic Unit Names ---
 SUNRISE_EVENT_TIMER_NAME = f"{_APP_NAME}-sunrise-event.timer"
 SUNSET_EVENT_TIMER_NAME = f"{_APP_NAME}-sunset-event.timer"
 
-# --- Helper list for removal ---
+# --- Helper list for `reset-failed` ---
 ALL_POTENTIAL_FLUXFCE_UNIT_NAMES = [
     SCHEDULER_TIMER_NAME,
     SCHEDULER_SERVICE_NAME,
@@ -43,7 +40,6 @@ ALL_POTENTIAL_FLUXFCE_UNIT_NAMES = [
     SUNRISE_EVENT_TIMER_NAME,
     SUNSET_EVENT_TIMER_NAME,
 ]
-
 
 class SystemdManager:
     """Handles interactions with systemd user units for fluxfce."""
@@ -58,6 +54,7 @@ class SystemdManager:
     def _run_systemctl(
         self, args: list[str], check_errors: bool = True, capture_output: bool = False
     ) -> tuple[int, str, str]:
+        """Runs a systemctl --user command."""
         cmd = ["systemctl", "--user", *args]
         try:
             code, stdout, stderr = helpers.run_command(cmd, check=False, capture=capture_output)
@@ -70,32 +67,31 @@ class SystemdManager:
 
     def remove_dynamic_timers(self):
         """Stops and removes only the dynamic timer files from the user's config."""
-        log.info("Removing dynamic sunrise/sunset event timers...")
+        log.info("Removing dynamic sunrise/sunset event timers from user config...")
         dynamic_timer_names = [SUNRISE_EVENT_TIMER_NAME, SUNSET_EVENT_TIMER_NAME]
         
         self._run_systemctl(["stop", *dynamic_timer_names], check_errors=False, capture_output=True)
         log.debug("Attempted to stop dynamic event timers.")
 
-        # --- MODIFICATION: Remove from user config dir ---
         for timer_name in dynamic_timer_names:
             timer_path = SYSTEMD_USER_CONFIG_DIR / timer_name
             try:
-                timer_path.unlink(missing_ok=True)
-                log.debug(f"Removed dynamic timer file: {timer_path} (if it existed)")
+                if timer_path.exists():
+                    timer_path.unlink()
+                    log.debug(f"Removed dynamic timer file: {timer_path}")
             except OSError as e:
                 log.warning(f"Could not remove dynamic timer {timer_path}: {e}")
-        # --- END MODIFICATION ---
-
+        
+        # After removing files, reload the daemon to make it forget about them.
         self._run_systemctl(["daemon-reload"], capture_output=True)
         log.debug("Systemd daemon reloaded after removing dynamic timers.")
-
 
     def write_dynamic_event_timer_unit_file(
         self,
         mode: str, 
         utc_execution_time: datetime,
     ) -> bool:
-        """Creates or overwrites a dynamic event timer file in the user's config."""
+        """Creates or overwrites a dynamic event timer file in the user's config directory."""
         if mode not in ["day", "night"]:
             raise ValueError(f"Invalid mode '{mode}' for dynamic event timer.")
 
@@ -103,10 +99,9 @@ class SystemdManager:
             raise ValueError("utc_execution_time must be timezone-aware.")
 
         timer_name = SUNRISE_EVENT_TIMER_NAME if mode == "day" else SUNSET_EVENT_TIMER_NAME
-        # --- MODIFICATION: Write to user config dir ---
+        # MODIFICATION: Write to the user's local systemd directory
         timer_file_path = SYSTEMD_USER_CONFIG_DIR / timer_name
-        # --- END MODIFICATION ---
-
+        
         service_instance_to_trigger = f"{self.app_name}-apply-transition@{mode}.service"
         on_calendar_utc_str = utc_execution_time.strftime('%Y-%m-%d %H:%M:%S UTC')
 
@@ -126,15 +121,10 @@ WakeSystem=false
 # Dynamic timers are not "WantedBy" but are started/stopped by the scheduler.
 """
         try:
-            # --- MODIFICATION: Ensure user config dir exists ---
+            # Ensure the user's local systemd directory exists
             SYSTEMD_USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-            # --- END MODIFICATION ---
             timer_file_path.write_text(timer_content, encoding="utf-8")
             log.info(f"Written dynamic timer file: {timer_file_path} for event at {on_calendar_utc_str}")
             return True
         except OSError as e:
             raise SystemdError(f"Failed to write dynamic timer file {timer_file_path}: {e}") from e
-
-# Note: The install_units and remove_units methods for the package are now handled
-# by the package manager (dpkg), so they are no longer needed in the runtime code.
-# The logic for `disable_scheduling` in scheduler.py will use the new `remove_dynamic_timers` method.

@@ -184,14 +184,13 @@ def disable_scheduling() -> bool:
     log.info("Scheduler: Disabling scheduling and removing dynamic systemd timers...")
     try:
         # Stop and disable the main static scheduler timer
-        _sysd_mgr_scheduler._run_systemctl(["stop", sysd.SCHEDULER_TIMER_NAME], check_errors=False, capture_output=True)
+        _sysd_mgr_scheduler._run_systemctl(["stop", "--now", sysd.SCHEDULER_TIMER_NAME], check_errors=False, capture_output=True)
         _sysd_mgr_scheduler._run_systemctl(["disable", sysd.SCHEDULER_TIMER_NAME], check_errors=False, capture_output=True)
         log.debug(f"Scheduler: Main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}) stopped and disabled.")
 
-        # --- MODIFICATION: Use the new targeted removal function ---
+        # MODIFICATION: Use the new targeted removal function
         # This removes dynamic timers from ~/.config/systemd/user
         _sysd_mgr_scheduler.remove_dynamic_timers()
-        # --- END MODIFICATION ---
         
         # Reset failed status on all units, just in case
         _sysd_mgr_scheduler._run_systemctl(["reset-failed", *sysd.ALL_POTENTIAL_FLUXFCE_UNIT_NAMES], check_errors=False, capture_output=True)
