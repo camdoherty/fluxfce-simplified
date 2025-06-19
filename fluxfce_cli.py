@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
 
 """
-fluxfce (CLI) - Simplified XFCE Theming Tool (Systemd Timer Version)
+fluxfce (CLI) - Simplified XFCE Theming Tool
 
 Command-line interface for managing automatic XFCE theme/background/screen
 switching based on sunrise/sunset times using the fluxfce_core library.
-This version uses systemd timers for scheduling.
 """
 
 import argparse
 import logging
-import pathlib
 import shutil
-import subprocess
 import sys
 from datetime import datetime
 
@@ -25,22 +22,16 @@ try:
         LOGIN_SERVICE_NAME, RESUME_SERVICE_NAME
     )
     from fluxfce_core import config as core_config
-    from fluxfce_core import install_default_background_profiles
 except ImportError as e:
     print(f"Error: Failed to import the fluxfce_core library: {e}", file=sys.stderr)
     print("Ensure fluxfce_core is installed or available in your Python path.", file=sys.stderr)
     sys.exit(1)
 
-# --- Global Variables ---
-SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
-SCRIPT_PATH = str(pathlib.Path(__file__).resolve())
-PYTHON_EXECUTABLE = sys.executable
-DEPENDENCY_CHECKER_SCRIPT_NAME = "fluxfce_deps_check.py"
+# --- Obsolete Global Variables Removed ---
 
 log = logging.getLogger("fluxfce_cli")
 
 # --- ANSI Color Codes for Terminal Output ---
-# Check if stdout is a TTY (interactive terminal) to decide whether to use colors.
 IS_TTY = sys.stdout.isatty()
 
 class AnsiColors:
@@ -49,8 +40,7 @@ class AnsiColors:
     YELLOW = "\033[93m" if IS_TTY else ""
     RESET = "\033[0m" if IS_TTY else ""
 
-
-# --- CLI Logging Setup ---
+# --- CLI Logging Setup (Unchanged) ---
 def setup_cli_logging(verbose: bool):
     """Configures logging for the CLI based on verbosity."""
     cli_log_level = logging.DEBUG if verbose else logging.INFO
@@ -90,7 +80,7 @@ def setup_cli_logging(verbose: bool):
         core_logger.debug("Verbose logging enabled for fluxfce_core (via CLI).")
 
 
-# --- Output Formatting ---
+# --- Output Formatting (Unchanged) ---
 def print_status(status_data: dict, verbose: bool = False):
     """Formats and prints the status dictionary with colors."""
     log.info("--- fluxfce Status ---")
@@ -98,18 +88,16 @@ def print_status(status_data: dict, verbose: bool = False):
 
     log.info("\n[Scheduling Status]")
     
-    # --- START: Colorized Status Logic ---
     status_text = summary.get("overall_status", "[UNKNOWN]")
     if "[OK]" in status_text:
         status_str = f"{AnsiColors.GREEN}{status_text}{AnsiColors.RESET}"
     elif "[DISABLED]" in status_text or "[ERROR]" in status_text:
         status_str = f"{AnsiColors.RED}{status_text}{AnsiColors.RESET}"
-    else:  # For "[UNKNOWN]"
+    else:
         status_str = f"{AnsiColors.YELLOW}{status_text}{AnsiColors.RESET}"
     
     if summary.get("overall_status"):
         log.info(f"  Overall Status:  {status_str} {summary.get('status_message', '')}")
-    # --- END: Colorized Status Logic ---
 
     if summary.get("recommendation"):
         log.info(f"  Recommendation:  {summary['recommendation']}")
@@ -170,8 +158,7 @@ def print_status(status_data: dict, verbose: bool = False):
         log.info("\n(Run with -v for detailed configuration and systemd service status)")
     log.info("-" * 25)
 
-
-# --- User Interaction Helper ---
+# --- User Interaction Helper (Unchanged) ---
 def ask_yes_no_cli(prompt: str, default_yes: bool = False) -> bool:
     """Asks a yes/no question and returns True for yes, False for no."""
     suffix = "[Y/n]" if default_yes else "[y/N]"
@@ -187,7 +174,6 @@ def ask_yes_no_cli(prompt: str, default_yes: bool = False) -> bool:
             print("\nPrompt interrupted. Assuming 'no'.")
             return False
 
-
 # --- Main Execution Logic ---
 def main():
     """Parses command-line arguments and dispatches to appropriate command handlers."""
@@ -196,27 +182,29 @@ def main():
         formatter_class=argparse.RawTextHelpFormatter,
         epilog="""
 Examples:
-  fluxfce install          # Interactive setup, install units, and enable scheduling
-  fluxfce status -v        # Show detailed status, including profiles and services
-  fluxfce day              # Apply Day mode now without disabling auto switching
-  fluxfce enable           # Enable automatic scheduling (sets up systemd timers)
-  fluxfce set-default --mode day # Save current desktop look as the new Day default
-  fluxfce uninstall        # Remove systemd units and schedule (prompts for config removal)
+  fluxfce install                 # Run first-time setup for user configuration files.
+  fluxfce status -v               # Show detailed status, including profiles and services.
+  fluxfce day                     # Apply Day mode now without disabling auto switching.
+  fluxfce enable                  # Enable automatic scheduling.
+  fluxfce set-default --mode day  # Save current desktop look as the new Day default.
+  fluxfce uninstall               # Disable timers and remove user configuration.
 """,
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable detailed logging output.")
     subparsers = parser.add_subparsers(dest="command", title="Commands", required=True)
 
-    # Install command
-    install_parser = subparsers.add_parser("install", help="Run first-time setup for user configuration.")
-
-    # Uninstall command
-    uninstall_parser = subparsers.add_parser("uninstall", help="Disable timers and remove user configuration.")
+    # --- UPDATED HELP TEXT ---
+    subparsers.add_parser("install", help="Run first-time setup for user configuration files.")
+    uninstall_parser = subparsers.add_parser(
+        "uninstall", help="Disable timers and remove user configuration (use 'apt purge' to remove the app)."
+    )
     uninstall_parser.add_argument(
         "--keep-config",
         action="store_true",
         help="Only disable timers, do not remove user configuration files.",
     )
+    # --- END UPDATED HELP TEXT ---
+
     subparsers.add_parser("day", help="Apply Day Mode settings now (leaves auto scheduling enabled).")
     subparsers.add_parser("night", help="Apply Night Mode settings now (leaves auto scheduling enabled).")
     subparsers.add_parser("enable", help="Enable automatic scheduling (configures systemd timers).")
@@ -243,69 +231,45 @@ Examples:
         log.debug(f"Running command: {args.command}")
 
         if args.command == "install":
-            # --- REVISED 'install' COMMAND LOGIC ---
-            log.info("--- fluxfce First-Time Setup ---")
-            log.info("This command will create the default configuration files in your home directory.")
-
-            # 1. Ensure user config directory exists
+            log.info("--- fluxfce First-Time User Setup ---")
+            log.info("This command will create default configuration files in your home directory.")
             try:
-                # Assuming fluxfce_core.CONFIG_DIR is a pathlib.Path object
                 core_config.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
                 log.info(f"Configuration directory ensured at: {core_config.CONFIG_DIR}")
             except OSError as e:
                 log.error(f"Failed to create config directory: {e}")
                 sys.exit(1)
 
-            # 2. Create default config.ini if it doesn't exist
             if not core_config.CONFIG_FILE.exists():
                 log.info(f"Configuration file not found. Creating default at: {core_config.CONFIG_FILE}")
                 try:
-                    config_obj = fluxfce_core.get_current_config() # This loads in-memory defaults
+                    config_obj = fluxfce_core.get_current_config()
                     fluxfce_core.save_configuration(config_obj)
                     log.info("Default 'config.ini' created successfully.")
-                    log.info("Tip: You may want to edit this file to set your location (latitude/longitude).")
                 except core_exc.FluxFceError as e:
                     log.error(f"Failed to create default configuration: {e}")
                     sys.exit(1)
             else:
                 log.info("Existing configuration file found. Skipping creation.")
 
-            # 3. Create default background profiles if they don't exist
             log.info("\nChecking for default background profiles...")
             try:
-                # This function is now smart enough to handle packaged assets
                 fluxfce_core.install_default_background_profiles()
                 log.info("Default background profiles are installed.")
             except core_exc.FluxFceError as e:
                 log.error(f"Failed to install default background profiles: {e}")
-                # Not a fatal error, user can still create them with set-default
 
             log.info("\n--- Setup Complete ---")
             log.info("To activate automatic theming, run: fluxfce enable")
             log.info("Customize your look and save it with: fluxfce set-default --mode day|night")
-            # --- END OF REVISED LOGIC ---
 
         elif args.command == "uninstall":
-            # --- ADJUSTED UNINSTALL HELP TEXT ---
-            log.warning("To fully remove the application, you should use your system's package manager (e.g., 'sudo apt remove fluxfce').")
-            log.warning("This command will only disable timers and offer to remove your personal configuration.")
-            # --- END ADJUSTMENT ---
+            log.warning("To fully remove the application, use your system's package manager (e.g., 'sudo apt purge fluxfce').")
+            log.warning("This command only disables timers and offers to remove your personal configuration.")
 
             log.info("Disabling scheduling and clearing dynamic timers...")
-            # This core function should handle stopping/disabling systemd units
-            # It was previously fluxfce_core.uninstall_fluxfce()
-            # For now, let's assume fluxfce_core.disable_scheduling() is the correct one
-            # for just disabling timers as per the new context.
-            # If full systemd unit removal is intended here (before config removal),
-            # then fluxfce_core.uninstall_fluxfce() would be more appropriate.
-            # The original uninstall called fluxfce_core.uninstall_fluxfce()
-            # Let's stick to that for disabling/removing systemd parts.
-            try:
-                fluxfce_core.uninstall_fluxfce() # This should handle systemd units
-                log.info("FluxFCE systemd units removed/disabled.")
-            except core_exc.FluxFceError as e:
-                log.error(f"Error disabling FluxFCE systemd units: {e}")
-                # Decide if to proceed or exit. For now, proceed to config removal.
+            fluxfce_core.disable_scheduling()
+            log.info("FluxFCE scheduling disabled.")
 
             if not args.keep_config:
                 log.info("Removing user configuration files...")
@@ -335,10 +299,11 @@ Examples:
         elif args.command == "enable":
             log.info("Enabling scheduling via systemd timers...")
             if not core_config.CONFIG_FILE.exists():
-                log.error(f"Config file {core_config.CONFIG_FILE} not found. Run 'install' first.")
+                log.error(f"Config file {core_config.CONFIG_FILE} not found. Run 'fluxfce install' first.")
                 exit_code = 1
             else:
-                fluxfce_core.enable_scheduling(python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH)
+                # --- SIMPLIFIED CALL ---
+                fluxfce_core.enable_scheduling()
                 log.info("Automatic theme scheduling enabled.")
 
         elif args.command == "disable":
@@ -361,8 +326,6 @@ Examples:
         elif args.command == "set-default":
             mode = args.default_mode
             log.info(f"Setting current look as default for {mode.capitalize()} mode...")
-            log.info("This will save the current GTK theme, screen settings, and overwrite the")
-            log.info(f"'{mode}' background profile with your current desktop background(s).")
             fluxfce_core.set_default_from_current(mode)
             log.info(f"Current desktop settings saved as default for {mode.capitalize()} mode.")
 
@@ -371,9 +334,8 @@ Examples:
             exit_code = 0 if success else 1
         
         elif args.command == "schedule-dynamic-transitions":
-            success = fluxfce_core.handle_schedule_dynamic_transitions_command(
-                python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH
-            )
+            # --- SIMPLIFIED CALL ---
+            success = fluxfce_core.handle_schedule_dynamic_transitions_command()
             exit_code = 0 if success else 1
 
         elif args.command == "run-login-check":

@@ -75,10 +75,10 @@ def uninstall_fluxfce() -> bool:
 
 # --- Scheduling Façade ---
 
-def enable_scheduling(python_exe_path: str, script_exe_path: str) -> bool:
+def enable_scheduling() -> bool:
     """API Façade: Enables scheduling and applies the theme for the current solar period."""
     log.info("API Facade: Attempting to enable scheduling...")
-    scheduler.enable_scheduling(python_exe_path=python_exe_path, script_exe_path=script_exe_path)
+    scheduler.enable_scheduling() # Simplified call
     log.info("API Facade: Scheduling setup. Applying theme for current solar period...")
     return desktop_manager.handle_run_login_check()
 
@@ -87,10 +87,10 @@ def disable_scheduling() -> bool:
     log.info("API Facade: Calling scheduler.disable_scheduling...")
     return scheduler.disable_scheduling()
 
-def handle_schedule_dynamic_transitions_command(python_exe_path: str, script_exe_path: str) -> bool:
+def handle_schedule_dynamic_transitions_command() -> bool:
     """API Façade: For CLI internal command to call the scheduler function."""
     log.debug("API Facade: Relaying 'schedule-dynamic-transitions' to scheduler module.")
-    return scheduler.handle_schedule_dynamic_transitions_command(python_exe_path, script_exe_path)
+    return scheduler.handle_schedule_dynamic_transitions_command() # Simplified call
 
 # --- Desktop Appearance Façade ---
 

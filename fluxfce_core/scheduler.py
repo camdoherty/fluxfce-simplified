@@ -57,9 +57,7 @@ _sysd_mgr_scheduler = sysd.SystemdManager() # Module-level instance for SystemdM
 
 # --- Scheduling Functions (Moved from api.py) ---
 
-def handle_schedule_dynamic_transitions_command(
-    python_exe_path: str, script_exe_path: str
-) -> bool:
+def handle_schedule_dynamic_transitions_command() -> bool:
     """
     Calculates next sun events, writes dynamic systemd timer files, reloads the
     systemd daemon, and starts the dynamic timers.
@@ -149,31 +147,17 @@ def handle_schedule_dynamic_transitions_command(
         log.exception(f"Scheduler: Unexpected error during 'schedule-dynamic-transitions': {e}")
         return False
 
-def enable_scheduling(
-    python_exe_path: str,
-    script_exe_path: str,
-    # It's good practice for higher-level functions like this to call lower-level ones.
-    # We'll need access to the desktop_manager's apply current function.
-    # For now, let's assume it will be called from api.py after this returns.
-    # Or we could import desktop_manager here if we make it a hard dependency.
-    # Let's keep it simple for now and assume api.py handles the apply_current_period.
-) -> bool:
+def enable_scheduling() -> bool:
     """
-    Enables automatic theme transitions:
-    1. Defines dynamic event timers for the next sunrise/sunset.
-    2. Enables and starts the main daily scheduler timer (`fluxfce-scheduler.timer`).
+    Enables automatic theme transitions by calling the dynamic scheduler and
+    enabling the main static scheduler timer.
     """
-    # Note: The application of the current theme (via handle_run_login_check)
-    # will be handled by the calling function in api.py after this function succeeds.
-
     log.info("Scheduler: Enabling scheduling with dynamic systemd timers...")
     try:
-        define_schedule_ok = handle_schedule_dynamic_transitions_command(
-            python_exe_path=python_exe_path, script_exe_path=script_exe_path
-        )
+        # Simplified call
+        define_schedule_ok = handle_schedule_dynamic_transitions_command()
         if not define_schedule_ok:
-            log.warning("Scheduler: Initial definition of dynamic event timers failed or scheduled nothing, "
-                        "but proceeding to enable the main daily scheduler.")
+            log.warning("Scheduler: Initial definition of dynamic event timers failed, but proceeding to enable the main daily scheduler.")
 
         code, _, stderr = _sysd_mgr_scheduler._run_systemctl(
             ["enable", "--now", sysd.SCHEDULER_TIMER_NAME], capture_output=True
@@ -183,8 +167,7 @@ def enable_scheduling(
                 f"Scheduler: Failed to enable and start main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}): {stderr.strip()}"
             )
         
-        log.info(f"Scheduler: Main scheduler ({sysd.SCHEDULER_TIMER_NAME}) enabled; its service runs once now to set schedule.")
-        log.info("Scheduler: Scheduling setup completed successfully by scheduler module.")
+        log.info(f"Scheduler: Main scheduler ({sysd.SCHEDULER_TIMER_NAME}) enabled.")
         return True
         
     except (exc.SystemdError, exc.FluxFceError) as e: 
@@ -194,38 +177,24 @@ def enable_scheduling(
         log.exception(f"Scheduler: Unexpected error enabling scheduling: {e}")
         raise exc.FluxFceError(f"Scheduler: An unexpected error occurred while enabling scheduling: {e}") from e
 
+# In fluxfce_core/scheduler.py
+
 def disable_scheduling() -> bool:
-    """
-    Disables automatic theme transitions.
-    """
+    """Disables automatic theme transitions."""
     log.info("Scheduler: Disabling scheduling and removing dynamic systemd timers...")
     try:
+        # Stop and disable the main static scheduler timer
         _sysd_mgr_scheduler._run_systemctl(["stop", sysd.SCHEDULER_TIMER_NAME], check_errors=False, capture_output=True)
         _sysd_mgr_scheduler._run_systemctl(["disable", sysd.SCHEDULER_TIMER_NAME], check_errors=False, capture_output=True)
         log.debug(f"Scheduler: Main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}) stopped and disabled.")
 
-        _sysd_mgr_scheduler._run_systemctl(["stop", sysd.SUNRISE_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
-        _sysd_mgr_scheduler._run_systemctl(["stop", sysd.SUNSET_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
-        log.debug("Scheduler: Dynamic event timers stopped.")
-
-        for timer_name in [sysd.SUNRISE_EVENT_TIMER_NAME, sysd.SUNSET_EVENT_TIMER_NAME]:
-            timer_path = sysd.SYSTEMD_USER_DIR / timer_name
-            try:
-                timer_path.unlink(missing_ok=True)
-                log.debug(f"Scheduler: Removed {timer_name} (if existed).")
-            except OSError as e:
-                log.warning(f"Scheduler: Could not remove {timer_name}: {e}")
-
-        _sysd_mgr_scheduler._run_systemctl(["daemon-reload"], capture_output=True)
-        log.debug("Scheduler: Systemd daemon reloaded.")
+        # --- MODIFICATION: Use the new targeted removal function ---
+        # This removes dynamic timers from ~/.config/systemd/user
+        _sysd_mgr_scheduler.remove_dynamic_timers()
+        # --- END MODIFICATION ---
         
-        units_to_reset = [
-            sysd.SCHEDULER_TIMER_NAME, 
-            sysd.SUNRISE_EVENT_TIMER_NAME, 
-            sysd.SUNSET_EVENT_TIMER_NAME,
-            sysd.SCHEDULER_SERVICE_NAME 
-        ]
-        _sysd_mgr_scheduler._run_systemctl(["reset-failed", *units_to_reset], check_errors=False, capture_output=True)
+        # Reset failed status on all units, just in case
+        _sysd_mgr_scheduler._run_systemctl(["reset-failed", *sysd.ALL_POTENTIAL_FLUXFCE_UNIT_NAMES], check_errors=False, capture_output=True)
 
         log.info("Scheduler: Scheduling disabled successfully.")
         return True
