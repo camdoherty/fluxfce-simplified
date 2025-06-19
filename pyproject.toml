@@ -37,3 +37,7 @@ dependencies = [
 [project.scripts]
 fluxfce = "fluxfce_cli:main"
 fluxfce-gui = "fluxfce_gui:main_gui"
+
+# --- Add this new section at the end of pyproject.toml ---
+[tool.setuptools]
+py-modules = ["fluxfce_cli", "fluxfce_gui"]
