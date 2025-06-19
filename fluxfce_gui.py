@@ -375,7 +375,7 @@ class FluxFceWindow(Gtk.Window):
     def on_toggle_switch_activated(self, switch, gparam):
         try:
             if switch.get_active():
-                fluxfce_core.enable_scheduling(sys.executable, str(APP_SCRIPT_PATH))
+                fluxfce_core.enable_scheduling() # <-- NEW, CORRECT CALL
             else:
                 fluxfce_core.disable_scheduling()
         except core_exc.FluxFceError as e:

@@ -147,60 +147,64 @@ def handle_schedule_dynamic_transitions_command() -> bool:
         log.exception(f"Scheduler: Unexpected error during 'schedule-dynamic-transitions': {e}")
         return False
 
+# In fluxfce_core/scheduler.py
+
 def enable_scheduling() -> bool:
     """
-    Enables automatic theme transitions by calling the dynamic scheduler and
-    enabling the main static scheduler timer.
+    Enables automatic theme transitions by running the dynamic scheduler once
+    and STARTING the main static scheduler timer.
     """
-    log.info("Scheduler: Enabling scheduling with dynamic systemd timers...")
+    log.info("Scheduler: Starting scheduling with systemd timers...")
     try:
-        # Simplified call
+        # Run once to set the sunrise/sunset timers for today.
         define_schedule_ok = handle_schedule_dynamic_transitions_command()
         if not define_schedule_ok:
-            log.warning("Scheduler: Initial definition of dynamic event timers failed, but proceeding to enable the main daily scheduler.")
+            log.warning("Scheduler: Initial definition of dynamic event timers failed, but proceeding to start the main daily scheduler.")
 
+        # --- THIS IS THE FIX ---
+        # We START the timer, we don't 'enable' it again.
         code, _, stderr = _sysd_mgr_scheduler._run_systemctl(
-            ["enable", "--now", sysd.SCHEDULER_TIMER_NAME], capture_output=True
+            ["start", sysd.SCHEDULER_TIMER_NAME], capture_output=True
         )
+        # --- END OF THE FIX ---
         if code != 0:
             raise exc.SystemdError(
-                f"Scheduler: Failed to enable and start main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}): {stderr.strip()}"
+                f"Scheduler: Failed to start main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}): {stderr.strip()}"
             )
         
-        log.info(f"Scheduler: Main scheduler ({sysd.SCHEDULER_TIMER_NAME}) enabled.")
+        log.info(f"Scheduler: Main scheduler ({sysd.SCHEDULER_TIMER_NAME}) started.")
         return True
         
     except (exc.SystemdError, exc.FluxFceError) as e: 
-        log.error(f"Scheduler: Failed to enable scheduling: {e}")
+        log.error(f"Scheduler: Failed to start scheduling: {e}")
         raise 
     except Exception as e: 
-        log.exception(f"Scheduler: Unexpected error enabling scheduling: {e}")
-        raise exc.FluxFceError(f"Scheduler: An unexpected error occurred while enabling scheduling: {e}") from e
-
-# In fluxfce_core/scheduler.py
+        log.exception(f"Scheduler: Unexpected error starting scheduling: {e}")
+        raise exc.FluxFceError(f"Scheduler: An unexpected error occurred while starting scheduling: {e}") from e
 
 def disable_scheduling() -> bool:
-    """Disables automatic theme transitions."""
-    log.info("Scheduler: Disabling scheduling and removing dynamic systemd timers...")
+    """
+    Disables automatic theme transitions by STOPPING the main timer
+    and removing the dynamic timers.
+    """
+    log.info("Scheduler: Stopping scheduling and removing dynamic systemd timers...")
     try:
-        # Stop and disable the main static scheduler timer
-        _sysd_mgr_scheduler._run_systemctl(["stop", "--now", sysd.SCHEDULER_TIMER_NAME], check_errors=False, capture_output=True)
-        _sysd_mgr_scheduler._run_systemctl(["disable", sysd.SCHEDULER_TIMER_NAME], check_errors=False, capture_output=True)
-        log.debug(f"Scheduler: Main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}) stopped and disabled.")
+        # --- THIS IS THE FIX ---
+        # We STOP the timer. We no longer run 'disable'.
+        _sysd_mgr_scheduler._run_systemctl(["stop", sysd.SCHEDULER_TIMER_NAME], check_errors=False, capture_output=True)
+        # --- END OF THE FIX ---
+        log.debug(f"Scheduler: Main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}) stopped.")
 
-        # MODIFICATION: Use the new targeted removal function
-        # This removes dynamic timers from ~/.config/systemd/user
         _sysd_mgr_scheduler.remove_dynamic_timers()
         
-        # Reset failed status on all units, just in case
         _sysd_mgr_scheduler._run_systemctl(["reset-failed", *sysd.ALL_POTENTIAL_FLUXFCE_UNIT_NAMES], check_errors=False, capture_output=True)
 
-        log.info("Scheduler: Scheduling disabled successfully.")
+        log.info("Scheduler: Scheduling stopped successfully.")
         return True
 
     except (exc.SystemdError, exc.FluxFceError) as e:
-        log.error(f"Scheduler: Failed to disable scheduling: {e}")
+        log.error(f"Scheduler: Failed to stop scheduling: {e}")
         raise
     except Exception as e:
-        log.exception(f"Scheduler: Unexpected error disabling scheduling: {e}")
-        raise exc.FluxFceError(f"Scheduler: An unexpected error occurred while disabling scheduling: {e}") from e
+        log.exception(f"Scheduler: Unexpected error stopping scheduling: {e}")
+        raise exc.FluxFceError(f"Scheduler: An unexpected error occurred while stopping scheduling: {e}") from e
