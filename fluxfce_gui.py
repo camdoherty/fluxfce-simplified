@@ -229,7 +229,7 @@ class FluxFceWindow(Gtk.Window):
         temp_gradient_bar.get_style_context().add_class("temp-gradient")
         temp_overlay.add(temp_gradient_bar)
 
-        adj_temp = Gtk.Adjustment(value=6500, lower=1000, upper=10000, step_increment=50, page_increment=500)
+        adj_temp = Gtk.Adjustment(value=6500, lower=1000, upper=10000, step_increment=50, page_increment=100)
         self.slider_temp = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=adj_temp, draw_value=False, hexpand=True)
         self.slider_temp.get_style_context().add_class("transparent-slider")
         self.temp_slider_handler_id = self.slider_temp.connect("value-changed", self.on_slider_value_changed)
