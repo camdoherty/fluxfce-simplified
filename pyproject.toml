@@ -39,5 +39,8 @@ fluxfce = "fluxfce_cli:main"
 fluxfce-gui = "fluxfce_gui:main_gui"
 
 [tool.setuptools]
-packages = find:
 py-modules = ["fluxfce_cli", "fluxfce_gui"]
+
+[tool.setuptools.packages.find]
+# This empty table tells setuptools to automatically find all packages
+# (like fluxfce_core) in the current directory.
