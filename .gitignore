@@ -1,3 +1,5 @@
+
+prompt.md
 /tmp/
 /.ruff_cache/
 /fluxfce_core/__pycache__/
@@ -15,8 +17,9 @@ codebase-*
 /codebase.txt
 
 todo.md
+
 prompt*
-prompt.md
+
 backup/fluxfce-temp-control.py
 backup/detect-backgrounds.sh
 backup/fluxfce-bright-control.py
