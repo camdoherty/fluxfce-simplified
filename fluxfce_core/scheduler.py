@@ -11,9 +11,9 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 # Imports from within fluxfce_core
-from . import config as cfg # For get_current_config via _load_config_with_defaults if not passed
+from . import config as cfg 
 from . import exceptions as exc
-from . import helpers, sun, systemd as sysd # Use sysd alias for clarity
+from . import helpers, sun, systemd as sysd 
 
 # For type hinting configparser object if passed directly
 import configparser 
@@ -31,18 +31,10 @@ except ImportError:
 
 log = logging.getLogger(__name__)
 
-# --- Private Helper to Load Config (if needed, similar to desktop_manager) ---
-# This assumes we might need to load config if not passed around explicitly
-# Or, these functions can be modified to accept a config_obj if preferred
-_cfg_mgr_scheduler = cfg.ConfigManager() # Module-level instance
+_cfg_mgr_scheduler = cfg.ConfigManager()
 
 def _load_scheduler_config() -> configparser.ConfigParser:
     """Loads configuration for scheduler functions."""
-    # This reuses the existing ConfigManager logic.
-    # No need to re-implement _load_config_with_defaults here if it's generic enough.
-    # Let's assume get_current_config from api.py (or its future equivalent) is preferred.
-    # For now, we'll replicate a simple load for self-containment,
-    # but this could be refactored to use a shared config loading utility.
     try:
         return _cfg_mgr_scheduler.load_config()
     except exc.ConfigError as e:
@@ -52,10 +44,8 @@ def _load_scheduler_config() -> configparser.ConfigParser:
         log.exception(f"Scheduler: Unexpected error loading configuration: {e}")
         raise exc.FluxFceError(f"Scheduler: Unexpected error loading configuration: {e}") from e
 
-_sysd_mgr_scheduler = sysd.SystemdManager() # Module-level instance for SystemdManager
+_sysd_mgr_scheduler = sysd.SystemdManager()
 
-
-# --- Scheduling Functions (Moved from api.py) ---
 
 def handle_schedule_dynamic_transitions_command(
     python_exe_path: str, script_exe_path: str
@@ -67,8 +57,7 @@ def handle_schedule_dynamic_transitions_command(
     """
     log.info("Scheduler: Handling 'schedule-dynamic-transitions' command...")
     try:
-        # current_config = get_current_config() # Original call
-        current_config = _load_scheduler_config() # Use local loader or pass config_obj
+        current_config = _load_scheduler_config()
 
         lat_str = current_config.get("Location", "LATITUDE")
         lon_str = current_config.get("Location", "LONGITUDE")
@@ -103,10 +92,19 @@ def handle_schedule_dynamic_transitions_command(
             if next_event_times["day"] and next_event_times["night"]:
                 break
         
-        _sysd_mgr_scheduler._run_systemctl(
-            ["stop", sysd.SUNRISE_EVENT_TIMER_NAME, sysd.SUNSET_EVENT_TIMER_NAME],
-            check_errors=False, capture_output=True
-        )
+        # FIX: Only stop timers that actually exist to prevent "not loaded" messages.
+        timers_to_stop = []
+        if (sysd.SYSTEMD_USER_DIR / sysd.SUNRISE_EVENT_TIMER_NAME).exists():
+            timers_to_stop.append(sysd.SUNRISE_EVENT_TIMER_NAME)
+        if (sysd.SYSTEMD_USER_DIR / sysd.SUNSET_EVENT_TIMER_NAME).exists():
+            timers_to_stop.append(sysd.SUNSET_EVENT_TIMER_NAME)
+
+        if timers_to_stop:
+            log.debug(f"Stopping existing dynamic timers: {', '.join(timers_to_stop)}")
+            _sysd_mgr_scheduler._run_systemctl(
+                ["stop", *timers_to_stop],
+                check_errors=False, capture_output=True
+            )
 
         scheduled_any_timer = False
         utc_tz = ZoneInfo("UTC")
@@ -149,6 +147,7 @@ def handle_schedule_dynamic_transitions_command(
         log.exception(f"Scheduler: Unexpected error during 'schedule-dynamic-transitions': {e}")
         return False
 
+
 def enable_scheduling(
     python_exe_path: str,
     script_exe_path: str,
@@ -170,10 +169,7 @@ def enable_scheduling(
             log.warning("Scheduler: Initial definition of dynamic event timers failed or scheduled nothing, "
                         "but proceeding to enable the main daily scheduler.")
 
-        # --- BUG FIX: REMOVED --now ---
-        # The --now flag was causing a race condition by immediately running the
-        # scheduler service in parallel with the main script's theme application.
-        # The scheduler's job is to run daily, not on-demand during enable.
+        # FIX: Removed --now to prevent a race condition with the main script's theme application.
         code, _, stderr = _sysd_mgr_scheduler._run_systemctl(
             ["enable", sysd.SCHEDULER_TIMER_NAME], capture_output=True
         )
@@ -199,35 +195,52 @@ def disable_scheduling() -> bool:
     """
     log.info("Scheduler: Disabling scheduling and removing dynamic systemd timers...")
     try:
+        # Define all units related to scheduling that need to be managed.
+        # FIX: Added 'sysd.' prefix to all constants.
+        scheduling_units = [
+            sysd.SCHEDULER_TIMER_NAME,
+            sysd.SUNRISE_EVENT_TIMER_NAME,
+            sysd.SUNSET_EVENT_TIMER_NAME,
+            sysd.SCHEDULER_SERVICE_NAME
+        ]
+
+        # Stop and disable the main scheduler timer first.
         _sysd_mgr_scheduler._run_systemctl(["stop", sysd.SCHEDULER_TIMER_NAME], check_errors=False, capture_output=True)
         _sysd_mgr_scheduler._run_systemctl(["disable", sysd.SCHEDULER_TIMER_NAME], check_errors=False, capture_output=True)
         log.debug(f"Scheduler: Main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}) stopped and disabled.")
 
+        # Stop the dynamic event timers.
         _sysd_mgr_scheduler._run_systemctl(["stop", sysd.SUNRISE_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
         _sysd_mgr_scheduler._run_systemctl(["stop", sysd.SUNSET_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
         log.debug("Scheduler: Dynamic event timers stopped.")
 
+        # 1. Reset the failed state of all scheduling units while systemd still knows about them.
+        _sysd_mgr_scheduler._run_systemctl(["reset-failed", *scheduling_units], check_errors=False, capture_output=True)
+        log.debug(f"Scheduler: Attempted to reset failed state for: {', '.join(scheduling_units)}")
+
+        # 2. Now, remove the dynamic timer files from the filesystem.
+        # FIX: Added 'sysd.' prefix to constants.
         for timer_name in [sysd.SUNRISE_EVENT_TIMER_NAME, sysd.SUNSET_EVENT_TIMER_NAME]:
             timer_path = sysd.SYSTEMD_USER_DIR / timer_name
             try:
                 timer_path.unlink(missing_ok=True)
-                log.debug(f"Scheduler: Removed {timer_name} (if existed).")
+                log.debug(f"Scheduler: Removed {timer_name} (if it existed).")
             except OSError as e:
                 log.warning(f"Scheduler: Could not remove {timer_name}: {e}")
 
+        # 3. Finally, tell systemd to reload, forgetting the units whose files were just removed.
         _sysd_mgr_scheduler._run_systemctl(["daemon-reload"], capture_output=True)
         log.debug("Scheduler: Systemd daemon reloaded.")
         
-        units_to_reset = [
-            sysd.SCHEDULER_TIMER_NAME, 
-            sysd.SUNRISE_EVENT_TIMER_NAME, 
-            sysd.SUNSET_EVENT_TIMER_NAME,
-            sysd.SCHEDULER_SERVICE_NAME 
-        ]
-        _sysd_mgr_scheduler._run_systemctl(["reset-failed", *units_to_reset], check_errors=False, capture_output=True)
-
         log.info("Scheduler: Scheduling disabled successfully.")
         return True
+
+    except (exc.SystemdError, exc.FluxFceError) as e:
+        log.error(f"Scheduler: Failed to disable scheduling: {e}")
+        raise
+    except Exception as e:
+        log.exception(f"Scheduler: Unexpected error disabling scheduling: {e}")
+        raise exc.FluxFceError(f"Scheduler: An unexpected error occurred while disabling scheduling: {e}") from e
 
     except (exc.SystemdError, exc.FluxFceError) as e:
         log.error(f"Scheduler: Failed to disable scheduling: {e}")
