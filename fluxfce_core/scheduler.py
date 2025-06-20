@@ -152,19 +152,14 @@ def handle_schedule_dynamic_transitions_command(
 def enable_scheduling(
     python_exe_path: str,
     script_exe_path: str,
-    # It's good practice for higher-level functions like this to call lower-level ones.
-    # We'll need access to the desktop_manager's apply current function.
-    # For now, let's assume it will be called from api.py after this returns.
-    # Or we could import desktop_manager here if we make it a hard dependency.
-    # Let's keep it simple for now and assume api.py handles the apply_current_period.
 ) -> bool:
     """
     Enables automatic theme transitions:
     1. Defines dynamic event timers for the next sunrise/sunset.
-    2. Enables and starts the main daily scheduler timer (`fluxfce-scheduler.timer`).
+    2. Enables the main daily scheduler timer (`fluxfce-scheduler.timer`).
     """
     # Note: The application of the current theme (via handle_run_login_check)
-    # will be handled by the calling function in api.py after this function succeeds.
+    # is handled by the calling function in api.py after this function succeeds.
 
     log.info("Scheduler: Enabling scheduling with dynamic systemd timers...")
     try:
@@ -175,15 +170,19 @@ def enable_scheduling(
             log.warning("Scheduler: Initial definition of dynamic event timers failed or scheduled nothing, "
                         "but proceeding to enable the main daily scheduler.")
 
+        # --- BUG FIX: REMOVED --now ---
+        # The --now flag was causing a race condition by immediately running the
+        # scheduler service in parallel with the main script's theme application.
+        # The scheduler's job is to run daily, not on-demand during enable.
         code, _, stderr = _sysd_mgr_scheduler._run_systemctl(
-            ["enable", "--now", sysd.SCHEDULER_TIMER_NAME], capture_output=True
+            ["enable", sysd.SCHEDULER_TIMER_NAME], capture_output=True
         )
         if code != 0:
             raise exc.SystemdError(
-                f"Scheduler: Failed to enable and start main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}): {stderr.strip()}"
+                f"Scheduler: Failed to enable main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}): {stderr.strip()}"
             )
         
-        log.info(f"Scheduler: Main scheduler ({sysd.SCHEDULER_TIMER_NAME}) enabled; its service runs once now to set schedule.")
+        log.info(f"Scheduler: Main scheduler ({sysd.SCHEDULER_TIMER_NAME}) enabled to run daily.")
         log.info("Scheduler: Scheduling setup completed successfully by scheduler module.")
         return True
         

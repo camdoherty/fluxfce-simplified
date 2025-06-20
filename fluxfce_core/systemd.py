@@ -119,16 +119,16 @@ StandardError=journal
 _LOGIN_SERVICE_TEMPLATE = """\
 [Unit]
 Description={app_name}: Apply theme on first login
-# This service runs once after the graphical session starts.
-# It waits a few seconds for the desktop environment (e.g., XFCE panel, desktop)
-# to finish loading before applying the theme, preventing race conditions.
+; This service runs once after the graphical session starts.
+; It waits a few seconds for the desktop environment (e.g., XFCE panel, desktop)
+; to finish loading before applying the theme, preventing race conditions.
 After=graphical-session.target xfce4-session.target plasma-workspace.target gnome-session.target
 Requires=graphical-session.target
 ConditionEnvironment=DISPLAY
 
 [Service]
 Type=oneshot
-# A short delay to ensure the desktop environment is fully initialized.
+; A short delay to ensure the desktop environment is fully initialized.
 ExecStartPre=/bin/sleep 5
 ExecStart={python_executable} "{script_path}" run-login-check
 StandardError=journal
@@ -140,22 +140,22 @@ WantedBy=graphical-session.target
 _RESUME_SERVICE_TEMPLATE = """\
 [Unit]
 Description={app_name}: Apply theme after system resume from sleep/suspend
-# This service is separate from the login service as it's triggered by a
-# different system event (resuming from sleep) via the user-level sleep.target.
+; This service is separate from the login service as it's triggered by a
+; different system event (resuming from sleep) via the user-level sleep.target.
 After=sleep.target graphical-session.target
 Requires=graphical-session.target
 ConditionEnvironment=DISPLAY
 
 [Service]
 Type=oneshot
-# A very short delay for the graphics stack to re-initialize after resume.
+; A very short delay for the graphics stack to re-initialize after resume.
 ExecStartPre=/bin/sleep 2
 ExecStart={python_executable} "{script_path}" run-login-check
 StandardError=journal
 
 [Install]
-# This is enabled into the user's 'sleep.target.wants', which is activated
-# by the system when suspend/resume/hibernate actions occur.
+; This is enabled into the user's 'sleep.target.wants', which is activated
+; by the system when suspend/resume/hibernate actions occur.
 WantedBy=sleep.target
 """
 
@@ -434,22 +434,21 @@ class SystemdManager:
         timer_content = f"""\
 [Unit]
 Description={self.app_name}: Event Timer for {mode.capitalize()} Transition (Dynamic)
-# This timer requires the corresponding apply-transition@mode.service instance
+; This timer requires the corresponding apply-transition@mode.service instance
 Requires={service_instance_to_trigger}
 
 [Timer]
 Unit={service_instance_to_trigger}
 OnCalendar={on_calendar_utc_str}
-# Run if the machine was off at the scheduled time
-Persistent=true
-# Timer accuracy
+; The login and resume services handle missed transitions, so Persistent=true
+; is not needed here and its presence causes a race condition on first run.
 AccuracySec=1s
-# Don't wake a sleeping system just for this timer
+; Don't wake a sleeping system just for this timer
 WakeSystem=false
 
 [Install]
-# Dynamic timers are not typically "WantedBy" other targets directly.
-# They are started/stopped by the application logic (e.g., via fluxfce-scheduler.service)
+; Dynamic timers are not typically "WantedBy" other targets directly.
+; They are started/stopped by the application logic (e.g., via fluxfce-scheduler.service)
 """
         try:
             SYSTEMD_USER_DIR.mkdir(parents=True, exist_ok=True) # Ensure dir exists
