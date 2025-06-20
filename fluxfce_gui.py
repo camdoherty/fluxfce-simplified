@@ -44,6 +44,9 @@ APP_SCRIPT_PATH = Path(__file__).resolve()
 SLIDER_DEBOUNCE_MS = 200
 UI_UPDATE_DELAY_MS = 250
 UI_REFRESH_INTERVAL_MS = 60 * 1000  # 1 minute
+ASSETS_DIR = Path(__file__).resolve().parent / "fluxfce_core" / "assets"
+ICON_ENABLED = str(ASSETS_DIR / "icon-enabled.png")
+ICON_DISABLED = str(ASSETS_DIR / "icon-disabled.png")
 
 class FluxFceWindow(Gtk.Window):
     """The main configuration and status window for fluxfce."""
@@ -591,12 +594,15 @@ class Application:
         self.window = FluxFceWindow(self)
         self._init_status_icon()
 
+      
     def _init_status_icon(self):
-        self.status_icon = Gtk.StatusIcon.new_from_icon_name('emblem-synchronizing-symbolic')
-        self.status_icon.set_tooltip_text("fluxfce")
+        self.status_icon = Gtk.StatusIcon.new_from_file(ICON_DISABLED)
+        self.status_icon.set_tooltip_text("fluxfce (loading...)")
         self.status_icon.set_visible(True)
         self.status_icon.connect("activate", self.on_icon_left_click)
         self.status_icon.connect("popup-menu", self.on_icon_right_click)
+
+    
 
     def _build_right_click_menu(self):
         menu = Gtk.Menu()
@@ -640,8 +646,15 @@ class Application:
 
     def update_status(self, is_enabled):
         if self.status_icon:
-            self.status_icon.set_from_icon_name("weather-clear-symbolic" if is_enabled else "weather-clear-night-symbolic")
+            # Set the icon from your custom files based on the is_enabled status
+            if is_enabled:
+                self.status_icon.set_from_file(ICON_ENABLED)
+            else:
+                self.status_icon.set_from_file(ICON_DISABLED)
+
+            # The existing tooltip and menu item updates are perfect
             self.status_icon.set_tooltip_text("fluxfce Enabled" if is_enabled else "fluxfce Disabled")
+        
         if self.toggle_item:
             self.toggle_item.set_label("Disable Scheduling" if is_enabled else "Enable Scheduling")
 
