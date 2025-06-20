@@ -51,6 +51,9 @@ class FluxFceWindow(Gtk.Window):
         super().__init__()
         self.app = application
 
+        # --- Give the window a CSS name so we can style it specifically ---
+        self.set_name("fluxfce-main-window")
+
         # Window properties
         self.set_type_hint(Gdk.WindowTypeHint.POPUP_MENU)
         self.set_border_width(12)
@@ -65,48 +68,85 @@ class FluxFceWindow(Gtk.Window):
         self.connect("hide", self._stop_ui_timers)
         self.connect("size-allocate", self._on_size_allocated)
 
+        # --- Read opacity from config and prepare for transparency ---
+        try:
+            config = fluxfce_core.get_current_config()
+            opacity = config.getfloat("GUI", "opacity", fallback=1.0)
+            opacity = max(0.0, min(1.0, opacity))
+        except (core_exc.ConfigError, ValueError) as e:
+            log.warning(f"Could not read GUI opacity from config, defaulting to opaque. Error: {e}")
+            opacity = 1.0
+
+        window_bg_css = ""
+        screen = self.get_screen()
+
+        if screen.is_composited() and opacity < 1.0:
+            log.info(f"Compositor detected. Applying window opacity: {opacity}")
+            visual = screen.get_rgba_visual()
+            if visual:
+                self.set_visual(visual)
+
+            # --- CORRECTED CSS ---
+            # Use the Gtk CSS `alpha()` function to apply the opacity value
+            # directly to the theme's current background color (@theme_bg_color).
+            # The border color is also made theme-aware for better contrast.
+            window_bg_css = f"""
+            #fluxfce-main-window {{
+                background-color: alpha(@theme_bg_color, {opacity});
+                border: 1px solid alpha(@theme_fg_color, 0.2);
+            }}
+            """
+        else:
+            log.info("No compositor or opacity is 1.0, using solid theme background.")
+            # If not transparent, explicitly use the solid theme background.
+            window_bg_css = """
+            #fluxfce-main-window {
+                background-color: @theme_bg_color;
+            }
+            """
+        # --- End of modifications ---
+
+
         # Custom styling with CSS for gradients and expanders
         style_provider = Gtk.CssProvider()
-        css = b"""
-        .dim-label {
+        # Combine the dynamic window background CSS with the static widget CSS
+        css = f"""
+        {window_bg_css}
+
+        .dim-label {{
             color: alpha(currentColor, 0.7);
-        }
-        .temp-gradient {
+        }}
+        .temp-gradient {{
             background-image: linear-gradient(to right,
                 #FF6600, #FFD8B1 35%, #FFFFFF 50%, #D4E4FF 65%, #B3CFFF);
             border-radius: 4px;
-        }
-        .bright-gradient {
+        }}
+        .bright-gradient {{
             background-image: linear-gradient(to right, black, white);
             border-radius: 4px;
-        }
-        expander > header .expander-arrow {
+        }}
+        expander > header .expander-arrow {{
             opacity: 0; min-width: 0; padding: 0; border: 0;
-        }
+        }}
 
-        /*
-         * This is the corrected, more aggressive rule for the slider.
-         * By targeting the 'scale' widget type and its 'trough' sub-node,
-         * we increase specificity to override theme defaults.
-         */
-        scale.transparent-slider.horizontal trough {
-            background-image: none;
-            background-color: transparent;
-            border: none;
-            box-shadow: none;
-            min-height: 0; /* Remove any minimum size the theme enforces */
-        }
-
-        /* We must also hide the colored "fill" or "progress" part of the trough */
+        scale.transparent-slider.horizontal trough,
         scale.transparent-slider.horizontal trough > progress,
-        scale.transparent-slider.horizontal trough > fill {
+        scale.transparent-slider.horizontal trough > fill,
+        scale.transparent-slider.horizontal trough > highlight {{
             background-image: none;
             background-color: transparent;
-            border: none;
+            border-color: transparent;
+            border-style: none;
             box-shadow: none;
-            min-height: 0;
-        }
-        """
+            min-height: 1px;
+        }}
+
+        scale.transparent-slider.horizontal trough,
+        scale.transparent-slider.horizontal trough > highlight {{
+            border-image: none;
+        }}
+        """.encode('utf-8')
+
         style_provider.load_from_data(css)
         Gtk.StyleContext.add_provider_for_screen(
             Gdk.Screen.get_default(), style_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
@@ -159,14 +199,12 @@ class FluxFceWindow(Gtk.Window):
 
     def _build_status_section(self):
         """Builds the top section with next transition info and toggle switch."""
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        # The main container for this whole section
+        section_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
 
-        # One horizontal box: Next label, details/status, and toggle switch
+        # The hbox for the label and switch
         next_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        lbl_transition_title = Gtk.Label(label="<b>Next:</b>", use_markup=True, xalign=0)
-        self.lbl_next_transition = Gtk.Label(label="N/A", xalign=0, ellipsize=Pango.EllipsizeMode.END)
-
-        next_hbox.pack_start(lbl_transition_title, False, False, 0)
+        self.lbl_next_transition = Gtk.Label(label="...", xalign=0, ellipsize=Pango.EllipsizeMode.END)
         next_hbox.pack_start(self.lbl_next_transition, True, True, 0)
 
         self.toggle_switch = Gtk.Switch()
@@ -174,12 +212,19 @@ class FluxFceWindow(Gtk.Window):
         self.toggle_switch_handler_id = self.toggle_switch.connect("notify::active", self.on_toggle_switch_activated)
         next_hbox.pack_end(self.toggle_switch, False, False, 0)
 
-        box.pack_start(next_hbox, False, True, 0)
-        return box
+        section_box.pack_start(next_hbox, False, True, 0)
+
+        # Add the separator to the bottom of the section's box
+        separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        # Add a top margin to the separator to create space between it and the status text
+        separator.set_margin_top(10)
+        section_box.pack_start(separator, False, True, 0)
+
+        return section_box
 
     def _build_profiles_section(self):
         # Use an expander to allow collapsing this section
-        frame = Gtk.Expander(use_markup=True, label="<b> Profiles </b>")
+        frame = Gtk.Expander(use_markup=True, label="<b>Day / Night Modes</b>")
         frame.set_expanded(True)
 
         profile_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=10)
@@ -214,7 +259,7 @@ class FluxFceWindow(Gtk.Window):
 
     def _build_manual_control_section(self):
         # Use an expander to allow collapsing this section
-        frame = Gtk.Expander(use_markup=True, label="<b> Manual Control </b>")
+        frame = Gtk.Expander(use_markup=True, label="<b>X Screen Control</b>")
         frame.set_expanded(True)
 
         # Use a Grid for precise alignment
@@ -229,7 +274,7 @@ class FluxFceWindow(Gtk.Window):
         temp_gradient_bar.get_style_context().add_class("temp-gradient")
         temp_overlay.add(temp_gradient_bar)
 
-        adj_temp = Gtk.Adjustment(value=6500, lower=1000, upper=10000, step_increment=50, page_increment=500)
+        adj_temp = Gtk.Adjustment(value=6500, lower=1000, upper=10000, step_increment=50, page_increment=200)
         self.slider_temp = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=adj_temp, draw_value=False, hexpand=True)
         self.slider_temp.get_style_context().add_class("transparent-slider")
         self.temp_slider_handler_id = self.slider_temp.connect("value-changed", self.on_slider_value_changed)
@@ -252,7 +297,7 @@ class FluxFceWindow(Gtk.Window):
         bright_gradient_bar.get_style_context().add_class("bright-gradient")
         bright_overlay.add(bright_gradient_bar)
 
-        adj_bright = Gtk.Adjustment(value=1.0, lower=0.1, upper=1.0, step_increment=0.01, page_increment=0.01)
+        adj_bright = Gtk.Adjustment(value=1.0, lower=0.1, upper=1.0, step_increment=0.01, page_increment=0.02)
         self.slider_bright = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=adj_bright, draw_value=False, hexpand=True)
         self.slider_bright.get_style_context().add_class("transparent-slider")
         self.bright_slider_handler_id = self.slider_bright.connect("value-changed", self.on_slider_value_changed)
@@ -293,24 +338,34 @@ class FluxFceWindow(Gtk.Window):
             next_time = summary.get("next_transition_time")
             if next_time:
                 delta = next_time - datetime.now(next_time.tzinfo)
+                # Calculate the relative time string first
                 if delta.total_seconds() < -1:
                     time_left_str = "in the past"
                 elif delta.total_seconds() < 60:
                     time_left_str = "soon"
                 else:
-                    time_left_str = f"in {int(delta.seconds / 3600)}h {int((delta.seconds % 3600) / 60)}m"
-                next_mode = GLib.markup_escape_text(summary.get('next_transition_mode', ''))
-                next_time_str = GLib.markup_escape_text(f"{next_time.strftime('%H:%M')} ({time_left_str})")
-                self.lbl_next_transition.set_markup(f"{next_mode} at <b>{next_time_str}</b>")
+                    time_left_str = f"{int(delta.seconds / 3600)}h {int((delta.seconds % 3600) / 60)}m"
+
+                next_mode = summary.get('next_transition_mode', '')
+                transition_term = "Sunrise" if next_mode.lower() == 'day' else "Sunset"
+
+                # Escape any special characters in the parts of the string we don't control
+                time_str = GLib.markup_escape_text(f"{next_time.strftime('%H:%M')}")
+                relative_str = GLib.markup_escape_text(time_left_str)
+
+                # Construct the final markup string with the new bolding format
+                self.lbl_next_transition.set_markup(
+                    f"<b>{transition_term}</b> at <b>{time_str}</b> (in <b>{relative_str}</b>)"
+                )
+
                 delta_ms = delta.total_seconds() * 1000
                 if delta_ms > 0:
                     self.one_shot_refresh_id = GLib.timeout_add(int(delta_ms) + 2000, self._on_transition_occurs)
             else:
-                self.lbl_next_transition.set_text("Not scheduled")
+                self.lbl_next_transition.set_text("Scheduling not configured")
         else:
-            # When disabled, replace 'Next:' line with a bold red status
-            self.lbl_next_transition.set_markup("<b>Scheduling disabled</b>")
-
+            # When disabled, use the new "Transitions Disabled" markup
+            self.lbl_next_transition.set_markup("Transitions <b>Disabled</b>")
 
     def _update_profile_display(self, mode, status, config_parser):
         config = status.get("config", {})

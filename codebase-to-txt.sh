@@ -9,12 +9,23 @@ OUTPUT="codebase-$DATE.txt"
 # Initialize (or truncate) the output file
 > "$OUTPUT"
 
-# Find all .py, .md, and .toml files (explicit extensions) and sort them
-find . -type f \( -name '*.py' -o -name '*.md' -o -name '*.toml' \) | sort | while IFS= read -r file; do
-  # Remove leading './' for a clean relative path
-  relpath="${file#./}"
+# Find all .py, .md, and .toml files, ignoring specified files/dirs
+INCLUDED_FILES=$(find . \
+  -type d \( -name backup -o -name todo \) -prune -false \
+  -o -type f \( -name '*.py' -o -name '*.md' -o -name '*.toml' \) \
+  ! -name '*.log' \
+  ! -name 'prompt*' \
+  ! -name 'codebase*' \
+  | sort)
 
-  # Append separator, path, and file content to the output
+# Print included files to terminal
+echo "Files included in $OUTPUT:"
+echo "$INCLUDED_FILES"
+echo
+
+# Concatenate files into the output, separated cleanly
+while IFS= read -r file; do
+  relpath="${file#./}"
   {
     echo
     echo '##############'
@@ -23,7 +34,7 @@ find . -type f \( -name '*.py' -o -name '*.md' -o -name '*.toml' \) | sort | whi
     cat "$file"
     echo
   } >> "$OUTPUT"
-done
+done <<< "$INCLUDED_FILES"
 
-# Inform the user
+echo
 echo "All matching files have been concatenated into $OUTPUT"
