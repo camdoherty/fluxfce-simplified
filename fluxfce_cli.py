@@ -9,6 +9,8 @@ This version uses systemd timers for scheduling.
 """
 
 import argparse
+import configparser
+import json
 import logging
 import pathlib
 import shutil
@@ -36,6 +38,7 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 SCRIPT_PATH = str(pathlib.Path(__file__).resolve())
 PYTHON_EXECUTABLE = sys.executable
 DEPENDENCY_CHECKER_SCRIPT_NAME = "fluxfce_deps_check.py"
+TIMEZONES_JSON_PATH = SCRIPT_DIR / "fluxfce_core" / "assets" / "timezones.json"
 
 log = logging.getLogger("fluxfce_cli")
 
@@ -98,7 +101,6 @@ def print_status(status_data: dict, verbose: bool = False):
 
     log.info("\n[Scheduling Status]")
     
-    # --- START: Colorized Status Logic ---
     status_text = summary.get("overall_status", "[UNKNOWN]")
     if "[OK]" in status_text:
         status_str = f"{AnsiColors.GREEN}{status_text}{AnsiColors.RESET}"
@@ -109,7 +111,6 @@ def print_status(status_data: dict, verbose: bool = False):
     
     if summary.get("overall_status"):
         log.info(f"  Overall Status:  {status_str} {summary.get('status_message', '')}")
-    # --- END: Colorized Status Logic ---
 
     if summary.get("recommendation"):
         log.info(f"  Recommendation:  {summary['recommendation']}")
@@ -171,7 +172,7 @@ def print_status(status_data: dict, verbose: bool = False):
     log.info("-" * 25)
 
 
-# --- User Interaction Helper ---
+# --- User Interaction Helpers ---
 def ask_yes_no_cli(prompt: str, default_yes: bool = False) -> bool:
     """Asks a yes/no question and returns True for yes, False for no."""
     suffix = "[Y/n]" if default_yes else "[y/N]"
@@ -182,10 +183,88 @@ def ask_yes_no_cli(prompt: str, default_yes: bool = False) -> bool:
             if not response: return default_yes
             if response in ["y", "yes"]: return True
             if response in ["n", "no"]: return False
-            print("[WARN] Invalid input. Please enter 'y' or 'n'.")
+            print(f"{AnsiColors.YELLOW}[WARN] Invalid input. Please enter 'y' or 'n'.{AnsiColors.RESET}")
         except (EOFError, KeyboardInterrupt):
             print("\nPrompt interrupted. Assuming 'no'.")
             return False
+
+def _interactive_setup() -> configparser.ConfigParser:
+    """
+    Guides the user through an interactive setup for the first run.
+    Detects timezone and offers to set coordinates from a local database.
+    """
+    log.info("First-time setup: No configuration file found.")
+    log.info("Let's configure your location for sunrise/sunset calculations.")
+    
+    config_obj = core_config.ConfigManager().load_config()
+    user_tz = None
+
+    # 1. TIMEZONE
+    detected_tz = fluxfce_core.detect_system_timezone()
+    if detected_tz and ask_yes_no_cli(f"Detected timezone '{detected_tz}'. Use this?", default_yes=True):
+        user_tz = detected_tz
+    else:
+        while True:
+            try:
+                tz_input = input("Please enter your IANA timezone (e.g., America/Toronto, Europe/London): ").strip()
+                from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+                ZoneInfo(tz_input)
+                user_tz = tz_input
+                break
+            except ZoneInfoNotFoundError:
+                log.error(f"'{tz_input}' is not a valid IANA timezone. Please try again.")
+            except (EOFError, KeyboardInterrupt):
+                log.error("\nSetup interrupted. Cannot continue without a timezone.")
+                sys.exit(1)
+    config_obj.set("Location", "TIMEZONE", user_tz)
+
+    # 2. COORDINATES (with suggestion from JSON)
+    coords_set = False
+    if TIMEZONES_JSON_PATH.exists() and user_tz:
+        try:
+            with TIMEZONES_JSON_PATH.open("r", encoding="utf-8") as f:
+                tz_data = json.load(f)
+            for city, data in tz_data.items():
+                if data.get("timezone") == user_tz:
+                    lat, lon = data.get("latitude"), data.get("longitude")
+                    prompt = f"Found a match for '{user_tz}': {city}. Use these coordinates ({lat}, {lon})?"
+                    if ask_yes_no_cli(prompt, default_yes=True):
+                        config_obj.set("Location", "LATITUDE", lat)
+                        config_obj.set("Location", "LONGITUDE", lon)
+                        coords_set = True
+                    break
+        except (json.JSONDecodeError, OSError) as e:
+            log.warning(f"Could not load or parse timezones.json: {e}. Proceeding with manual entry.")
+    
+    if not coords_set:
+        log.info("\nPlease provide your geographic coordinates.")
+        log.info("You can find them at a site like https://www.latlong.net/")
+        while True:
+            try:
+                lat_input = input("Enter Latitude (e.g., 43.65N): ").strip()
+                fluxfce_core.helpers.latlon_str_to_float(lat_input)
+                config_obj.set("Location", "LATITUDE", lat_input)
+                break
+            except core_exc.ValidationError as e:
+                log.error(f"Invalid latitude format: {e}")
+            except (EOFError, KeyboardInterrupt):
+                log.error("\nSetup interrupted. Cannot continue without coordinates.")
+                sys.exit(1)
+                
+        while True:
+            try:
+                lon_input = input("Enter Longitude (e.g., 79.38W): ").strip()
+                fluxfce_core.helpers.latlon_str_to_float(lon_input)
+                config_obj.set("Location", "LONGITUDE", lon_input)
+                break
+            except core_exc.ValidationError as e:
+                log.error(f"Invalid longitude format: {e}")
+            except (EOFError, KeyboardInterrupt):
+                log.error("\nSetup interrupted. Cannot continue without coordinates.")
+                sys.exit(1)
+            
+    log.info(f"{AnsiColors.GREEN}Location configured successfully.{AnsiColors.RESET}")
+    return config_obj
 
 
 # --- Main Execution Logic ---
@@ -244,16 +323,15 @@ Examples:
             if process.returncode != 0:
                 log.error("Dependency check/setup failed. Aborting installation.")
                 sys.exit(1)
-            log.info("--- Dependency check complete ---")
+            log.info(f"{AnsiColors.GREEN}--- Dependency check complete ---{AnsiColors.RESET}")
 
             log.info("\n--- Step 2: Configuring FluxFCE application settings ---")
-            config_existed = fluxfce_core.CONFIG_FILE.exists()
-            config_obj = fluxfce_core.get_current_config()
-            # NOTE: The complex interactive setup logic from the original file would go here.
-            # Assuming it runs and potentially modifies config_obj.
-            if not config_existed: 
-                fluxfce_core.save_configuration(config_obj) # Save if newly created
-            log.info("--- FluxFCE application configuration complete ---")
+            if not fluxfce_core.CONFIG_FILE.exists():
+                config_obj = _interactive_setup()
+                fluxfce_core.save_configuration(config_obj)
+            else:
+                log.info(f"Existing configuration found at {fluxfce_core.CONFIG_FILE}. Skipping interactive setup.")
+            log.info(f"{AnsiColors.GREEN}--- FluxFCE application configuration complete ---{AnsiColors.RESET}")
 
             log.info("\n--- Step 2b: Installing default background profiles ---")
             fluxfce_core.install_default_background_profiles()
@@ -265,8 +343,24 @@ Examples:
             log.info("\n--- Step 4: Enabling automatic scheduling ---")
             fluxfce_core.enable_scheduling(python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH)
 
-            log.info("\n" + "-"*45 + "\n fluxfce installed and enabled successfully. \n" + "-"*45)
+            log.info("\n" + "-"*45 + f"\n {AnsiColors.GREEN}fluxfce installed and enabled successfully.{AnsiColors.RESET} \n" + "-"*45)
             log.info("Tip: Configure your look using 'fluxfce set-default --mode day|night'.")
+            
+            if ask_yes_no_cli("\nLaunch the graphical user interface now?", default_yes=True):
+                gui_script_path = SCRIPT_DIR / "fluxfce_gui.py"
+                if gui_script_path.exists():
+                    log.info(f"Launching GUI from: {gui_script_path}")
+                    try:
+                        subprocess.Popen(
+                            [PYTHON_EXECUTABLE, str(gui_script_path)],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            start_new_session=True, # Detach from terminal
+                        )
+                    except Exception as e:
+                        log.error(f"Failed to launch the GUI: {e}")
+                else:
+                    log.error(f"Could not find the GUI script at {gui_script_path}")
 
         elif args.command == "uninstall":
             log.info("Starting uninstallation (system components)...")
@@ -347,10 +441,10 @@ Examples:
             exit_code = 1
 
     except core_exc.FluxFceError as e:
-        log.error(f"FluxFCE Error: {e}", exc_info=args.verbose)
+        log.error(f"{AnsiColors.RED}FluxFCE Error: {e}{AnsiColors.RESET}", exc_info=args.verbose)
         exit_code = 1
     except Exception as e_main:
-        log.error(f"An unexpected error occurred in CLI: {e_main}", exc_info=True)
+        log.error(f"{AnsiColors.RED}An unexpected error occurred in CLI: {e_main}{AnsiColors.RESET}", exc_info=True)
         exit_code = 1
 
     sys.exit(exit_code)

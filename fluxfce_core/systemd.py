@@ -118,33 +118,44 @@ StandardError=journal
 
 _LOGIN_SERVICE_TEMPLATE = """\
 [Unit]
-Description={app_name}: Apply theme on login
+Description={app_name}: Apply theme on first login
+# This service runs once after the graphical session starts.
+# It waits a few seconds for the desktop environment (e.g., XFCE panel, desktop)
+# to finish loading before applying the theme, preventing race conditions.
 After=graphical-session.target xfce4-session.target plasma-workspace.target gnome-session.target
 Requires=graphical-session.target
 ConditionEnvironment=DISPLAY
+
 [Service]
 Type=oneshot
-ExecStartPre=/bin/sleep 20
+# A short delay to ensure the desktop environment is fully initialized.
+ExecStartPre=/bin/sleep 5
 ExecStart={python_executable} "{script_path}" run-login-check
 StandardError=journal
+
 [Install]
 WantedBy=graphical-session.target
 """
 
 _RESUME_SERVICE_TEMPLATE = """\
 [Unit]
-Description={app_name} - Apply theme after system resume
+Description={app_name}: Apply theme after system resume from sleep/suspend
+# This service is separate from the login service as it's triggered by a
+# different system event (resuming from sleep) via the user-level sleep.target.
 After=sleep.target graphical-session.target
 Requires=graphical-session.target
 ConditionEnvironment=DISPLAY
 
 [Service]
 Type=oneshot
-ExecStartPre=/bin/sleep 15
+# A very short delay for the graphics stack to re-initialize after resume.
+ExecStartPre=/bin/sleep 2
 ExecStart={python_executable} "{script_path}" run-login-check
 StandardError=journal
 
 [Install]
+# This is enabled into the user's 'sleep.target.wants', which is activated
+# by the system when suspend/resume/hibernate actions occur.
 WantedBy=sleep.target
 """
 

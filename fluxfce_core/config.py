@@ -28,6 +28,9 @@ DEFAULT_CONFIG: dict[str, dict[str, str]] = {
         "LONGITUDE": "79.38W",
         "TIMEZONE": "America/Toronto",
     },
+    "GUI": {
+        "opacity": "0.7",
+    },
     "Appearance": {
         "LIGHT_THEME": "Adwaita",
         "DARK_THEME": "Adwaita-dark",
@@ -43,7 +46,6 @@ DEFAULT_CONFIG: dict[str, dict[str, str]] = {
         "XSCT_BRIGHT": "0.85",
     },
 }
-
 
 class ConfigManager:
     """Handles reading/writing config.ini."""
