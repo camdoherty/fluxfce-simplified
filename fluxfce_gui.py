@@ -71,37 +71,55 @@ class FluxFceWindow(Gtk.Window):
         self.connect("hide", self._stop_ui_timers)
         self.connect("size-allocate", self._on_size_allocated)
 
-        # --- Read opacity from config and prepare for transparency ---
+        # --- Read opacities from config and prepare for transparency ---
         try:
             config = fluxfce_core.get_current_config()
+            # Read window background opacity
             opacity = config.getfloat("GUI", "opacity", fallback=1.0)
             opacity = max(0.0, min(1.0, opacity))
+            # Read widget opacity
+            widget_opacity = config.getfloat("GUI", "widget_opacity", fallback=1.0)
+            widget_opacity = max(0.0, min(1.0, widget_opacity))
         except (core_exc.ConfigError, ValueError) as e:
             log.warning(f"Could not read GUI opacity from config, defaulting to opaque. Error: {e}")
             opacity = 1.0
+            widget_opacity = 1.0
 
         window_bg_css = ""
+        widget_opacity_css = "" # --- START of modifications ---
         screen = self.get_screen()
 
-        if screen.is_composited() and opacity < 1.0:
-            log.info(f"Compositor detected. Applying window opacity: {opacity}")
-            visual = screen.get_rgba_visual()
-            if visual:
-                self.set_visual(visual)
+        if screen.is_composited():
+            if opacity < 1.0:
+                log.info(f"Compositor detected. Applying window opacity: {opacity}")
+                visual = screen.get_rgba_visual()
+                if visual:
+                    self.set_visual(visual)
 
-            # --- CORRECTED CSS ---
-            # Use the Gtk CSS `alpha()` function to apply the opacity value
-            # directly to the theme's current background color (@theme_bg_color).
-            # The border color is also made theme-aware for better contrast.
-            window_bg_css = f"""
-            #fluxfce-main-window {{
-                background-color: alpha(@theme_bg_color, {opacity});
-                border: 1px solid alpha(@theme_fg_color, 0.2);
-            }}
-            """
+                window_bg_css = f"""
+                #fluxfce-main-window {{
+                    background-color: alpha(@theme_bg_color, {opacity});
+                    border: 1px solid alpha(@theme_fg_color, 0.2);
+                }}
+                """
+            else:
+                 log.info("No compositor or opacity is 1.0, using solid theme background.")
+                 window_bg_css = """
+                 #fluxfce-main-window {
+                     background-color: @theme_bg_color;
+                 }
+                 """
+
+            if widget_opacity < 1.0:
+                log.info(f"Applying widget opacity: {widget_opacity}")
+                # This rule targets every widget inside the main window
+                widget_opacity_css = f"""
+                #fluxfce-main-window * {{
+                    opacity: {widget_opacity};
+                }}
+                """
         else:
-            log.info("No compositor or opacity is 1.0, using solid theme background.")
-            # If not transparent, explicitly use the solid theme background.
+            log.info("No compositor detected, window and widgets will be fully opaque.")
             window_bg_css = """
             #fluxfce-main-window {
                 background-color: @theme_bg_color;
@@ -109,12 +127,12 @@ class FluxFceWindow(Gtk.Window):
             """
         # --- End of modifications ---
 
-
         # Custom styling with CSS for gradients and expanders
         style_provider = Gtk.CssProvider()
-        # Combine the dynamic window background CSS with the static widget CSS
+        # Combine the dynamic window/widget CSS with the static widget CSS
         css = f"""
         {window_bg_css}
+        {widget_opacity_css}
 
         .dim-label {{
             color: alpha(currentColor, 0.7);
