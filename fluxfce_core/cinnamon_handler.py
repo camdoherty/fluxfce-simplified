@@ -61,6 +61,7 @@ class CinnamonHandler(DesktopHandler):
 
         bg_type = profile_config.get("Background", "type", fallback="solid")
 
+        # This is a prerequisite for changing background types
         self._run_gsettings(["set", SCHEMA_BG, "picture-uri", "''"])
 
         if bg_type == "image":
@@ -68,19 +69,23 @@ class CinnamonHandler(DesktopHandler):
             if not img_path or not Path(img_path).is_file():
                 log.error(f"Cinnamon: Background image not found at '{img_path}'")
                 return False
-            self._run_gsettings(["set", SCHEMA_BG, "picture-options", "'zoom'"])
-            self._run_gsettings(["set", SCHEMA_BG, "picture-uri", f"'file://{Path(img_path).resolve()}'"])
+            self._run_gsettings(["set", SCHEMA_BG, "picture-options", "zoom"])
+            self._run_gsettings(["set", SCHEMA_BG, "picture-uri", f"file://{Path(img_path).resolve()}"])
         elif bg_type == "gradient":
             primary = profile_config.get("Background", "primary_color")
             secondary = profile_config.get("Background", "secondary_color")
             direction = profile_config.get("Background", "gradient_direction")
-            self._run_gsettings(["set", SCHEMA_BG, "gradient-type", f"'{direction}'"])
-            self._run_gsettings(["set", SCHEMA_BG, "primary-color", f"'{primary}'"])
-            self._run_gsettings(["set", SCHEMA_BG, "secondary-color", f"'{secondary}'"])
+            # --- START: CORRECTED CODE ---
+            self._run_gsettings(["set", SCHEMA_BG, "gradient-direction", direction])
+            # --- END: CORRECTED CODE ---
+            self._run_gsettings(["set", SCHEMA_BG, "primary-color", primary])
+            self._run_gsettings(["set", SCHEMA_BG, "secondary-color", secondary])
         else: # solid
             primary = profile_config.get("Background", "primary_color")
-            self._run_gsettings(["set", SCHEMA_BG, "gradient-type", "'none'"])
-            self._run_gsettings(["set", SCHEMA_BG, "primary-color", f"'{primary}'"])
+            # --- START: CORRECTED CODE ---
+            self._run_gsettings(["set", SCHEMA_BG, "gradient-direction", "none"])
+            # --- END: CORRECTED CODE ---
+            self._run_gsettings(["set", SCHEMA_BG, "primary-color", primary])
 
         return True
 
@@ -95,7 +100,9 @@ class CinnamonHandler(DesktopHandler):
         profile_path = PROFILE_DIR / f"{PROFILE_PREFIX}{profile_name}.profile"
         log.info(f"Cinnamon: Saving current background to profile '{profile_path.name}'")
 
-        current_gradient_type = self._get_gsettings_key(SCHEMA_BG, "gradient-type")
+        # --- START: CORRECTED CODE ---
+        direction = self._get_gsettings_key(SCHEMA_BG, "gradient-direction")
+        # --- END: CORRECTED CODE ---
         image_uri = self._get_gsettings_key(SCHEMA_BG, "picture-uri")
 
         profile_config = configparser.ConfigParser()
@@ -104,12 +111,12 @@ class CinnamonHandler(DesktopHandler):
         if image_uri:
             profile_config.set("Background", "type", "image")
             profile_config.set("Background", "image_path", image_uri.replace("file://", ""))
-        elif current_gradient_type in ["vertical", "horizontal"]:
+        elif direction in ["vertical", "horizontal"]:
             profile_config.set("Background", "type", "gradient")
-            profile_config.set("Background", "gradient_direction", current_gradient_type)
+            profile_config.set("Background", "gradient_direction", direction)
             profile_config.set("Background", "primary_color", self._get_gsettings_key(SCHEMA_BG, "primary-color"))
             profile_config.set("Background", "secondary_color", self._get_gsettings_key(SCHEMA_BG, "secondary-color"))
-        else:
+        else: # 'none' or other values imply solid
             profile_config.set("Background", "type", "solid")
             profile_config.set("Background", "primary_color", self._get_gsettings_key(SCHEMA_BG, "primary-color"))
 
@@ -134,28 +141,23 @@ class CinnamonHandler(DesktopHandler):
                               "nuit" in theme_name.lower() or \
                               "밤" in theme_name.lower() # Example for Korean
 
-        color_scheme_value = "'prefer-dark'" if is_dark_mode_target else "'default'"
-
+        # --- START: CORRECTED CODE ---
+        # The 'color-scheme' key is for modern GTK4/libadwaita apps.
+        # It's the most correct way to toggle dark mode system-wide.
+        color_scheme_value = "prefer-dark" if is_dark_mode_target else "default"
         log.info(f"Setting Cinnamon color scheme to: {color_scheme_value}")
         code_cs, _, stderr_cs = self._run_gsettings(["set", SCHEMA_INTERFACE, "color-scheme", color_scheme_value])
         if code_cs != 0:
-             # Warn but don't fail, as some older Cinnamon versions might not have this key
-            log.warning(f"Failed to set Cinnamon color-scheme: {stderr_cs}. This might be okay on older Cinnamon.")
+            log.warning(f"Failed to set Cinnamon color-scheme: {stderr_cs}. This may be expected on older Cinnamon versions.")
 
-
-        # It's generally good practice to set the base theme name as well,
-        # even if color-scheme is the primary driver for dark mode.
-        # Some themes might have specific assets that are only picked up if the base name matches.
-        # The user provides the "day" or "night" theme name from config.
-        # We use this name directly for the gtk-theme and wm-theme.
-
-        log.info(f"Setting Cinnamon base GTK theme to: '{theme_name}'")
-        code_gtk, _, stderr_gtk = self._run_gsettings(["set", SCHEMA_INTERFACE, "gtk-theme", f"'{theme_name}'"])
+        # Also set the legacy gtk-theme for older apps and full compatibility.
+        log.info(f"Setting Cinnamon base GTK theme to: {theme_name}")
+        code_gtk, _, stderr_gtk = self._run_gsettings(["set", SCHEMA_INTERFACE, "gtk-theme", theme_name])
         if code_gtk != 0:
             raise FluxFceError(f"Failed to set Cinnamon GTK theme to '{theme_name}': {stderr_gtk}")
 
-        log.info(f"Setting Cinnamon WM theme to: '{theme_name}'")
-        # WM theme might not always match GTK theme name, so don't raise error if it fails
-        self._run_gsettings(["set", SCHEMA_WM, "theme", f"'{theme_name}'"])
+        log.info(f"Setting Cinnamon WM theme to: {theme_name}")
+        self._run_gsettings(["set", SCHEMA_WM, "theme", theme_name])
+        # --- END: CORRECTED CODE ---
 
         return True
