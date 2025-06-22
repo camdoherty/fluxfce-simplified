@@ -3,7 +3,6 @@
 /fluxfce_core/__pycache__/
 /notes
 bug.log
-todo*
 srss.py
 setup_format_lint.sh
 codebase-to-txt.sh
@@ -14,7 +13,6 @@ codebase-*
 .gitignore
 /codebase.txt
 
-todo.md
 prompt*
 prompt.md
 backup/fluxfce-temp-control.py
