@@ -1,4 +1,4 @@
-# ~/dev/fluxfce-simplified/fluxfce_core/config.py
+# fluxfce_core/config.py
 """
 Configuration management for FluxFCE.
 
@@ -20,12 +20,7 @@ APP_NAME = "fluxfce"
 CONFIG_DIR = pathlib.Path.home() / ".config" / APP_NAME
 CONFIG_FILE = CONFIG_DIR / "config.ini"
 
-# --- START: CORRECTED CODE ---
-# Define paths to default assets to be used in the config
-_ASSETS_DIR = pathlib.Path(__file__).resolve().parent / "assets"
-_DEFAULT_DAY_IMG_PATH = str(_ASSETS_DIR / "default-day.png")
-_DEFAULT_NIGHT_IMG_PATH = str(_ASSETS_DIR / "default-night.png")
-
+# --- START: CORRECTED AND COMPLETE DEFAULT_CONFIG ---
 DEFAULT_CONFIG: dict[str, dict[str, str]] = {
     "Location": {
         "LATITUDE": "43.65N",
@@ -37,9 +32,22 @@ DEFAULT_CONFIG: dict[str, dict[str, str]] = {
         "widget_opacity": "0.92",
     },
     "Appearance": {
-        # Universal settings for theme and profile names
+        # XFCE uses these simple keys
         "LIGHT_THEME": "Adwaita",
         "DARK_THEME": "Adwaita-dark",
+
+        # Cinnamon uses these more granular keys. They must be present.
+        "CINNAMON_DAY_APPLICATIONS_THEME": "Mint-Y",
+        "CINNAMON_DAY_DESKTOP_THEME": "Mint-Y",
+        "CINNAMON_DAY_ICON_THEME": "Mint-Y-Sand",
+        "CINNAMON_DAY_CURSOR_THEME": "Bibata-Modern-Classic",
+
+        "CINNAMON_NIGHT_APPLICATIONS_THEME": "Mint-Y-Dark-Aqua",
+        "CINNAMON_NIGHT_DESKTOP_THEME": "Mint-Y-Dark-Aqua",
+        "CINNAMON_NIGHT_ICON_THEME": "Mint-Y-Dark-Aqua",
+        "CINNAMON_NIGHT_CURSOR_THEME": "DMZ-Black",
+
+        # Universal keys for background profiles
         "DAY_BACKGROUND_PROFILE": "default-day",
         "NIGHT_BACKGROUND_PROFILE": "default-night",
     },
@@ -52,7 +60,8 @@ DEFAULT_CONFIG: dict[str, dict[str, str]] = {
         "XSCT_BRIGHT": "0.85",
     },
 }
-# --- END: CORRECTED CODE ---
+# --- END: CORRECTED AND COMPLETE DEFAULT_CONFIG ---
+
 
 class ConfigManager:
     """Handles reading/writing config.ini."""
@@ -96,8 +105,6 @@ class ConfigManager:
         parser = self._load_ini(CONFIG_FILE)
         made_changes = False
 
-        # --- START OF FIX ---
-        # Iterate through default sections and keys to ensure all are present.
         for section, defaults in DEFAULT_CONFIG.items():
             if not parser.has_section(section):
                 log.info(f"Adding missing section [{section}] to config in memory.")
@@ -105,13 +112,14 @@ class ConfigManager:
                 made_changes = True
             
             for key, value in defaults.items():
-                # The crucial check: does the specific option exist?
                 if not parser.has_option(section, key):
                     log.info(f"Adding missing option '{key}' to section [{section}] in memory.")
                     parser.set(section, key, value)
                     made_changes = True
+        
         if made_changes:
-            log.info("Default values applied in memory to the loaded configuration.")
+            log.info("Default values for missing keys have been applied to the loaded configuration.")
+        
         return parser
 
     def save_config(self, config: configparser.ConfigParser) -> bool:
