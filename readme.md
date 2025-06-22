@@ -1,48 +1,54 @@
-readme-NEW.md
-
 # fluxfce
 
-**fluxfce** automates switching your XFCE desktop appearance between user-defined **Day** and **Night** modes at local sunrise and sunset. It uses an adapted NOAA algorithm for precise timing and relies on **Systemd user timers** for low-resource scheduling.
+*requires review*
 
-Manages Gtk theme, desktop background, and screen temperature / brightness
+**fluxfce** automates switching your desktop appearance between user-defined **Day** and **Night** modes at local sunrise and sunset. It supports both **XFCE** and **Linux Mint Cinnamon** desktop environments.
+
+It manages GTK theme, desktop background, and screen temperature/brightness using an adapted NOAA algorithm for precise timing. `systemd` timers are used use for lightweight scheduling without a persistent daemon.
 
 <p align="center">
-  <img src="logo.png" alt="fluxfce Logo Placeholder" width="150">
+  <img src="logo.png" alt="fluxfce Logo" width="150">
 </p>
 
 ---
 
 ## Features
 
-- **Automatic Sunrise/Sunset Switching:** Transitions your desktop look at the correct local time.
-- **Profile-Based Customization:** Simply set up your desktop how you like it for day or night, and save that entire look to a profile with a single command.
-- **Comprehensive Appearance Control:** Adjusts:
-  - GTK & Window Manager Theme (`xfconf`)
-  - Desktop Background (any type supported by XFCE, including images, gradients, or solid colors)
-  - Screen Temperature & Brightness (via `xsct`)
-- **Location Aware:** Calculates sun times based on user-configured latitude, longitude, and IANA timezone.
-- **Low Resource Usage:** Uses `systemd` user timers, avoiding a persistent background daemon.
-- **Robust Systemd Integration:** Installs user units for:
-    - Daily recalculation of sunrise/sunset event timers.
-    - Precise transitions at sunrise and sunset.
-    - Applying the correct theme on login and resume from suspend.
-- **Manual Overrides:** Instantly apply a mode and optionally disable automatic scheduling.
-- **Simple Configuration:** Manages settings in a clean INI file at `~/.config/fluxfce/config.ini`.
-- **Status Reporting:** Provides a clear status of configuration, sun times, and scheduler state.
+-   **Multi-Desktop Support:** Works natively on both **XFCE** and **Linux Mint Cinnamon**.
+-   **Automatic Sunrise/Sunset Switching:** Transitions your desktop look at the correct local time.
+-   **Profile-Based Customization:** Set up your desktop how you like it for day or night, and save that entire look to a profile with a single command (`fluxfce set-default`).
+-   **Comprehensive Appearance Control:** Adjusts:
+    -   GTK & Window Manager Theme.
+    -   Cinnamon's native "prefer-dark" color scheme.
+    -   Desktop Background (any type supported by your DE, including images, gradients, or solid colors).
+    -   Screen Temperature & Brightness (via `xsct`).
+-   **Location Aware:** Calculates sunrise/sunset based on user-configured latitude, longitude, and IANA timezone.
+-   **Low Resource Usage:** Uses `systemd` user timers, avoiding a persistent background daemon.
+-   **Robust Systemd Integration:** Installs user units for:
+    -   Daily recalculation of sunrise/sunset event timers.
+    -   Precise transitions at sunrise and sunset.
+    -   Applying the correct theme on login and resume from suspend.
+-   **Simple Configuration:** Manages settings in clean INI and .profile files.
 
 ## Requirements
 
-- **Linux Distribution:** An XFCE distribution with `systemd`.
-  - **Tested On:** Ubuntu 22.04+ (Xubuntu), Linux Mint 21.x+ (XFCE).
-  - *Should work on:* Debian, Fedora XFCE, Arch XFCE, etc. (dependency package names may vary).
-- **Desktop Environment:** XFCE 4.x
-- **Python:** Python 3.9+ (for `zoneinfo` library).
-- **Dependencies:**
-  - `systemd` (user instance must be running).
-  - `xsct`: For screen temperature/brightness control.
-  - `xfconf-query`: Core XFCE configuration tool.
-  - `xfdesktop`: XFCE desktop manager.
-  - `xrandr`: For multi-monitor awareness.
+#### General Requirements
+-   **Python:** Python 3.9+ (for `zoneinfo` library).
+-   **System:** A Linux distribution with `systemd`.
+-   **Screen Control:** `xsct` (for screen temperature/brightness).
+
+#### Desktop-Specific Requirements
+
+The installer will check for these based on your environment.
+
+-   **For XFCE:**
+    -   `xfconf-query` (core configuration tool)
+    -   `xfdesktop` (desktop manager for background reloads)
+    -   `xrandr` (for multi-monitor awareness)
+
+-   **For Cinnamon:**
+    -   `gsettings` (core configuration tool)
+    -   `gdbus` (for checking session readiness)
 
 ## Installation
 
@@ -57,22 +63,18 @@ Manages Gtk theme, desktop background, and screen temperature / brightness
     ./fluxfce_cli.py install
     ```
     This master command handles everything:
-    - Checks for the correct Python version.
-    - Verifies all required command-line dependencies and offers to install them via `apt` on Debian/Ubuntu systems.
-    - Creates an initial configuration file (`~/.config/fluxfce/config.ini`), prompting for your location for accurate sun calculations.
-    - Installs and enables the necessary `systemd` user units for full automation.
+    -   Detects your desktop environment (XFCE or Cinnamon).
+    -   Verifies all required command-line dependencies for your DE.
+    -   Creates an initial configuration file (`~/.config/fluxfce/config.ini`), prompting for your location.
+    -   Installs and enables the necessary `systemd` user units for full automation.
 
 3.  **Make `fluxfce` available in your PATH (Recommended):**
-    For easy access, create a symbolic link.
+    For easy access from any terminal location, create a symbolic link.
     ```bash
     # Ensure ~/.local/bin exists and is in your PATH
     mkdir -p ~/.local/bin
-
-    # Add ~/.local/bin to PATH in your shell's config file if it's not already there
-    # For bash, add this to ~/.bashrc:
-    # export PATH="$HOME/.local/bin:$PATH"
-
-    # Create the symlink
+    
+    # Create the symlink (run from within the cloned directory)
     ln -s "$(pwd)/fluxfce_cli.py" ~/.local/bin/fluxfce
     ```
 
@@ -80,9 +82,9 @@ Manages Gtk theme, desktop background, and screen temperature / brightness
 
 The recommended workflow is to set your desired Day and Night looks first.
 
-#### **1. Configure Your Day/Night Appearance (Crucial Step)**
+#### **1. Configure Your Appearance (Crucial Step)**
 
-Set your desired XFCE theme, desktop background(s), and screen temperature/brightness for **Daytime**, then save it by running:
+Set up your desktop exactly how you want it for **Daytime** (theme, background, screen color), then save this state by running:
 
 ```bash
 fluxfce set-default --mode day
@@ -111,17 +113,17 @@ This saves your complete desktop state into profile files, which `fluxfce` will 
 
 ## Configuration
 
-The main configuration file is located at `~/.config/fluxfce/config.ini`. While `install` and `set-default` handle most settings, you can edit it manually.
+Configuration is split between a main settings file and background profile files.
 
-**Example `config.ini`:**
+#### Main Config: `~/.config/fluxfce/config.ini`
+
+This file holds your location, theme names, and screen settings.
+
 ```ini
 [Location]
 latitude = 43.65N
 longitude = 79.38W
 timezone = America/Toronto
-
-[GUI]
-opacity = 0.7
 
 [Appearance]
 light_theme = Adwaita
@@ -138,19 +140,23 @@ xsct_temp = 4500
 xsct_bright = 0.85
 ```
 
-- **Backgrounds are now stored in profiles** at `~/.config/fluxfce/backgrounds/`. The `set-default` command creates and updates these files for you. You can edit them manually to tweak background settings.
-- **`xsct_temp`** and **`xsct_bright`**: An empty value will cause `xsct` to be reset to its default state.
+#### Background Profiles: `~/.config/fluxfce/backgrounds/`
+
+The `fluxfce set-default` command creates and manages these files for you.
+
+-   **XFCE profiles** (e.g., `default-day.profile`) are complex and store detailed properties for each monitor.
+-   **Cinnamon profiles** (e.g., `cinnamon-default-day.profile`) are simple INI files. Example:
+    ```ini
+    [Background]
+    type = image
+    image_path = /path/to/your/day-wallpaper.jpg
+    ```
 
 ## Troubleshooting
 
--   **Verbose Logging:** First, run any command with the `-v` flag for detailed output: `fluxfce -v status`.
+-   **Verbose Logging:** Always run commands with the `-v` flag first for detailed output: `fluxfce -v status`.
 
--   **Check Dependency Script:** To re-run the dependency checker manually:
-    ```bash
-    ./fluxfce_deps_check.py
-    ```
-
--   **Systemd Timers and Services:**
+-   **Check Systemd Units:**
     -   **List all `fluxfce` timers** to see when they will next run:
         ```bash
         systemctl --user list-timers --all | grep fluxfce
@@ -163,16 +169,18 @@ xsct_bright = 0.85
         ```bash
         journalctl --user -u fluxfce-scheduler.service -e --no-pager
         ```
-        *(Replace `fluxfce-scheduler.service` with any unit name, like `fluxfce-apply-transition@night.service` or `fluxfce-resume.service`)*.
+        *(Replace the unit name as needed, e.g., `fluxfce-apply-transition@night.service`)*.
 
 -   **Manual Service Test:** To manually trigger a transition and test the service:
     ```bash
     # Test the 'night' mode transition
     systemctl --user start fluxfce-apply-transition@night.service
-
-    # Check the logs if it failed
+    
+    # Check the logs if it failed, paying attention to any errors from
+    # XfceHandler or CinnamonHandler.
     journalctl --user -u fluxfce-apply-transition@night.service
     ```
+
 ## License
 
 MIT

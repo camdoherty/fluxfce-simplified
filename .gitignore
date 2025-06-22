@@ -17,8 +17,10 @@ codebase-*
 todo.md
 prompt*
 prompt.md
+backup
 backup/fluxfce-temp-control.py
 backup/detect-backgrounds.sh
 backup/fluxfce-bright-control.py
 system-logs.txt
 fluxfce_gui.log
+backup/readme-NEW.md
