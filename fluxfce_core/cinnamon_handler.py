@@ -80,14 +80,17 @@ class CinnamonHandler(DesktopHandler):
             primary = config.get("Appearance", f"CINNAMON_{m}_BG_PRIMARY_COLOR")
             secondary = config.get("Appearance", f"CINNAMON_{m}_BG_SECONDARY_COLOR")
             direction = config.get("Appearance", f"CINNAMON_{m}_BG_GRADIENT_DIR")
-            self._run_gsettings(["set", SCHEMA_BG, "gradient-type", f"'{direction}'"])
+            # --- START: CORRECTED CODE ---
+            self._run_gsettings(["set", SCHEMA_BG, "gradient-direction", f"'{direction}'"])
+            # --- END: CORRECTED CODE ---
             self._run_gsettings(["set", SCHEMA_BG, "primary-color", f"'{primary}'"])
             self._run_gsettings(["set", SCHEMA_BG, "secondary-color", f"'{secondary}'"])
             log.info(f"Cinnamon: Set background gradient {primary} -> {secondary} ({direction})")
 
-        else: # solid color
+        else: # solid color is the default
             primary = config.get("Appearance", f"CINNAMON_{m}_BG_PRIMARY_COLOR")
-            self._run_gsettings(["set", SCHEMA_BG, "gradient-type", "'solid'"])
+            # For solid color, we set the gradient-direction to 'none'
+            self._run_gsettings(["set", SCHEMA_BG, "gradient-direction", "'none'"])
             self._run_gsettings(["set", SCHEMA_BG, "primary-color", f"'{primary}'"])
             log.info(f"Cinnamon: Set background color to {primary}")
 
@@ -98,25 +101,27 @@ class CinnamonHandler(DesktopHandler):
         m = mode.upper()
 
         # Get all current settings from gsettings
-        _, type, _ = self._run_gsettings(["get", SCHEMA_BG, "gradient-type"])
+        # --- START: CORRECTED CODE ---
+        _, direction, _ = self._run_gsettings(["get", SCHEMA_BG, "gradient-direction"])
+        # --- END: CORRECTED CODE ---
         _, image, _ = self._run_gsettings(["get", SCHEMA_BG, "picture-uri"])
         _, primary, _ = self._run_gsettings(["get", SCHEMA_BG, "primary-color"])
         _, secondary, _ = self._run_gsettings(["get", SCHEMA_BG, "secondary-color"])
 
-        type = type.strip("'")
+        direction = direction.strip("'")
         image = image.strip("'").replace("file://", "")
 
         bg_type = "solid"
         if image:
             bg_type = "image"
-        elif type in ["vertical", "horizontal"]:
+        elif direction in ["vertical", "horizontal"]:
             bg_type = "gradient"
 
         config.set("Appearance", f"CINNAMON_{m}_BG_TYPE", bg_type)
         config.set("Appearance", f"CINNAMON_{m}_BG_IMAGE_PATH", image)
         config.set("Appearance", f"CINNAMON_{m}_BG_PRIMARY_COLOR", primary.strip("'"))
         config.set("Appearance", f"CINNAMON_{m}_BG_SECONDARY_COLOR", secondary.strip("'"))
-        config.set("Appearance", f"CINNAMON_{m}_BG_GRADIENT_DIR", type)
+        config.set("Appearance", f"CINNAMON_{m}_BG_GRADIENT_DIR", direction)
 
         log.info(f"Cinnamon: Saved background settings for {mode} mode. (Type: {bg_type})")
         return True

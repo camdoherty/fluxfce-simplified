@@ -20,8 +20,13 @@ APP_NAME = "fluxfce"
 CONFIG_DIR = pathlib.Path.home() / ".config" / APP_NAME
 CONFIG_FILE = CONFIG_DIR / "config.ini"
 
+# --- START: CORRECTED CODE ---
+# Define paths to default assets to be used in the config
+_ASSETS_DIR = pathlib.Path(__file__).resolve().parent / "assets"
+_DEFAULT_DAY_IMG_PATH = str(_ASSETS_DIR / "default-day.png")
+_DEFAULT_NIGHT_IMG_PATH = str(_ASSETS_DIR / "default-night.png")
+
 # Default configuration values
-# Background settings are now handled by profiles.
 DEFAULT_CONFIG: dict[str, dict[str, str]] = {
     "Location": {
         "LATITUDE": "43.65N",
@@ -42,14 +47,14 @@ DEFAULT_CONFIG: dict[str, dict[str, str]] = {
         "NIGHT_BACKGROUND_PROFILE": "default-night",
 
         # --- Cinnamon Specific ---
-        "CINNAMON_DAY_BG_TYPE": "image", # image, solid, or gradient
-        "CINNAMON_DAY_BG_IMAGE_PATH": "", # Absolute path to image
+        "CINNAMON_DAY_BG_TYPE": "image",
+        "CINNAMON_DAY_BG_IMAGE_PATH": _DEFAULT_DAY_IMG_PATH,
         "CINNAMON_DAY_BG_PRIMARY_COLOR": "#ADD8E6",
         "CINNAMON_DAY_BG_SECONDARY_COLOR": "#87CEEB",
-        "CINNAMON_DAY_BG_GRADIENT_DIR": "vertical", # vertical or horizontal
+        "CINNAMON_DAY_BG_GRADIENT_DIR": "vertical",
 
-        "CINNAMON_NIGHT_BG_TYPE": "gradient", # image, solid, or gradient
-        "CINNAMON_NIGHT_BG_IMAGE_PATH": "",
+        "CINNAMON_NIGHT_BG_TYPE": "gradient",
+        "CINNAMON_NIGHT_BG_IMAGE_PATH": _DEFAULT_NIGHT_IMG_PATH,
         "CINNAMON_NIGHT_BG_PRIMARY_COLOR": "#1E1E2E",
         "CINNAMON_NIGHT_BG_SECONDARY_COLOR": "#000000",
         "CINNAMON_NIGHT_BG_GRADIENT_DIR": "vertical",
@@ -63,6 +68,7 @@ DEFAULT_CONFIG: dict[str, dict[str, str]] = {
         "XSCT_BRIGHT": "0.85",
     },
 }
+# --- END: CORRECTED CODE ---
 
 class ConfigManager:
     """Handles reading/writing config.ini."""
