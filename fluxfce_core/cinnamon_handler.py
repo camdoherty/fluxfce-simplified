@@ -61,29 +61,25 @@ class CinnamonHandler(DesktopHandler):
 
         bg_type = profile_config.get("Background", "type", fallback="solid")
 
-        self._run_gsettings(["set", SCHEMA_BG, "picture-uri", "''"]) # Clear previous image
+        self._run_gsettings(["set", SCHEMA_BG, "picture-uri", "''"])
 
         if bg_type == "image":
-            img_path_str = profile_config.get("Background", "image_path", fallback="")
-            if not img_path_str: # Check if path is empty string
-                log.error(f"Cinnamon: Background type is 'image' but image_path is empty in profile '{profile_path.name}'")
-                return False
-            img_path = Path(img_path_str) # Convert to Path object
-            if not img_path.is_file():
-                log.error(f"Cinnamon: Background image not found at '{img_path}' (from profile '{profile_path.name}')")
+            img_path = profile_config.get("Background", "image_path", fallback="")
+            if not img_path or not Path(img_path).is_file():
+                log.error(f"Cinnamon: Background image not found at '{img_path}'")
                 return False
             self._run_gsettings(["set", SCHEMA_BG, "picture-options", "'zoom'"])
-            self._run_gsettings(["set", SCHEMA_BG, "picture-uri", f"'file://{img_path.resolve()}'"])
+            self._run_gsettings(["set", SCHEMA_BG, "picture-uri", f"'file://{Path(img_path).resolve()}'"])
         elif bg_type == "gradient":
             primary = profile_config.get("Background", "primary_color")
             secondary = profile_config.get("Background", "secondary_color")
             direction = profile_config.get("Background", "gradient_direction")
-            self._run_gsettings(["set", SCHEMA_BG, "gradient-type", f"'{direction}'"]) # Corrected key for applying
+            self._run_gsettings(["set", SCHEMA_BG, "gradient-type", f"'{direction}'"])
             self._run_gsettings(["set", SCHEMA_BG, "primary-color", f"'{primary}'"])
             self._run_gsettings(["set", SCHEMA_BG, "secondary-color", f"'{secondary}'"])
         else: # solid
             primary = profile_config.get("Background", "primary_color")
-            self._run_gsettings(["set", SCHEMA_BG, "gradient-type", "'none'"]) # Corrected key for applying solid
+            self._run_gsettings(["set", SCHEMA_BG, "gradient-type", "'none'"])
             self._run_gsettings(["set", SCHEMA_BG, "primary-color", f"'{primary}'"])
 
         return True
@@ -99,10 +95,6 @@ class CinnamonHandler(DesktopHandler):
         profile_path = PROFILE_DIR / f"{PROFILE_PREFIX}{profile_name}.profile"
         log.info(f"Cinnamon: Saving current background to profile '{profile_path.name}'")
 
-        # Get current settings
-        # For saving, gsettings uses 'gradient-type' to report 'vertical'/'horizontal'/'none'
-        # but 'gradient-direction' to set it. This is confusing but how Cinnamon's gsettings schema works.
-        # For determining type, we check 'gradient-type'.
         current_gradient_type = self._get_gsettings_key(SCHEMA_BG, "gradient-type")
         image_uri = self._get_gsettings_key(SCHEMA_BG, "picture-uri")
 
@@ -114,12 +106,10 @@ class CinnamonHandler(DesktopHandler):
             profile_config.set("Background", "image_path", image_uri.replace("file://", ""))
         elif current_gradient_type in ["vertical", "horizontal"]:
             profile_config.set("Background", "type", "gradient")
-            # When saving, we record the 'gradient-type' as 'gradient_direction' in our profile
-            # as this is the key we use when *applying* the gradient.
             profile_config.set("Background", "gradient_direction", current_gradient_type)
             profile_config.set("Background", "primary_color", self._get_gsettings_key(SCHEMA_BG, "primary-color"))
             profile_config.set("Background", "secondary_color", self._get_gsettings_key(SCHEMA_BG, "secondary-color"))
-        else: # solid (gradient-type is 'none' or unrecognized)
+        else:
             profile_config.set("Background", "type", "solid")
             profile_config.set("Background", "primary_color", self._get_gsettings_key(SCHEMA_BG, "primary-color"))
 

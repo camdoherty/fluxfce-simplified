@@ -2,11 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-fluxfce (GUI) - Simplified XFCE Theming Tool
+fluxfce (GUI) - Simplified Desktop Theming Tool
 
-Graphical user interface for managing automatic XFCE theme/background/screen
-switching using the fluxfce_core library. Runs as a background application
-with a system tray status icon.
+Graphical user interface for managing automatic theme/background/screen
+switching for supported desktop environments using the fluxfce_core library.
+Runs as a background application with a system tray status icon.
 """
 
 import logging
@@ -276,9 +276,11 @@ class FluxFceWindow(Gtk.Window):
         btn_edit_profile.connect("clicked", self.on_edit_profile_clicked, mode)
         grid.attach(btn_edit_profile, 2, 0, 1, 1)
 
-        # --- START OF CORRECTED INDENTATION ---
         # This block is now correctly inside the function.
-        if helpers.get_desktop_environment() != "XFCE":
+        if helpers.get_desktop_environment() == "XFCE":
+            btn_edit_profile.set_visible(True)
+        else:
+            # For Cinnamon, hide the edit button as profiles are simple.
             btn_edit_profile.set_visible(False)
 
         lbl_details = Gtk.Label(xalign=0, yalign=0, use_markup=True)
@@ -286,7 +288,6 @@ class FluxFceWindow(Gtk.Window):
         grid.attach(lbl_details, 0, 1, 3, 1)
 
         return grid, lbl_details, btn_edit_profile
-        # --- END OF CORRECTED INDENTATION ---
 
     def _build_manual_control_section(self):
         # Use an expander to allow collapsing this section

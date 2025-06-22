@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
 """
-fluxfce (CLI) - Simplified XFCE Theming Tool (Systemd Timer Version)
+fluxfce (CLI) - Simplified Desktop Theming Tool
 
-Command-line interface for managing automatic XFCE theme/background/screen
-switching based on sunrise/sunset times using the fluxfce_core library.
-This version uses systemd timers for scheduling.
+Command-line interface for managing automatic theme/background/screen
+switching for supported desktop environments using the fluxfce_core library.
 """
 
 import argparse

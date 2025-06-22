@@ -169,18 +169,19 @@ def enable_scheduling(
             log.warning("Scheduler: Initial definition of dynamic event timers failed or scheduled nothing, "
                         "but proceeding to enable the main daily scheduler.")
 
-        # FIX: Removed --now to prevent a race condition with the main script's theme application.
-        code, _, stderr = _sysd_mgr_scheduler._run_systemctl(
-            ["enable", sysd.SCHEDULER_TIMER_NAME], capture_output=True
-        )
-        if code != 0:
-            raise exc.SystemdError(
-                f"Scheduler: Failed to enable main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}): {stderr.strip()}"
+            # The '--now' flag is the correct, idempotent way to enable a timer and
+            # ensure its service runs once immediately to set the initial schedule.
+            code, _, stderr = _sysd_mgr_scheduler._run_systemctl(
+                ["enable", "--now", sysd.SCHEDULER_TIMER_NAME], capture_output=True
             )
-        
-        log.info(f"Scheduler: Main scheduler ({sysd.SCHEDULER_TIMER_NAME}) enabled to run daily.")
-        log.info("Scheduler: Scheduling setup completed successfully by scheduler module.")
-        return True
+            if code != 0:
+                raise exc.SystemdError(
+                    f"Scheduler: Failed to enable main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}): {stderr.strip()}"
+                )
+
+            log.info(f"Scheduler: Main scheduler ({sysd.SCHEDULER_TIMER_NAME}) enabled and started for initial run.")
+            log.info("Scheduler: Scheduling setup completed successfully by scheduler module.")
+            return True
         
     except (exc.SystemdError, exc.FluxFceError) as e: 
         log.error(f"Scheduler: Failed to enable scheduling: {e}")
