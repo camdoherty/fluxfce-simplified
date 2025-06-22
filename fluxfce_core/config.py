@@ -26,7 +26,6 @@ _ASSETS_DIR = pathlib.Path(__file__).resolve().parent / "assets"
 _DEFAULT_DAY_IMG_PATH = str(_ASSETS_DIR / "default-day.png")
 _DEFAULT_NIGHT_IMG_PATH = str(_ASSETS_DIR / "default-night.png")
 
-# Default configuration values
 DEFAULT_CONFIG: dict[str, dict[str, str]] = {
     "Location": {
         "LATITUDE": "43.65N",
@@ -38,26 +37,11 @@ DEFAULT_CONFIG: dict[str, dict[str, str]] = {
         "widget_opacity": "0.92",
     },
     "Appearance": {
-        # --- Universal Settings ---
+        # Universal settings for theme and profile names
         "LIGHT_THEME": "Adwaita",
         "DARK_THEME": "Adwaita-dark",
-
-        # --- XFCE Specific ---
         "DAY_BACKGROUND_PROFILE": "default-day",
         "NIGHT_BACKGROUND_PROFILE": "default-night",
-
-        # --- Cinnamon Specific ---
-        "CINNAMON_DAY_BG_TYPE": "image",
-        "CINNAMON_DAY_BG_IMAGE_PATH": _DEFAULT_DAY_IMG_PATH,
-        "CINNAMON_DAY_BG_PRIMARY_COLOR": "#ADD8E6",
-        "CINNAMON_DAY_BG_SECONDARY_COLOR": "#87CEEB",
-        "CINNAMON_DAY_BG_GRADIENT_DIR": "vertical",
-
-        "CINNAMON_NIGHT_BG_TYPE": "gradient",
-        "CINNAMON_NIGHT_BG_IMAGE_PATH": _DEFAULT_NIGHT_IMG_PATH,
-        "CINNAMON_NIGHT_BG_PRIMARY_COLOR": "#1E1E2E",
-        "CINNAMON_NIGHT_BG_SECONDARY_COLOR": "#000000",
-        "CINNAMON_NIGHT_BG_GRADIENT_DIR": "vertical",
     },
     "ScreenDay": {
         "XSCT_TEMP": "6500",

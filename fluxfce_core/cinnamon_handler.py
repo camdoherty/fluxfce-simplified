@@ -1,6 +1,7 @@
 # fluxfce_core/cinnamon_handler.py
 """
 Concrete DesktopHandler implementation for the Cinnamon Desktop Environment.
+Uses profile files for background settings for consistency.
 """
 import configparser
 import logging
@@ -9,119 +10,162 @@ from typing import Literal
 
 from . import helpers
 from .desktop_handler import DesktopHandler
-from .exceptions import DependencyError, FluxFceError, ValidationError
+from .exceptions import ConfigError, DependencyError, FluxFceError, ValidationError
 
 log = logging.getLogger(__name__)
 
+# --- gsettings Constants ---
 GSET = "gsettings"
 SCHEMA_INTERFACE = "org.cinnamon.desktop.interface"
 SCHEMA_WM = "org.cinnamon.desktop.wm.preferences"
 SCHEMA_BG = "org.cinnamon.desktop.background"
 
+# --- Profile Constants ---
+PROFILE_DIR = helpers.pathlib.Path.home() / ".config" / "fluxfce" / "backgrounds"
+PROFILE_PREFIX = "cinnamon-"
+
+
 class CinnamonHandler(DesktopHandler):
-    """Handles interactions with Cinnamon."""
+    """Handles interactions with Cinnamon using profile files for backgrounds."""
 
     def __init__(self):
         try:
             helpers.check_dependencies([GSET, "xsct"])
-        except DependencyError as e:
+            PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+        except (DependencyError, OSError) as e:
             raise FluxFceError(f"Cannot initialize CinnamonHandler: {e}") from e
 
     def _run_gsettings(self, args: list[str]) -> tuple[int, str, str]:
         cmd = [GSET] + args
         return helpers.run_command(cmd, capture=True, check=False)
 
-    def get_theme(self) -> str:
-        log.debug("Getting Cinnamon GTK theme")
-        code, stdout, stderr = self._run_gsettings(["get", SCHEMA_INTERFACE, "gtk-theme"])
-        if code != 0:
-            raise FluxFceError(f"Failed to get Cinnamon GTK theme: {stderr}")
-        return stdout.strip().strip("'")
-
-    def set_theme(self, theme_name: str) -> bool:
-        if not theme_name:
-            raise ValidationError("Theme name cannot be empty.")
-
-        log.info(f"Setting Cinnamon GTK theme to: {theme_name}")
-        code, _, stderr = self._run_gsettings(["set", SCHEMA_INTERFACE, "gtk-theme", theme_name])
-        if code != 0:
-            raise FluxFceError(f"Failed to set Cinnamon GTK theme: {stderr}")
-
-        log.info(f"Setting Cinnamon WM theme to: {theme_name}")
-        code, _, stderr = self._run_gsettings(["set", SCHEMA_WM, "theme", theme_name])
-        if code != 0:
-            # Don't raise, just warn, as some themes may not have a matching WM theme.
-            log.warning(f"Failed to set Cinnamon WM theme: {stderr}")
-
-        return True
+    def _get_gsettings_key(self, schema: str, key: str) -> str:
+        code, stdout, _ = self._run_gsettings(["get", schema, key])
+        return stdout.strip().strip("'") if code == 0 else ""
 
     def apply_background(self, mode: Literal["day", "night"], config: configparser.ConfigParser) -> bool:
-        log.info(f"Cinnamon: Applying background for {mode} mode.")
-        m = mode.upper()
-        bg_type = config.get("Appearance", f"CINNAMON_{m}_BG_TYPE", fallback="solid")
+        profile_key = "DAY_BACKGROUND_PROFILE" if mode == "day" else "NIGHT_BACKGROUND_PROFILE"
+        profile_name = config.get("Appearance", profile_key, fallback=None)
 
-        # Always clear the image first to ensure color/gradient changes apply
-        self._run_gsettings(["set", SCHEMA_BG, "picture-uri", "''"])
+        if not profile_name:
+            log.warning(f"Cinnamon: Background profile for mode '{mode}' is not configured.")
+            return False
+
+        profile_path = PROFILE_DIR / f"{PROFILE_PREFIX}{profile_name}.profile"
+        if not profile_path.is_file():
+            raise ConfigError(f"Cinnamon background profile not found: {profile_path}")
+
+        log.info(f"Cinnamon: Applying background from profile '{profile_path.name}'")
+        profile_config = configparser.ConfigParser()
+        profile_config.read(profile_path)
+
+        bg_type = profile_config.get("Background", "type", fallback="solid")
+
+        self._run_gsettings(["set", SCHEMA_BG, "picture-uri", "''"]) # Clear previous image
 
         if bg_type == "image":
-            img_path_str = config.get("Appearance", f"CINNAMON_{m}_BG_IMAGE_PATH", fallback="")
-            if not img_path_str:
-                log.warning(f"Cinnamon: Background type for '{mode}' is 'image' but path is empty.")
+            img_path_str = profile_config.get("Background", "image_path", fallback="")
+            if not img_path_str: # Check if path is empty string
+                log.error(f"Cinnamon: Background type is 'image' but image_path is empty in profile '{profile_path.name}'")
                 return False
-            img_path = Path(img_path_str)
+            img_path = Path(img_path_str) # Convert to Path object
             if not img_path.is_file():
-                log.error(f"Cinnamon: Background image not found at '{img_path}'")
+                log.error(f"Cinnamon: Background image not found at '{img_path}' (from profile '{profile_path.name}')")
                 return False
             self._run_gsettings(["set", SCHEMA_BG, "picture-options", "'zoom'"])
             self._run_gsettings(["set", SCHEMA_BG, "picture-uri", f"'file://{img_path.resolve()}'"])
-            log.info(f"Cinnamon: Set background image to {img_path}")
-
         elif bg_type == "gradient":
-            primary = config.get("Appearance", f"CINNAMON_{m}_BG_PRIMARY_COLOR")
-            secondary = config.get("Appearance", f"CINNAMON_{m}_BG_SECONDARY_COLOR")
-            direction = config.get("Appearance", f"CINNAMON_{m}_BG_GRADIENT_DIR")
-            # --- START: CORRECTED CODE ---
-            self._run_gsettings(["set", SCHEMA_BG, "gradient-direction", f"'{direction}'"])
-            # --- END: CORRECTED CODE ---
+            primary = profile_config.get("Background", "primary_color")
+            secondary = profile_config.get("Background", "secondary_color")
+            direction = profile_config.get("Background", "gradient_direction")
+            self._run_gsettings(["set", SCHEMA_BG, "gradient-type", f"'{direction}'"]) # Corrected key for applying
             self._run_gsettings(["set", SCHEMA_BG, "primary-color", f"'{primary}'"])
             self._run_gsettings(["set", SCHEMA_BG, "secondary-color", f"'{secondary}'"])
-            log.info(f"Cinnamon: Set background gradient {primary} -> {secondary} ({direction})")
-
-        else: # solid color is the default
-            primary = config.get("Appearance", f"CINNAMON_{m}_BG_PRIMARY_COLOR")
-            # For solid color, we set the gradient-direction to 'none'
-            self._run_gsettings(["set", SCHEMA_BG, "gradient-direction", "'none'"])
+        else: # solid
+            primary = profile_config.get("Background", "primary_color")
+            self._run_gsettings(["set", SCHEMA_BG, "gradient-type", "'none'"]) # Corrected key for applying solid
             self._run_gsettings(["set", SCHEMA_BG, "primary-color", f"'{primary}'"])
-            log.info(f"Cinnamon: Set background color to {primary}")
 
         return True
 
     def save_current_background(self, mode: Literal["day", "night"], config: configparser.ConfigParser) -> bool:
-        log.info(f"Cinnamon: Saving current background to config for {mode} mode.")
-        m = mode.upper()
+        profile_key = "DAY_BACKGROUND_PROFILE" if mode == "day" else "NIGHT_BACKGROUND_PROFILE"
+        profile_name = config.get("Appearance", profile_key, fallback=None)
 
-        # Get all current settings from gsettings
-        # --- START: CORRECTED CODE ---
-        _, direction, _ = self._run_gsettings(["get", SCHEMA_BG, "gradient-direction"])
-        # --- END: CORRECTED CODE ---
-        _, image, _ = self._run_gsettings(["get", SCHEMA_BG, "picture-uri"])
-        _, primary, _ = self._run_gsettings(["get", SCHEMA_BG, "primary-color"])
-        _, secondary, _ = self._run_gsettings(["get", SCHEMA_BG, "secondary-color"])
+        if not profile_name:
+            log.warning(f"Cinnamon: Cannot save background, no profile name configured for mode '{mode}'.")
+            return False
 
-        direction = direction.strip("'")
-        image = image.strip("'").replace("file://", "")
+        profile_path = PROFILE_DIR / f"{PROFILE_PREFIX}{profile_name}.profile"
+        log.info(f"Cinnamon: Saving current background to profile '{profile_path.name}'")
 
-        bg_type = "solid"
-        if image:
-            bg_type = "image"
-        elif direction in ["vertical", "horizontal"]:
-            bg_type = "gradient"
+        # Get current settings
+        # For saving, gsettings uses 'gradient-type' to report 'vertical'/'horizontal'/'none'
+        # but 'gradient-direction' to set it. This is confusing but how Cinnamon's gsettings schema works.
+        # For determining type, we check 'gradient-type'.
+        current_gradient_type = self._get_gsettings_key(SCHEMA_BG, "gradient-type")
+        image_uri = self._get_gsettings_key(SCHEMA_BG, "picture-uri")
 
-        config.set("Appearance", f"CINNAMON_{m}_BG_TYPE", bg_type)
-        config.set("Appearance", f"CINNAMON_{m}_BG_IMAGE_PATH", image)
-        config.set("Appearance", f"CINNAMON_{m}_BG_PRIMARY_COLOR", primary.strip("'"))
-        config.set("Appearance", f"CINNAMON_{m}_BG_SECONDARY_COLOR", secondary.strip("'"))
-        config.set("Appearance", f"CINNAMON_{m}_BG_GRADIENT_DIR", direction)
+        profile_config = configparser.ConfigParser()
+        profile_config.add_section("Background")
 
-        log.info(f"Cinnamon: Saved background settings for {mode} mode. (Type: {bg_type})")
+        if image_uri:
+            profile_config.set("Background", "type", "image")
+            profile_config.set("Background", "image_path", image_uri.replace("file://", ""))
+        elif current_gradient_type in ["vertical", "horizontal"]:
+            profile_config.set("Background", "type", "gradient")
+            # When saving, we record the 'gradient-type' as 'gradient_direction' in our profile
+            # as this is the key we use when *applying* the gradient.
+            profile_config.set("Background", "gradient_direction", current_gradient_type)
+            profile_config.set("Background", "primary_color", self._get_gsettings_key(SCHEMA_BG, "primary-color"))
+            profile_config.set("Background", "secondary_color", self._get_gsettings_key(SCHEMA_BG, "secondary-color"))
+        else: # solid (gradient-type is 'none' or unrecognized)
+            profile_config.set("Background", "type", "solid")
+            profile_config.set("Background", "primary_color", self._get_gsettings_key(SCHEMA_BG, "primary-color"))
+
+        with profile_path.open("w") as pf:
+            profile_config.write(pf)
+
+        return True
+
+    def get_theme(self) -> str:
+        """Gets the current base GTK theme name."""
+        return self._get_gsettings_key(SCHEMA_INTERFACE, "gtk-theme")
+
+    def set_theme(self, theme_name: str) -> bool:
+        """Sets the base GTK theme and toggles the prefer-dark-mode setting."""
+        if not theme_name:
+            raise ValidationError("Theme name cannot be empty.")
+
+        # Determine if the target theme name implies a dark mode
+        # This logic can be adjusted based on common dark theme naming conventions
+        is_dark_mode_target = "dark" in theme_name.lower() or \
+                              "black" in theme_name.lower() or \
+                              "nuit" in theme_name.lower() or \
+                              "밤" in theme_name.lower() # Example for Korean
+
+        color_scheme_value = "'prefer-dark'" if is_dark_mode_target else "'default'"
+
+        log.info(f"Setting Cinnamon color scheme to: {color_scheme_value}")
+        code_cs, _, stderr_cs = self._run_gsettings(["set", SCHEMA_INTERFACE, "color-scheme", color_scheme_value])
+        if code_cs != 0:
+             # Warn but don't fail, as some older Cinnamon versions might not have this key
+            log.warning(f"Failed to set Cinnamon color-scheme: {stderr_cs}. This might be okay on older Cinnamon.")
+
+
+        # It's generally good practice to set the base theme name as well,
+        # even if color-scheme is the primary driver for dark mode.
+        # Some themes might have specific assets that are only picked up if the base name matches.
+        # The user provides the "day" or "night" theme name from config.
+        # We use this name directly for the gtk-theme and wm-theme.
+
+        log.info(f"Setting Cinnamon base GTK theme to: '{theme_name}'")
+        code_gtk, _, stderr_gtk = self._run_gsettings(["set", SCHEMA_INTERFACE, "gtk-theme", f"'{theme_name}'"])
+        if code_gtk != 0:
+            raise FluxFceError(f"Failed to set Cinnamon GTK theme to '{theme_name}': {stderr_gtk}")
+
+        log.info(f"Setting Cinnamon WM theme to: '{theme_name}'")
+        # WM theme might not always match GTK theme name, so don't raise error if it fails
+        self._run_gsettings(["set", SCHEMA_WM, "theme", f"'{theme_name}'"])
+
         return True

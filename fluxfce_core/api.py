@@ -60,6 +60,42 @@ def install_default_background_profiles() -> None:
     except Exception as e:
         log.exception(f"API: Unexpected error installing default background profiles: {e}")
 
+
+def install_default_cinnamon_profiles() -> None:
+    """Creates default background profiles specifically for Cinnamon."""
+    log.info("API: Installing default background profiles for Cinnamon.")
+
+    # Re-use assets from the XFCE profiles
+    from .background_manager import DEFAULT_DAY_ASSET, DEFAULT_NIGHT_ASSET
+
+    day_profile_content = f"""
+[Background]
+type = image
+image_path = {DEFAULT_DAY_ASSET}
+"""
+    night_profile_content = f"""
+[Background]
+type = gradient
+primary_color = #1E1E2E
+secondary_color = #000000
+gradient_direction = vertical
+"""
+
+    try:
+        profile_dir = helpers.pathlib.Path.home() / ".config" / "fluxfce" / "backgrounds"
+        profile_dir.mkdir(parents=True, exist_ok=True)
+
+        day_profile_path = profile_dir / "cinnamon-default-day.profile"
+        day_profile_path.write_text(day_profile_content.strip())
+        log.info(f"Wrote default Cinnamon day profile to {day_profile_path}")
+
+        night_profile_path = profile_dir / "cinnamon-default-night.profile"
+        night_profile_path.write_text(night_profile_content.strip())
+        log.info(f"Wrote default Cinnamon night profile to {night_profile_path}")
+
+    except OSError as e:
+        log.error(f"Failed to write default Cinnamon profiles: {e}")
+
 def install_fluxfce(script_path: str, python_executable: Optional[str] = None) -> bool:
     """API Façade: Installs static systemd units."""
     log.info(f"API Facade: Installing static systemd units for {sysd._APP_NAME}.")

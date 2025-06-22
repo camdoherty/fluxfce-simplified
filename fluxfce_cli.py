@@ -333,14 +333,18 @@ Examples:
                 log.info(f"Existing configuration found at {fluxfce_core.CONFIG_FILE}. Skipping interactive setup.")
             log.info(f"{AnsiColors.GREEN}--- FluxFCE application configuration complete ---{AnsiColors.RESET}")
 
-            # DE-aware step: Install default background profiles only for XFCE
-            if fluxfce_core.helpers.get_desktop_environment() == "XFCE":
+            # DE-aware step: Install DE-specific default background profiles
+            de = fluxfce_core.helpers.get_desktop_environment()
+            if de == "XFCE":
                 log.info("\n--- Step 2b: Installing default background profiles for XFCE ---")
                 fluxfce_core.install_default_background_profiles()
-                log.info("Default XFCE background profiles created. Use 'fluxfce set-default' to customize them.")
-            else:
-                log.info("\n--- Step 2b: Skipping XFCE background profile installation ---")
-                log.info("Background settings for Cinnamon are configured in config.ini.")
+            elif de == "CINNAMON":
+                log.info("\n--- Step 2b: Installing default background profiles for Cinnamon ---")
+                # Import the new function
+                from fluxfce_core.api import install_default_cinnamon_profiles
+                install_default_cinnamon_profiles()
+
+            log.info("Default background profiles created. Use 'fluxfce set-default' to customize them.")
 
             log.info("\n--- Step 3: Installing systemd units ---")
             fluxfce_core.install_fluxfce(script_path=SCRIPT_PATH, python_executable=PYTHON_EXECUTABLE)
