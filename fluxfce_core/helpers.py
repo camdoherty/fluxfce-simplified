@@ -146,6 +146,22 @@ def check_dependencies(deps: list[str]) -> bool:
     return True
 
 
+def get_desktop_environment() -> str:
+    """
+    Detects the current desktop environment from the XDG_CURRENT_DESKTOP variable.
+
+    Returns:
+        A string: "XFCE", "CINNAMON", or "UNKNOWN".
+    """
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
+    log.debug(f"Detected XDG_CURRENT_DESKTOP: {desktop}")
+    if "XFCE" in desktop:
+        return "XFCE"
+    if "CINNAMON" in desktop:
+        return "CINNAMON"
+    return "UNKNOWN"
+
+
 def check_atd_service() -> bool:
     """
     Checks if the 'atd' service appears to be running via systemctl.

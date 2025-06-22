@@ -1,20 +1,10 @@
-# fluxfce - stable - june9
+readme-NEW.md
 
+# fluxfce
 
- - Command to check all systemd units:
-```
-systemctl --user status \
-  fluxfce-apply-transition@day.service \
-  fluxfce-apply-transition@night.service \
-  fluxfce-login.service \
-  fluxfce-scheduler.timer \
-  fluxfce-sunrise-event.timer \
-  fluxfce-sunset-event.timer
-```
+**fluxfce** automates switching your XFCE desktop appearance between user-defined **Day** and **Night** modes at local sunrise and sunset. It uses an adapted NOAA algorithm for precise timing and relies on **Systemd user timers** for low-resource scheduling.
 
-**Fluxfce** automates switching XFCE desktop appearance (GTK Theme, Background Color/Gradient, Screen Temperature/Brightness) between user-defined Day and Night modes at sunrise and sunset times. It uses an adapted NOAA algorithm to calculate transition times. **Systemd user timers** are used for precise, low-resource scheduling.
-
-This is a refactored and simplified version focusing on core functionality, reliability, and maintainability.
+Manages Gtk theme, desktop background, and screen temperature / brightness
 
 <p align="center">
   <img src="logo.png" alt="fluxfce Logo Placeholder" width="150">
@@ -24,123 +14,104 @@ This is a refactored and simplified version focusing on core functionality, reli
 
 ## Features
 
-- **Automatic Switching:** Automatically transitions between Day and Night modes at local sunrise and sunset.
-- **Easy Default Setting:** Save your current desktop look as the new default for Day or Night mode (`fluxfce set-default --mode day`).
-- **Component Control:** Adjusts:
-  - GTK Theme (`Net/ThemeName`)
-  - Desktop Background (Solid color or vertical/horizontal gradient via `xfce4-desktop` properties)
+- **Automatic Sunrise/Sunset Switching:** Transitions your desktop look at the correct local time.
+- **Profile-Based Customization:** Simply set up your desktop how you like it for day or night, and save that entire look to a profile with a single command.
+- **Comprehensive Appearance Control:** Adjusts:
+  - GTK & Window Manager Theme (`xfconf`)
+  - Desktop Background (any type supported by XFCE, including images, gradients, or solid colors)
   - Screen Temperature & Brightness (via `xsct`)
-- **Location Aware:** Calculates sunrise/sunset times based on user-configured latitude, longitude, and IANA timezone.
-- **Timezone Detection:** Attempts to automatically detect system timezone during initial install.
-- **Low Resource Usage:** Uses systemd user timers, avoiding a persistent custom background daemon.
-- **Systemd Integration:** Installs systemd user units (`.timer`, `.service`) for:
-    - Daily rescheduling of sunrise/sunset event timers.
-    - Triggering theme transitions at precise sunrise/sunset times.
+- **Location Aware:** Calculates sun times based on user-configured latitude, longitude, and IANA timezone.
+- **Low Resource Usage:** Uses `systemd` user timers, avoiding a persistent background daemon.
+- **Robust Systemd Integration:** Installs user units for:
+    - Daily recalculation of sunrise/sunset event timers.
+    - Precise transitions at sunrise and sunset.
     - Applying the correct theme on login and resume from suspend.
-- **Manual Overrides:** Easily force Day or Night mode (`force-day`, `force-night`). Manual overrides disable automatic scheduling.
-- **Simple Configuration:** Uses a clear INI file (`~/.config/fluxfce/config.ini`).
-- **Status Reporting:** Check current configuration, calculated times, and systemd timer status (`status`).
+- **Manual Overrides:** Instantly apply a mode and optionally disable automatic scheduling.
+- **Simple Configuration:** Manages settings in a clean INI file at `~/.config/fluxfce/config.ini`.
+- **Status Reporting:** Provides a clear status of configuration, sun times, and scheduler state.
 
 ## Requirements
 
-- **Linux Distribution:** Designed for XFCE distributions with systemd.
-  - **Primary Targets:** Ubuntu 22.04+ (Xubuntu), Linux Mint 21.x+ (XFCE), Debian 11+ (XFCE).
-  - *May work on other systemd-based XFCE distributions (e.g., Fedora XFCE, Arch XFCE) with adjustments to package names for dependencies.*
+- **Linux Distribution:** An XFCE distribution with `systemd`.
+  - **Tested On:** Ubuntu 22.04+ (Xubuntu), Linux Mint 21.x+ (XFCE).
+  - *Should work on:* Debian, Fedora XFCE, Arch XFCE, etc. (dependency package names may vary).
 - **Desktop Environment:** XFCE 4.x
-- **Python:** Python 3.9+ (due to `zoneinfo` usage).
-- **System Tools & Services (Dependencies):**
-  - **`systemd`:** User instance must be operational.
-  - **`xsct`:** For screen temperature and brightness control.
-    - Installation on **Ubuntu 24.04 (Noble Numbat) and newer (or equivalent Linux Mint/Debian versions)**:
-      ```bash
-      sudo apt update
-      sudo apt install xsct
-      ```
-  - **Core XFCE/System Tools** (Usually pre-installed on XFCE systems):
-    - `xfconf-query` (from `xfce4-utils` or similar)
-    - `xfdesktop` (from `xfdesktop4` or similar, for background reloads)
-    - `timedatectl` (part of systemd)
+- **Python:** Python 3.9+ (for `zoneinfo` library).
+- **Dependencies:**
+  - `systemd` (user instance must be running).
+  - `xsct`: For screen temperature/brightness control.
+  - `xfconf-query`: Core XFCE configuration tool.
+  - `xfdesktop`: XFCE desktop manager.
+  - `xrandr`: For multi-monitor awareness.
 
 ## Installation
 
-1.  **Clone the repository (or download the source code):**
-
+1.  **Clone the repository:**
     ```bash
     git clone https://github.com/camdoherty/fluxfce-simplified.git
-    cd fluxfce
+    cd fluxfce-simplified
     ```
 
-2.  **Run the install command:**
-
+2.  **Run the interactive installer:**
     ```bash
-    python3 fluxfce_cli.py install
+    ./fluxfce_cli.py install
     ```
-    The script will:
-    - Check for Python version.
-    - Check for required system dependencies using `fluxfce_deps_check.py` and guide you through installing missing ones (like `xsct` via `apt`).
-    - Prompt you for location (latitude/longitude) and attempt to detect your timezone for accurate sun time calculations if a configuration file doesn't exist.
-    - Install systemd user units for automatic operation.
-    - Enable scheduling, which sets up timers for the next sunrise/sunset and ensures the current desktop appearance matches the current solar period.
+    This master command handles everything:
+    - Checks for the correct Python version.
+    - Verifies all required command-line dependencies and offers to install them via `apt` on Debian/Ubuntu systems.
+    - Creates an initial configuration file (`~/.config/fluxfce/config.ini`), prompting for your location for accurate sun calculations.
+    - Installs and enables the necessary `systemd` user units for full automation.
 
-3.  **Make the `fluxfce` command easily accessible (if not using `pip install .` in the future):**
-
-    The `install` script will provide instructions. A common method is:
-    - Ensure `~/.local/bin` is in your `PATH`. Add if necessary:
-      ```bash
-      # Add to your ~/.bashrc or ~/.zshrc, then source it or restart terminal
-      export PATH="$HOME/.local/bin:$PATH"
-      ```
-    - Make the main script executable:
-      ```bash
-      chmod +x ./fluxfce_cli.py
-      ```
-    - Create a symbolic link:
-      ```bash
-      SCRIPT_ABS_PATH=$(readlink -f ./fluxfce_cli.py) # Or use: SCRIPT_ABS_PATH=$(pwd)/fluxfce_cli.py
-      mkdir -p ~/.local/bin
-      ln -s -f "$SCRIPT_ABS_PATH" ~/.local/bin/fluxfce # -f forces overwrite if symlink exists
-      ```
-
-4.  **(Recommended) Configure Day/Night Appearance:**
-
-    Set your desired XFCE theme, background color/gradient, and screen temperature/brightness for **Daytime**, then run:
+3.  **Make `fluxfce` available in your PATH (Recommended):**
+    For easy access, create a symbolic link.
     ```bash
-    fluxfce set-default --mode day
+    # Ensure ~/.local/bin exists and is in your PATH
+    mkdir -p ~/.local/bin
+
+    # Add ~/.local/bin to PATH in your shell's config file if it's not already there
+    # For bash, add this to ~/.bashrc:
+    # export PATH="$HOME/.local/bin:$PATH"
+
+    # Create the symlink
+    ln -s "$(pwd)/fluxfce_cli.py" ~/.local/bin/fluxfce
     ```
-    Then, set your desired look for **Nighttime**, and run:
-    ```bash
-    fluxfce set-default --mode night
-    ```
-    `fluxfce` will save these settings to its configuration file. When `fluxfce enable` is run, or when the scheduled transitions occur, these configured settings will be applied.
 
 ## Usage
 
+The recommended workflow is to set your desired Day and Night looks first.
+
+#### **1. Configure Your Day/Night Appearance (Crucial Step)**
+
+Set your desired XFCE theme, desktop background(s), and screen temperature/brightness for **Daytime**, then save it by running:
+
 ```bash
-fluxfce <command> [options]
+fluxfce set-default --mode day
 ```
 
-**Commands:**
+Next, set up your preferred look for **Nighttime**, and save it:
 
-- `install` — Performs dependency checks, interactive setup (if needed), installs systemd units, and enables automatic scheduling.
-- `uninstall` — Removes systemd units and clears schedule (prompts to remove config).
-- `day` — Apply Day Mode settings now without disabling automatic scheduling.
-- `night` — Apply Night Mode settings now without disabling automatic scheduling.
-- `enable` — Enables automatic scheduling (sets up systemd timers for sunrise/sunset and ensures current appearance matches the solar period).
-- `disable` — Disable automatic scheduling (stops and disables relevant systemd timers).
-- `status` — Show config, calculated times, and systemd timer/service status.
-- `force-day` — Apply Day Mode settings now **and disable** automatic scheduling.
-- `force-night` — Apply Night Mode settings now **and disable** automatic scheduling.
-- `set-default --mode {day,night}` — Save current desktop look as the new default for Day or Night mode.
+```bash
+fluxfce set-default --mode night
+```
 
-**Options:**
+This saves your complete desktop state into profile files, which `fluxfce` will use for transitions.
 
-- `-h`, `--help` — Show this help message and exit.
-- `-v`, `--verbose` — Enable detailed logging output for `fluxfce` operations.
+#### **2. Manage Scheduling**
+
+-   **`enable`**: Enables automatic scheduling. Runs the scheduler once to set timers for the next sunrise/sunset.
+-   **`disable`**: Disables automatic scheduling.
+-   **`status`**: Shows current configuration, sun times, and `systemd` timer status. Use `-v` for more detail.
+-   **`install`**: The initial setup command.
+-   **`uninstall`**: Removes all `systemd` units and offers to delete the configuration directory.
+
+#### **3. Manual Overrides**
+
+-   **`day`** / **`night`**: Temporarily apply a mode. Automatic scheduling remains active and will trigger the next transition as scheduled.
+-   **`force-day`** / **`force-night`**: Apply a mode **and** disable automatic scheduling.
 
 ## Configuration
 
-Fluxfce uses an INI file located at `~/.config/fluxfce/config.ini`.
-The `fluxfce install` command will help you create this initially. You can edit it manually later.
+The main configuration file is located at `~/.config/fluxfce/config.ini`. While `install` and `set-default` handle most settings, you can edit it manually.
 
 **Example `config.ini`:**
 ```ini
@@ -149,79 +120,59 @@ latitude = 43.65N
 longitude = 79.38W
 timezone = America/Toronto
 
-[Themes]
+[GUI]
+opacity = 0.7
+
+[Appearance]
 light_theme = Adwaita
 dark_theme = Adwaita-dark
-
-[BackgroundDay]
-bg_dir = v
-bg_hex1 = ADD8E6
-bg_hex2 = 87CEEB
+day_background_profile = default-day
+night_background_profile = default-night
 
 [ScreenDay]
 xsct_temp = 6500
 xsct_bright = 1.0
-
-[BackgroundNight]
-bg_dir = v
-bg_hex1 = 1E1E2E
-bg_hex2 = 000000
 
 [ScreenNight]
 xsct_temp = 4500
 xsct_bright = 0.85
 ```
 
-- **`bg_dir` (Background Direction):**
-  - `s` = Solid color (uses `bg_hex1` only)
-  - `h` = Horizontal gradient (uses `bg_hex1` and `bg_hex2`)
-  - `v` = Vertical gradient (uses `bg_hex1` and `bg_hex2`)
-- **`xsct_temp` (Screen Temperature):** In Kelvin (e.g., 3700, 6500). If empty for Day mode, `xsct` typically resets to its default (temperature and brightness are usually reset together for day mode if either is empty).
-- **`xsct_bright` (Screen Brightness):** Factor (e.g., 0.8, 1.0). If empty for Day mode, `xsct` typically resets to its default.
+- **Backgrounds are now stored in profiles** at `~/.config/fluxfce/backgrounds/`. The `set-default` command creates and updates these files for you. You can edit them manually to tweak background settings.
+- **`xsct_temp`** and **`xsct_bright`**: An empty value will cause `xsct` to be reset to its default state.
 
 ## Troubleshooting
 
-- **Verbose Output:** Always try running `fluxfce` with the `-v` flag first to get more detailed logs:
-  ```bash
-  fluxfce -v status
-  fluxfce -v enable
-  # etc.
-  ```
-- **Dependency Check Script:**
-  The `fluxfce install` command runs `fluxfce_deps_check.py` automatically. If you need to re-run it manually (e.g., after system changes):
-  ```bash
-  python3 ./fluxfce_deps_check.py 
-  ```
-  (Assuming `fluxfce_deps_check.py` is in the same directory as `fluxfce_cli.py`).
+-   **Verbose Logging:** First, run any command with the `-v` flag for detailed output: `fluxfce -v status`.
 
-- **Systemd User Units & Timers:**
-  - **List FluxFCE Timers:** See if `fluxfce` timers are scheduled and their next run times:
+-   **Check Dependency Script:** To re-run the dependency checker manually:
     ```bash
-    systemctl --user list-timers --all | grep fluxfce
-    ```
-  - **Check Status of Specific FluxFCE Units:** (Replace `fluxfce-unit-name` with the actual unit, e.g., `fluxfce-scheduler.timer` or `fluxfce-apply-transition@day.service`)
-    ```bash
-    systemctl --user status fluxfce-unit-name
-    ```
-    Common units to check: `fluxfce-scheduler.timer`, `fluxfce-scheduler.service`, `fluxfce-sunrise-event.timer`, `fluxfce-sunset-event.timer`, `fluxfce-apply-transition@day.service`, `fluxfce-apply-transition@night.service`, `fluxfce-login.service`, `fluxfce-resume.service`.
-  - **View Journal Logs for Specific Units:** For detailed error messages:
-    ```bash
-    journalctl --user -u fluxfce-scheduler.service -e --no-pager
-    journalctl --user -u fluxfce-apply-transition@day.service -e --no-pager 
-    # etc. for other fluxfce units. '-e' jumps to end, '--no-pager' prints to console.
+    ./fluxfce_deps_check.py
     ```
 
-- **Configuration File Path:** Ensure your config is at `~/.config/fluxfce/config.ini`.
+-   **Systemd Timers and Services:**
+    -   **List all `fluxfce` timers** to see when they will next run:
+        ```bash
+        systemctl --user list-timers --all | grep fluxfce
+        ```
+    -   **Check the status of all `fluxfce` units** at once:
+        ```bash
+        systemctl --user status 'fluxfce-*.service' 'fluxfce-*.timer'
+        ```
+    -   **View logs for a specific unit** (e.g., the scheduler service):
+        ```bash
+        journalctl --user -u fluxfce-scheduler.service -e --no-pager
+        ```
+        *(Replace `fluxfce-scheduler.service` with any unit name, like `fluxfce-apply-transition@night.service` or `fluxfce-resume.service`)*.
 
-- **Manual Theme Application Test (via Systemd Service):** To test if a specific mode application service is working correctly:
-  ```bash
-  # Ensure you are in the opposite mode first (e.g., run 'fluxfce force-day')
-  # Then to test night mode application:
-  systemctl --user start fluxfce-apply-transition@night.service
-  # Check your desktop. Then check the journal for this unit if issues occurred:
-  # journalctl --user -u fluxfce-apply-transition@night.service -e --no-pager
-  ```
+-   **Manual Service Test:** To manually trigger a transition and test the service:
+    ```bash
+    # Test the 'night' mode transition
+    systemctl --user start fluxfce-apply-transition@night.service
 
+    # Check the logs if it failed
+    journalctl --user -u fluxfce-apply-transition@night.service
+    ```
 ## License
 
 MIT

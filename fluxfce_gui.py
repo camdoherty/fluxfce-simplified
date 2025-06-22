@@ -29,7 +29,7 @@ except (ImportError, ValueError):
 try:
     import fluxfce_core
     from fluxfce_core import exceptions as core_exc
-    from fluxfce_core import xfce
+    from fluxfce_core import desktop_manager, helpers
 except ImportError as e:
     print(f"FATAL: fluxfce_core library not found: {e}", file=sys.stderr)
     print("Please ensure fluxfce_core is installed or available in your Python path.", file=sys.stderr)
@@ -174,9 +174,9 @@ class FluxFceWindow(Gtk.Window):
         )
 
         try:
-            self.xfce_handler = xfce.XfceHandler()
-        except core_exc.XfceError as e:
-            self.show_error_dialog("Initialization Error", f"Could not start the tool.\nIs `xsct` installed and in your PATH?\n\nDetails: {e}")
+            self.handler = desktop_manager.get_desktop_handler()
+        except core_exc.FluxFceError as e:
+            self.show_error_dialog("Initialization Error", f"Could not start the tool.\nIs this a supported desktop?\n\nDetails: {e}")
             GLib.idle_add(self.app.quit)
             return
 
@@ -273,6 +273,9 @@ class FluxFceWindow(Gtk.Window):
         btn_edit_profile = Gtk.Button.new_from_icon_name("document-edit-symbolic", Gtk.IconSize.BUTTON)
         btn_edit_profile.connect("clicked", self.on_edit_profile_clicked, mode)
         grid.attach(btn_edit_profile, 2, 0, 1, 1)
+    # Conditionally hide the profile edit button if not on XFCE
+    if helpers.get_desktop_environment() != "XFCE":
+        btn_edit_profile.set_visible(False)
         lbl_details = Gtk.Label(xalign=0, yalign=0, use_markup=True)
         lbl_details.get_style_context().add_class("dim-label")
         grid.attach(lbl_details, 0, 1, 3, 1)
@@ -406,7 +409,7 @@ class FluxFceWindow(Gtk.Window):
     def _update_sliders_from_backend(self):
         log.debug("Updating sliders from backend screen state.")
         try:
-            settings = self.xfce_handler.get_screen_settings()
+            settings = self.handler.get_screen_settings()
             temp, bright = settings.get("temperature", 6500), settings.get("brightness", 1.0)
             self.slider_temp.handler_block(self.temp_slider_handler_id)
             self.slider_bright.handler_block(self.bright_slider_handler_id)
@@ -485,26 +488,41 @@ class FluxFceWindow(Gtk.Window):
     def _apply_slider_values(self):
         temp, bright = int(self.slider_temp.get_value()), self.slider_bright.get_value()
         try:
-            self.xfce_handler.set_screen_temp(temp, bright)
-        except (core_exc.XfceError, ValueError) as e:
+            self.handler.set_screen_temp(temp, bright)
+        except (core_exc.FluxFceError, ValueError) as e:
             self.show_error_dialog("Apply Error", f"Failed to set screen values: {e}")
         self.slider_debounce_id = None
         return GLib.SOURCE_REMOVE
 
     def on_reset_slider_clicked(self, widget, control_type):
         try:
-            settings = self.xfce_handler.get_screen_settings()
+            settings = self.handler.get_screen_settings()
             temp, bright = settings.get("temperature", 6500), settings.get("brightness", 1.0)
             if control_type == "temp":
-                temp = 6500
+                temp = 6500 # Reset temperature to default
+                # Keep current brightness unless it's None, then also reset it
+                if bright is None: bright = 1.0
             elif control_type == "bright":
+                bright = 1.0 # Reset brightness to default
+                # Keep current temperature unless it's None, then also reset it
+                if temp is None: temp = 6500
+
+            # If both are None (e.g. xsct was off), reset both
+            if temp is None and bright is None:
+                temp = 6500
                 bright = 1.0
-            self.xfce_handler.set_screen_temp(temp, bright)
+
+            self.handler.set_screen_temp(temp, bright)
             GLib.timeout_add(UI_UPDATE_DELAY_MS, self._update_sliders_from_backend)
-        except core_exc.XfceError as e:
+        except core_exc.FluxFceError as e:
             self.show_error_dialog("Reset Error", f"Failed to reset {control_type}: {e}")
 
     def on_edit_profile_clicked(self, widget, mode):
+        # This function is only relevant for XFCE's profile-based system.
+        if helpers.get_desktop_environment() != "XFCE":
+            self.show_info_dialog("Info", "Background settings for Cinnamon are edited directly in the config file.")
+            return
+
         try:
             config = fluxfce_core.get_current_config()
             key = "DAY_BACKGROUND_PROFILE" if mode == 'day' else "NIGHT_BACKGROUND_PROFILE"
