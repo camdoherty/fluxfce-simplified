@@ -54,20 +54,36 @@ def _apply_single_mode(mode: Literal["day", "night"]) -> bool:
     conf = _load_cfg()
     handler = get_desktop_handler()
     
-    theme_key = "LIGHT_THEME" if mode == "day" else "DARK_THEME"
-    screen_section = "ScreenDay" if mode == "day" else "ScreenNight"
-
-    # 1. GTK Theme
-    theme_to_set = conf.get("Appearance", theme_key)
-    if theme_to_set:
-        handler.set_theme(theme_to_set)
-    else:
-        log.warning(f"Theme for mode '{mode}' is not configured.")
+    # 1. Theme
+    de = helpers.get_desktop_environment()
+    if de == "XFCE":
+        theme_key = "LIGHT_THEME" if mode == "day" else "DARK_THEME"
+        theme_to_set = conf.get("Appearance", theme_key, fallback=None)
+        if theme_to_set:
+            handler.set_theme(theme_to_set)
+        else:
+            log.warning(f"XFCE theme for mode '{mode}' is not configured.")
+    
+    elif de == "CINNAMON":
+        m = mode.upper()
+        theme_settings = {
+            "applications": conf.get("Appearance", f"CINNAMON_{m}_APPLICATIONS_THEME", fallback=None),
+            "desktop": conf.get("Appearance", f"CINNAMON_{m}_DESKTOP_THEME", fallback=None),
+            "icons": conf.get("Appearance", f"CINNAMON_{m}_ICON_THEME", fallback=None),
+            "cursor": conf.get("Appearance", f"CINNAMON_{m}_CURSOR_THEME", fallback=None),
+        }
+        # Filter out any keys that might not be in the config
+        theme_settings_to_set = {k: v for k, v in theme_settings.items() if v}
+        if theme_settings_to_set:
+            handler.set_theme(theme_settings_to_set)
+        else:
+            log.warning(f"Cinnamon themes for mode '{mode}' are not configured.")
 
     # 2. Background
     handler.apply_background(mode, conf)
 
     # 3. Screen Temperature / Brightness
+    screen_section = "ScreenDay" if mode == "day" else "ScreenNight"
     try:
         temp_str = conf.get(screen_section, "XSCT_TEMP", fallback=None)
         bright_str = conf.get(screen_section, "XSCT_BRIGHT", fallback=None)
@@ -92,21 +108,46 @@ def set_defaults_from_current(mode: Literal["day", "night"]) -> bool:
     """Save the current desktop look as the new default for the given mode."""
     conf = _load_cfg()
     handler = get_desktop_handler()
+    de = helpers.get_desktop_environment()
     changed = False
 
     # 1. Save Background
     handler.save_current_background(mode, conf)
-    changed = True # Assume background changed and needs saving.
+    changed = True
 
-    # 2. Save Theme and Screen settings to config.ini
-    theme_key = "LIGHT_THEME" if mode == "day" else "DARK_THEME"
+    # 2. Save Theme(s)
+    if de == "XFCE":
+        theme_key = "LIGHT_THEME" if mode == "day" else "DARK_THEME"
+        current_theme = handler.get_theme()
+        if conf.get("Appearance", theme_key) != current_theme:
+            _cfg_mgr_desktop.set_setting(conf, "Appearance", theme_key, current_theme)
+            changed = True
+    elif de == "CINNAMON":
+        m = mode.upper()
+        current_themes = handler.get_theme() # Returns a dict
+        
+        app_key = f"CINNAMON_{m}_APPLICATIONS_THEME"
+        if conf.get("Appearance", app_key) != current_themes.get("applications"):
+            _cfg_mgr_desktop.set_setting(conf, "Appearance", app_key, current_themes.get("applications"))
+            changed = True
+        
+        desk_key = f"CINNAMON_{m}_DESKTOP_THEME"
+        if conf.get("Appearance", desk_key) != current_themes.get("desktop"):
+            _cfg_mgr_desktop.set_setting(conf, "Appearance", desk_key, current_themes.get("desktop"))
+            changed = True
+
+        icon_key = f"CINNAMON_{m}_ICON_THEME"
+        if conf.get("Appearance", icon_key) != current_themes.get("icons"):
+            _cfg_mgr_desktop.set_setting(conf, "Appearance", icon_key, current_themes.get("icons"))
+            changed = True
+            
+        cursor_key = f"CINNAMON_{m}_CURSOR_THEME"
+        if conf.get("Appearance", cursor_key) != current_themes.get("cursor"):
+            _cfg_mgr_desktop.set_setting(conf, "Appearance", cursor_key, current_themes.get("cursor"))
+            changed = True
+
+    # 3. Save Screen settings
     screen_section = "ScreenDay" if mode == "day" else "ScreenNight"
-
-    current_theme = handler.get_theme()
-    if conf.get("Appearance", theme_key) != current_theme:
-        _cfg_mgr_desktop.set_setting(conf, "Appearance", theme_key, current_theme)
-        changed = True
-
     current_screen = handler.get_screen_settings()
     new_temp = "" if current_screen.get("temperature") is None else str(current_screen["temperature"])
     new_bright = "" if current_screen.get("brightness") is None else f"{current_screen['brightness']:.2f}"

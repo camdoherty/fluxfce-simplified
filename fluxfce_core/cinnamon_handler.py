@@ -154,29 +154,53 @@ class CinnamonHandler(DesktopHandler):
 
         return True
 
-    def get_theme(self) -> str:
-        """Gets the current base GTK theme name."""
-        return self._get_gsettings_key(SCHEMA_INTERFACE, "gtk-theme")
+    def get_theme(self) -> dict[str, str]:
+        """Gets the current theme settings as a dictionary for Cinnamon."""
+        log.debug("Getting all current Cinnamon theme components.")
+        return {
+            "applications": self._get_gsettings_key(SCHEMA_INTERFACE, "gtk-theme"),
+            "desktop": self._get_gsettings_key("org.cinnamon.theme", "name"),
+            "icons": self._get_gsettings_key(SCHEMA_INTERFACE, "icon-theme"),
+            "cursor": self._get_gsettings_key(SCHEMA_INTERFACE, "cursor-theme"),
+        }
 
-    def set_theme(self, theme_name: str) -> bool:
-        """Sets the base GTK theme and toggles the prefer-dark-mode setting."""
-        if not theme_name:
-            raise ValidationError("Theme name cannot be empty.")
+    def set_theme(self, theme_settings: dict[str, str]) -> bool:
+        """
+        Sets all theme components for Cinnamon from a dictionary.
 
-        is_dark_mode_target = any(dark_str in theme_name.lower() for dark_str in ["dark", "black", "nuit"])
+        Args:
+            theme_settings: A dictionary with keys 'applications', 'desktop',
+                            'icons', and 'cursor'.
+        """
+        if not isinstance(theme_settings, dict):
+            raise TypeError("CinnamonHandler.set_theme expects a dictionary.")
+
+        log.info(f"Applying Cinnamon theme set: {theme_settings}")
+
+        # Determine dark mode preference from the applications (GTK) theme name
+        app_theme = theme_settings.get("applications", "")
+        is_dark_mode_target = any(dark_str in app_theme.lower() for dark_str in ["dark", "black", "nuit"])
         color_scheme_value = "prefer-dark" if is_dark_mode_target else "default"
 
-        log.info(f"Setting Cinnamon color scheme to: {color_scheme_value}")
-        code_cs, _, stderr_cs = self._run_gsettings_set(SCHEMA_INTERFACE, "color-scheme", color_scheme_value)
-        if code_cs != 0:
-            log.warning(f"Failed to set Cinnamon color-scheme: {stderr_cs}. This might be okay on older Cinnamon versions.")
+        # Set the overall dark mode preference hint
+        log.info(f"Setting Cinnamon color-scheme to: {color_scheme_value}")
+        self._run_gsettings_set(SCHEMA_INTERFACE, "color-scheme", color_scheme_value)
 
-        log.info(f"Setting Cinnamon base GTK theme to: '{theme_name}'")
-        code_gtk, _, stderr_gtk = self._run_gsettings_set(SCHEMA_INTERFACE, "gtk-theme", theme_name)
-        if code_gtk != 0:
-            raise FluxFceError(f"Failed to set Cinnamon GTK theme to '{theme_name}': {stderr_gtk}")
+        # Set individual theme components
+        if app_theme:
+            log.info(f"Setting Applications theme to: '{app_theme}'")
+            self._run_gsettings_set(SCHEMA_INTERFACE, "gtk-theme", app_theme)
 
-        log.info(f"Setting Cinnamon WM theme to: '{theme_name}'")
-        self._run_gsettings_set(SCHEMA_WM, "theme", theme_name)
+        if desktop_theme := theme_settings.get("desktop"):
+            log.info(f"Setting Desktop theme to: '{desktop_theme}'")
+            self._run_gsettings_set("org.cinnamon.theme", "name", desktop_theme)
+
+        if icon_theme := theme_settings.get("icons"):
+            log.info(f"Setting Icons theme to: '{icon_theme}'")
+            self._run_gsettings_set(SCHEMA_INTERFACE, "icon-theme", icon_theme)
+
+        if cursor_theme := theme_settings.get("cursor"):
+            log.info(f"Setting Cursor theme to: '{cursor_theme}'")
+            self._run_gsettings_set(SCHEMA_INTERFACE, "cursor-theme", cursor_theme)
 
         return True
