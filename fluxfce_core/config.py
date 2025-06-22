@@ -88,14 +88,26 @@ class ConfigManager:
             raise ConfigError(f"Failed to write configuration to {file_path}: {e}") from e
 
     def load_config(self) -> configparser.ConfigParser:
+        """
+        Loads the config from file and ensures all default keys from
+        DEFAULT_CONFIG exist, adding them if they are missing. This
+        gracefully handles upgrades to the config structure.
+        """
         parser = self._load_ini(CONFIG_FILE)
         made_changes = False
+
+        # --- START OF FIX ---
+        # Iterate through default sections and keys to ensure all are present.
         for section, defaults in DEFAULT_CONFIG.items():
             if not parser.has_section(section):
+                log.info(f"Adding missing section [{section}] to config in memory.")
                 parser.add_section(section)
                 made_changes = True
+            
             for key, value in defaults.items():
+                # The crucial check: does the specific option exist?
                 if not parser.has_option(section, key):
+                    log.info(f"Adding missing option '{key}' to section [{section}] in memory.")
                     parser.set(section, key, value)
                     made_changes = True
         if made_changes:
