@@ -147,46 +147,40 @@ def handle_schedule_dynamic_transitions_command(
         log.exception(f"Scheduler: Unexpected error during 'schedule-dynamic-transitions': {e}")
         return False
 
-
 def enable_scheduling(
     python_exe_path: str,
     script_exe_path: str,
 ) -> bool:
     """
-    Enables automatic theme transitions:
-    1. Defines dynamic event timers for the next sunrise/sunset.
-    2. Enables the main daily scheduler timer (`fluxfce-scheduler.timer`).
+    Enables automatic theme transitions by enabling and immediately triggering
+    the main scheduler timer. The timer's service will then create the dynamic
+    sunrise/sunset event timers.
     """
     # Note: The application of the current theme (via handle_run_login_check)
     # is handled by the calling function in api.py after this function succeeds.
 
-    log.info("Scheduler: Enabling scheduling with dynamic systemd timers...")
+    log.info("Scheduler: Enabling scheduling with systemd timers...")
     try:
-        define_schedule_ok = handle_schedule_dynamic_transitions_command(
-            python_exe_path=python_exe_path, script_exe_path=script_exe_path
+        # The '--now' flag is the correct, idempotent way to enable a timer and
+        # ensure its associated service runs once immediately. This first run
+        # will call 'schedule-dynamic-transitions' to set the initial schedule.
+        # This restores the correct logic from the stable branch.
+        code, _, stderr = _sysd_mgr_scheduler._run_systemctl(
+            ["enable", "--now", sysd.SCHEDULER_TIMER_NAME], capture_output=True
         )
-        if not define_schedule_ok:
-            log.warning("Scheduler: Initial definition of dynamic event timers failed or scheduled nothing, "
-                        "but proceeding to enable the main daily scheduler.")
-
-            # The '--now' flag is the correct, idempotent way to enable a timer and
-            # ensure its service runs once immediately to set the initial schedule.
-            code, _, stderr = _sysd_mgr_scheduler._run_systemctl(
-                ["enable", "--now", sysd.SCHEDULER_TIMER_NAME], capture_output=True
+        if code != 0:
+            raise exc.SystemdError(
+                f"Scheduler: Failed to enable main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}): {stderr.strip()}"
             )
-            if code != 0:
-                raise exc.SystemdError(
-                    f"Scheduler: Failed to enable main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}): {stderr.strip()}"
-                )
 
-            log.info(f"Scheduler: Main scheduler ({sysd.SCHEDULER_TIMER_NAME}) enabled and started for initial run.")
-            log.info("Scheduler: Scheduling setup completed successfully by scheduler module.")
-            return True
-        
-    except (exc.SystemdError, exc.FluxFceError) as e: 
+        log.info(f"Scheduler: Main scheduler ({sysd.SCHEDULER_TIMER_NAME}) enabled and started for initial run.")
+        log.info("Scheduler: Scheduling setup completed successfully by scheduler module.")
+        return True
+
+    except (exc.SystemdError, exc.FluxFceError) as e:
         log.error(f"Scheduler: Failed to enable scheduling: {e}")
-        raise 
-    except Exception as e: 
+        raise
+    except Exception as e:
         log.exception(f"Scheduler: Unexpected error enabling scheduling: {e}")
         raise exc.FluxFceError(f"Scheduler: An unexpected error occurred while enabling scheduling: {e}") from e
 
