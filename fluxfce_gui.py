@@ -266,20 +266,27 @@ class FluxFceWindow(Gtk.Window):
         btn_apply.add(btn_apply_box)
         btn_apply.connect("clicked", self.on_apply_temporary_clicked, mode)
         grid.attach(btn_apply, 0, 0, 1, 1)
+
         btn_save = Gtk.Button.new_from_icon_name("document-save-symbolic", Gtk.IconSize.BUTTON)
         btn_save.set_tooltip_text(f"Save current desktop look as the new {mode.capitalize()} default")
         btn_save.connect("clicked", self.on_set_default_clicked, mode)
         grid.attach(btn_save, 1, 0, 1, 1)
+
         btn_edit_profile = Gtk.Button.new_from_icon_name("document-edit-symbolic", Gtk.IconSize.BUTTON)
         btn_edit_profile.connect("clicked", self.on_edit_profile_clicked, mode)
         grid.attach(btn_edit_profile, 2, 0, 1, 1)
-    # Conditionally hide the profile edit button if not on XFCE
-    if helpers.get_desktop_environment() != "XFCE":
-        btn_edit_profile.set_visible(False)
+
+        # --- START OF CORRECTED INDENTATION ---
+        # This block is now correctly inside the function.
+        if helpers.get_desktop_environment() != "XFCE":
+            btn_edit_profile.set_visible(False)
+
         lbl_details = Gtk.Label(xalign=0, yalign=0, use_markup=True)
         lbl_details.get_style_context().add_class("dim-label")
         grid.attach(lbl_details, 0, 1, 3, 1)
+
         return grid, lbl_details, btn_edit_profile
+        # --- END OF CORRECTED INDENTATION ---
 
     def _build_manual_control_section(self):
         # Use an expander to allow collapsing this section
