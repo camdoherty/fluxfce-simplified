@@ -47,29 +47,6 @@ class CinnamonHandler(DesktopHandler):
         code, stdout, _ = helpers.run_command(cmd, capture=True, check=False)
         return stdout.strip().strip("'") if code == 0 else ""
 
-    def _normalize_color_string(self, color_str: str) -> str:
-        """
-        Normalizes a color string from gsettings to a standard 6-digit hex.
-        Gsettings can return 12-digit (16-bit per channel) hex like '#RRRRGGGGBBBB'.
-        This converts it to '#RRGGBB', which is universally accepted by 'gsettings set'.
-        """
-        if not color_str:
-            return "#000000" # Return a default if input is empty
-
-        color_str = color_str.strip().lstrip('#')
-        if len(color_str) == 12:
-            # It's a 16-bit per channel hex string (RRRRGGGGBBBB).
-            # We take the most significant byte for each channel.
-            r = color_str[0:2]
-            g = color_str[4:6]
-            b = color_str[8:10]
-            normalized_hex = f"#{r}{g}{b}".lower()
-            log.debug(f"Normalized 12-digit hex '{color_str}' to 6-digit '{normalized_hex}'")
-            return normalized_hex
-        
-        # Assume it's already a standard format (e.g., 6-digit, 3-digit) and return it.
-        return f"#{color_str}".lower()
-
     def apply_background(self, mode: Literal["day", "night"], config: configparser.ConfigParser) -> bool:
         profile_key = "DAY_BACKGROUND_PROFILE" if mode == "day" else "NIGHT_BACKGROUND_PROFILE"
         profile_name = config.get("Appearance", profile_key, fallback=None)
@@ -138,10 +115,13 @@ class CinnamonHandler(DesktopHandler):
         profile_config = configparser.ConfigParser()
         profile_config.add_section("Background")
 
+        # --- START OF CRITICAL FIX ---
+        # The authoritative key is 'picture-options'. Check this FIRST.
         current_pic_options = self._get_gsettings_key(SCHEMA_BG, "picture-options")
         log.debug(f"Detected picture-options: '{current_pic_options}'")
 
         if current_pic_options == 'none':
+            # The background is a color or gradient. Now check which one.
             current_shading_type = self._get_gsettings_key(SCHEMA_BG, "color-shading-type")
             log.debug(f"Detected color-shading-type: '{current_shading_type}'")
 
@@ -149,25 +129,21 @@ class CinnamonHandler(DesktopHandler):
                 log.debug("Saving as gradient background.")
                 profile_config.set("Background", "type", "gradient")
                 profile_config.set("Background", "gradient_direction", current_shading_type)
-                
-                # Normalize colors before saving
-                primary_raw = self._get_gsettings_key(SCHEMA_BG, "primary-color")
-                secondary_raw = self._get_gsettings_key(SCHEMA_BG, "secondary-color")
-                profile_config.set("Background", "primary_color", self._normalize_color_string(primary_raw))
-                profile_config.set("Background", "secondary_color", self._normalize_color_string(secondary_raw))
-            else:
+                profile_config.set("Background", "primary_color", self._get_gsettings_key(SCHEMA_BG, "primary-color"))
+                profile_config.set("Background", "secondary_color", self._get_gsettings_key(SCHEMA_BG, "secondary-color"))
+            else:  # Defaults to solid color if shading type is 'solid' or unknown
                 log.debug("Saving as solid color background.")
                 profile_config.set("Background", "type", "solid")
-                
-                # Normalize color before saving
-                primary_raw = self._get_gsettings_key(SCHEMA_BG, "primary-color")
-                profile_config.set("Background", "primary_color", self._normalize_color_string(primary_raw))
+                profile_config.set("Background", "primary_color", self._get_gsettings_key(SCHEMA_BG, "primary-color"))
         
         else:
+            # The background is an image because picture-options is 'zoom', 'scaled', etc.
+            # Now it is safe to get the picture-uri.
             log.debug("Saving as image background.")
             image_uri = self._get_gsettings_key(SCHEMA_BG, "picture-uri")
             profile_config.set("Background", "type", "image")
             profile_config.set("Background", "image_path", image_uri.replace("file://", ""))
+        # --- END OF CRITICAL FIX ---
 
         try:
             with profile_path.open("w") as pf:
