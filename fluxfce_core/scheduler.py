@@ -46,7 +46,6 @@ def _load_scheduler_config() -> configparser.ConfigParser:
 
 _sysd_mgr_scheduler = sysd.SystemdManager()
 
-
 def handle_schedule_dynamic_transitions_command(
     python_exe_path: str, script_exe_path: str
 ) -> bool:
@@ -58,29 +57,15 @@ def handle_schedule_dynamic_transitions_command(
     log.info("Scheduler: Handling 'schedule-dynamic-transitions' command...")
     try:
         current_config = _load_scheduler_config()
-
-        lat_str = current_config.get("Location", "LATITUDE")
-        lon_str = current_config.get("Location", "LONGITUDE")
+        lat = helpers.latlon_str_to_float(current_config.get("Location", "LATITUDE"))
+        lon = helpers.latlon_str_to_float(current_config.get("Location", "LONGITUDE"))
         tz_name = current_config.get("Location", "TIMEZONE")
-
-        if not all([lat_str, lon_str, tz_name, 
-                    lat_str != "Not Set", lon_str != "Not Set", tz_name != "Not Set"]):
-            raise exc.ConfigError("Scheduler: Location (latitude, longitude, timezone) not fully configured.")
-
-        lat = helpers.latlon_str_to_float(lat_str)
-        lon = helpers.latlon_str_to_float(lon_str)
-        
-        try:
-            local_tz = ZoneInfo(tz_name)
-        except ZoneInfoNotFoundError as e_tz:
-            raise exc.ConfigError(f"Scheduler: Invalid timezone in configuration: {tz_name}") from e_tz
-
+        local_tz = ZoneInfo(tz_name)
         now_local = datetime.now(local_tz)
-        today_local = now_local.date()
         next_event_times: dict[str, Optional[datetime]] = {"day": None, "night": None}
 
-        for day_offset in range(2): # Check today and tomorrow
-            target_date = today_local + timedelta(days=day_offset)
+        for day_offset in range(2):
+            target_date = now_local.date() + timedelta(days=day_offset)
             try:
                 sun_times = sun.get_sun_times(lat, lon, target_date, tz_name)
                 if not next_event_times["day"] and sun_times["sunrise"] > now_local:
@@ -92,7 +77,9 @@ def handle_schedule_dynamic_transitions_command(
             if next_event_times["day"] and next_event_times["night"]:
                 break
         
-        # FIX: Only stop timers that actually exist to prevent "not loaded" messages.
+        # --- START OF FIX ---
+        # Stop any previously running dynamic timers before creating new ones.
+        # This prevents having multiple versions of the timer running.
         timers_to_stop = []
         if (sysd.SYSTEMD_USER_DIR / sysd.SUNRISE_EVENT_TIMER_NAME).exists():
             timers_to_stop.append(sysd.SUNRISE_EVENT_TIMER_NAME)
@@ -101,46 +88,45 @@ def handle_schedule_dynamic_transitions_command(
 
         if timers_to_stop:
             log.debug(f"Stopping existing dynamic timers: {', '.join(timers_to_stop)}")
-            _sysd_mgr_scheduler._run_systemctl(
-                ["stop", *timers_to_stop],
-                check_errors=False, capture_output=True
-            )
+            _sysd_mgr_scheduler._run_systemctl(["stop", *timers_to_stop], check_errors=False)
 
-        scheduled_any_timer = False
+        # Write the new timer unit files
         utc_tz = ZoneInfo("UTC")
-
         if next_event_times["day"]:
             utc_event_time = next_event_times["day"].astimezone(utc_tz)
             _sysd_mgr_scheduler.write_dynamic_event_timer_unit_file("day", utc_event_time)
-            scheduled_any_timer = True
-            log.info(f"Scheduler: Dynamic timer for SUNRISE prepared for: {utc_event_time.isoformat()}")
+            log.info(f"Scheduler: Dynamic timer for SUNRISE prepared for: {next_event_times['day']}")
         else:
-            log.warning("Scheduler: No upcoming sunrise event found. Removing existing timer if any.")
             (sysd.SYSTEMD_USER_DIR / sysd.SUNRISE_EVENT_TIMER_NAME).unlink(missing_ok=True)
 
         if next_event_times["night"]:
             utc_event_time = next_event_times["night"].astimezone(utc_tz)
             _sysd_mgr_scheduler.write_dynamic_event_timer_unit_file("night", utc_event_time)
-            scheduled_any_timer = True
-            log.info(f"Scheduler: Dynamic timer for SUNSET prepared for: {utc_event_time.isoformat()}")
+            log.info(f"Scheduler: Dynamic timer for SUNSET prepared for: {next_event_times['night']}")
         else:
-            log.warning("Scheduler: No upcoming sunset event found. Removing existing timer if any.")
             (sysd.SYSTEMD_USER_DIR / sysd.SUNSET_EVENT_TIMER_NAME).unlink(missing_ok=True)
 
-        _sysd_mgr_scheduler._run_systemctl(["daemon-reload"], capture_output=True)
+        # Reload the daemon to make it aware of the new/changed timer files
+        _sysd_mgr_scheduler._run_systemctl(["daemon-reload"])
 
+        # Start the timers. This "arms" them to fire at their scheduled time.
+        # It will NOT trigger the service immediately because we removed Persistent=true.
+        timers_to_start = []
         if next_event_times["day"]:
-            _sysd_mgr_scheduler._run_systemctl(["start", sysd.SUNRISE_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
+            timers_to_start.append(sysd.SUNRISE_EVENT_TIMER_NAME)
         if next_event_times["night"]:
-            _sysd_mgr_scheduler._run_systemctl(["start", sysd.SUNSET_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
-        
-        if not scheduled_any_timer:
-            log.warning("Scheduler: No sun event timers could be scheduled (e.g. polar day/night).")
+            timers_to_start.append(sysd.SUNSET_EVENT_TIMER_NAME)
+
+        if timers_to_start:
+            log.info(f"Arming dynamic timers: {', '.join(timers_to_start)}")
+            _sysd_mgr_scheduler._run_systemctl(["start", *timers_to_start])
         else:
-            log.info("Scheduler: Dynamic event timers (re)written, daemon reloaded, and timers (re)started.")
+            log.warning("Scheduler: No sun event timers could be scheduled (e.g., polar day/night).")
+        # --- END OF FIX ---
+        
         return True
 
-    except (exc.ConfigError, exc.ValidationError, exc.SystemdError, exc.FluxFceError) as e:
+    except (exc.ConfigError, exc.ValidationError, exc.SystemdError, exc.FluxFceError, ZoneInfoNotFoundError) as e:
         log.error(f"Scheduler: Failed to schedule dynamic transitions: {e}")
         return False
     except Exception as e:

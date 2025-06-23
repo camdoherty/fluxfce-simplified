@@ -417,7 +417,7 @@ class SystemdManager:
         """
         if mode not in ["day", "night"]:
             log.error(f"Invalid mode '{mode}' specified for dynamic event timer generation.")
-            return False # Or raise error
+            return False
 
         if utc_execution_time.tzinfo is None or utc_execution_time.tzinfo.utcoffset(utc_execution_time) is None:
             msg = f"utc_execution_time for dynamic timer ({mode}) must be UTC and timezone-aware."
@@ -428,27 +428,27 @@ class SystemdManager:
         timer_file_path = SYSTEMD_USER_DIR / timer_name
         
         service_instance_to_trigger = f"{_APP_NAME}-apply-transition@{mode}.service"
-        # Systemd OnCalendar expects UTC if the timezone is specified as 'UTC'
         on_calendar_utc_str = utc_execution_time.strftime('%Y-%m-%d %H:%M:%S UTC')
 
+        # --- START OF FIX ---
+        # The 'Persistent' key is the cause of the problem. When a new timer is created
+        # for an event that would have happened since the last boot, Persistent=true
+        # causes it to run immediately. We do not want this behavior for our dynamic timers.
+        # The login/resume services handle any "missed" transitions.
+        # WakeSystem=false is also a good addition to prevent waking a sleeping PC.
         timer_content = f"""\
 [Unit]
 Description={self.app_name}: Event Timer for {mode.capitalize()} Transition (Dynamic)
-; This timer requires the corresponding apply-transition@mode.service instance
 Requires={service_instance_to_trigger}
 
 [Timer]
 Unit={service_instance_to_trigger}
 OnCalendar={on_calendar_utc_str}
-; The login and resume services handle missed transitions, so Persistent=true
-; is not needed here and its presence causes a race condition on first run.
 AccuracySec=1s
-; Don't wake a sleeping system just for this timer
 WakeSystem=false
 
 [Install]
-; Dynamic timers are not typically "WantedBy" other targets directly.
-; They are started/stopped by the application logic (e.g., via fluxfce-scheduler.service)
+WantedBy=timers.target
 """
         try:
             SYSTEMD_USER_DIR.mkdir(parents=True, exist_ok=True) # Ensure dir exists
