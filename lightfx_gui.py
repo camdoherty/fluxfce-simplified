@@ -27,35 +27,35 @@ except (ImportError, ValueError):
     sys.exit(1)
 
 try:
-    import fluxfce_core
-    from fluxfce_core import exceptions as core_exc
-    from fluxfce_core import desktop_manager, helpers
+    import lightfx_core
+    from lightfx_core import exceptions as core_exc
+    from lightfx_core import desktop_manager, helpers
 except ImportError as e:
-    print(f"FATAL: fluxfce_core library not found: {e}", file=sys.stderr)
-    print("Please ensure fluxfce_core is installed or available in your Python path.", file=sys.stderr)
+    print(f"FATAL: lightfx_core library not found: {e}", file=sys.stderr)
+    print("Please ensure lightfx_core is installed or available in your Python path.", file=sys.stderr)
     sys.exit(1)
 
 # --- Basic Logging Setup ---
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s: %(message)s")
-log = logging.getLogger("fluxfce_gui")
+log = logging.getLogger("lightfx_gui")
 
 # --- Constants ---
 APP_SCRIPT_PATH = Path(__file__).resolve()
 SLIDER_DEBOUNCE_MS = 200
 UI_UPDATE_DELAY_MS = 250
 UI_REFRESH_INTERVAL_MS = 60 * 1000  # 1 minute
-ASSETS_DIR = Path(__file__).resolve().parent / "fluxfce_core" / "assets"
+ASSETS_DIR = Path(__file__).resolve().parent / "lightfx_core" / "assets"
 ICON_ENABLED = str(ASSETS_DIR / "icon-enabled.png")
 ICON_DISABLED = str(ASSETS_DIR / "icon-disabled.png")
 
-class FluxFceWindow(Gtk.Window):
-    """The main configuration and status window for fluxfce."""
+class LightFXWindow(Gtk.Window):
+    """The main configuration and status window for lightfx."""
     def __init__(self, application):
         super().__init__()
         self.app = application
 
         # --- Give the window a CSS name so we can style it specifically ---
-        self.set_name("fluxfce-main-window")
+        self.set_name("lightfx-main-window")
 
         # Window properties
         self.set_type_hint(Gdk.WindowTypeHint.POPUP_MENU)
@@ -73,7 +73,7 @@ class FluxFceWindow(Gtk.Window):
 
         # --- Read opacities from config and prepare for transparency ---
         try:
-            config = fluxfce_core.get_current_config()
+            config = lightfx_core.get_current_config()
             # Read window background opacity
             opacity = config.getfloat("GUI", "opacity", fallback=1.0)
             opacity = max(0.0, min(1.0, opacity))
@@ -97,7 +97,7 @@ class FluxFceWindow(Gtk.Window):
                     self.set_visual(visual)
 
                 window_bg_css = f"""
-                #fluxfce-main-window {{
+                #lightfx-main-window {{
                     background-color: alpha(@theme_bg_color, {opacity});
                     border: 1px solid alpha(@theme_fg_color, 0.2);
                 }}
@@ -105,7 +105,7 @@ class FluxFceWindow(Gtk.Window):
             else:
                  log.info("No compositor or opacity is 1.0, using solid theme background.")
                  window_bg_css = """
-                 #fluxfce-main-window {
+                 #lightfx-main-window {
                      background-color: @theme_bg_color;
                  }
                  """
@@ -114,14 +114,14 @@ class FluxFceWindow(Gtk.Window):
                 log.info(f"Applying widget opacity: {widget_opacity}")
                 # This rule targets every widget inside the main window
                 widget_opacity_css = f"""
-                #fluxfce-main-window * {{
+                #lightfx-main-window * {{
                     opacity: {widget_opacity};
                 }}
                 """
         else:
             log.info("No compositor detected, window and widgets will be fully opaque.")
             window_bg_css = """
-            #fluxfce-main-window {
+            #lightfx-main-window {
                 background-color: @theme_bg_color;
             }
             """
@@ -175,7 +175,7 @@ class FluxFceWindow(Gtk.Window):
 
         try:
             self.handler = desktop_manager.get_desktop_handler()
-        except core_exc.FluxFceError as e:
+        except core_exc.LightFXError as e:
             self.show_error_dialog("Initialization Error", f"Could not start the tool.\nIs this a supported desktop?\n\nDetails: {e}")
             GLib.idle_add(self.app.quit)
             return
@@ -350,13 +350,13 @@ class FluxFceWindow(Gtk.Window):
         if self.one_shot_refresh_id: GLib.source_remove(self.one_shot_refresh_id)
         self.one_shot_refresh_id = None
         try:
-            status = fluxfce_core.get_status()
-            config_parser = fluxfce_core.get_current_config()
+            status = lightfx_core.get_status()
+            config_parser = lightfx_core.get_current_config()
             self._update_status_header(status.get("summary", {}))
             self._update_profile_display("day", status, config_parser)
             self._update_profile_display("night", status, config_parser)
             self._update_sliders_from_backend()
-        except core_exc.FluxFceError as e:
+        except core_exc.LightFXError as e:
             self.show_error_dialog("Core Error", f"Failed to get status: {e}")
 
     def _update_status_header(self, summary):
@@ -425,7 +425,7 @@ class FluxFceWindow(Gtk.Window):
             self.lbl_temp_readout.set_text(f"{int(temp)} K")
             self.slider_bright.get_adjustment().set_value(bright)
             self.lbl_bright_readout.set_text(f"{bright:.0%}")
-        except core_exc.XfceError as e:
+        except core_exc.LightFXError as e: # Assuming XfceError is a LightFXError
             log.error(f"Could not get screen settings: {e}")
         finally:
             self.slider_temp.handler_unblock(self.temp_slider_handler_id)
@@ -462,10 +462,10 @@ class FluxFceWindow(Gtk.Window):
     def on_toggle_switch_activated(self, switch, gparam):
         try:
             if switch.get_active():
-                fluxfce_core.enable_scheduling(sys.executable, str(APP_SCRIPT_PATH))
+                lightfx_core.enable_scheduling(sys.executable, str(APP_SCRIPT_PATH))
             else:
-                fluxfce_core.disable_scheduling()
-        except core_exc.FluxFceError as e:
+                lightfx_core.disable_scheduling()
+        except core_exc.LightFXError as e:
             self.show_error_dialog("Scheduling Error", f"Operation failed: {e}")
         GLib.idle_add(self.refresh_ui)
 
@@ -474,17 +474,17 @@ class FluxFceWindow(Gtk.Window):
         dialog.format_secondary_text(f"This will overwrite the current {mode} settings with the current desktop theme, background, and screen color.")
         if dialog.run() == Gtk.ResponseType.OK:
             try:
-                fluxfce_core.set_default_from_current(mode)
+                lightfx_core.set_default_from_current(mode)
                 self.show_info_dialog("Success", f"{mode.capitalize()} mode defaults have been saved.")
                 self.refresh_ui()
-            except core_exc.FluxFceError as e: self.show_error_dialog("Save Error", f"Failed to save defaults: {e}")
+            except core_exc.LightFXError as e: self.show_error_dialog("Save Error", f"Failed to save defaults: {e}")
         dialog.destroy()
 
     def on_apply_temporary_clicked(self, widget, mode):
         try:
-            fluxfce_core.apply_temporary_mode(mode)
+            lightfx_core.apply_temporary_mode(mode)
             GLib.timeout_add(UI_UPDATE_DELAY_MS, self._update_sliders_from_backend)
-        except core_exc.FluxFceError as e:
+        except core_exc.LightFXError as e:
             self.show_error_dialog("Apply Error", f"Failed to apply {mode} mode: {e}")
 
     def on_slider_value_changed(self, slider):
@@ -497,7 +497,7 @@ class FluxFceWindow(Gtk.Window):
         temp, bright = int(self.slider_temp.get_value()), self.slider_bright.get_value()
         try:
             self.handler.set_screen_temp(temp, bright)
-        except (core_exc.FluxFceError, ValueError) as e:
+        except (core_exc.LightFXError, ValueError) as e:
             self.show_error_dialog("Apply Error", f"Failed to set screen values: {e}")
         self.slider_debounce_id = None
         return GLib.SOURCE_REMOVE
@@ -522,7 +522,7 @@ class FluxFceWindow(Gtk.Window):
 
             self.handler.set_screen_temp(temp, bright)
             GLib.timeout_add(UI_UPDATE_DELAY_MS, self._update_sliders_from_backend)
-        except core_exc.FluxFceError as e:
+        except core_exc.LightFXError as e:
             self.show_error_dialog("Reset Error", f"Failed to reset {control_type}: {e}")
 
     def on_edit_profile_clicked(self, widget, mode):
@@ -532,13 +532,13 @@ class FluxFceWindow(Gtk.Window):
             return
 
         try:
-            config = fluxfce_core.get_current_config()
+            config = lightfx_core.get_current_config()
             key = "DAY_BACKGROUND_PROFILE" if mode == 'day' else "NIGHT_BACKGROUND_PROFILE"
             profile_name = config.get("Appearance", key)
             if not profile_name: raise core_exc.ConfigError(f"Could not find '{key}' in your configuration.")
-            profile_path = fluxfce_core.CONFIG_DIR / "backgrounds" / f"{profile_name}.profile"
+            profile_path = lightfx_core.CONFIG_DIR / "backgrounds" / f"{profile_name}.profile" # This will change to PROFILES_DIR
             self.open_file_in_editor(profile_path)
-        except core_exc.FluxFceError as e:
+        except core_exc.LightFXError as e: # Catch generic LightFXError
             self.show_error_dialog("Error", f"Could not determine profile path:\n{e}")
 
     def show_error_dialog(self, title, message):
@@ -635,13 +635,13 @@ class Application:
         self.status_icon = None
         self.right_click_menu = None
         self.toggle_item = None
-        self.window = FluxFceWindow(self)
+        self.window = LightFXWindow(self) # Changed class name here
         self._init_status_icon()
 
       
     def _init_status_icon(self):
         self.status_icon = Gtk.StatusIcon.new_from_file(ICON_DISABLED)
-        self.status_icon.set_tooltip_text("fluxfce (loading...)")
+        self.status_icon.set_tooltip_text("lightfx (loading...)") # Changed text here
         self.status_icon.set_visible(True)
         self.status_icon.connect("activate", self.on_icon_left_click)
         self.status_icon.connect("popup-menu", self.on_icon_right_click)
@@ -697,7 +697,7 @@ class Application:
                 self.status_icon.set_from_file(ICON_DISABLED)
 
             # The existing tooltip and menu item updates are perfect
-            self.status_icon.set_tooltip_text("fluxfce Enabled" if is_enabled else "fluxfce Disabled")
+            self.status_icon.set_tooltip_text("LightFX Enabled" if is_enabled else "LightFX Disabled") # Changed text here
         
         if self.toggle_item:
             self.toggle_item.set_label("Disable Scheduling" if is_enabled else "Enable Scheduling")

@@ -1,4 +1,4 @@
-# fluxfce_core/background_manager.py
+# lightfx_core/background_manager.py
 """
 Manages saving and loading of XFCE4 desktop background profiles.
 
@@ -14,12 +14,12 @@ from pathlib import Path
 from typing import Any
 
 from . import helpers
-from .exceptions import XfceError
+from .exceptions import XfceError # This might become LightFXError if XFCE specific errors are wrapped
 
 log = logging.getLogger(__name__)
 
 # --- Configuration ---
-PROFILE_DIR = helpers.pathlib.Path.home() / ".config" / "fluxfce" / "backgrounds"
+PROFILE_DIR = helpers.pathlib.Path.home() / ".config" / "lightfx" / "backgrounds" # Changed fluxfce to lightfx
 
 # --- Mappings for XFCE Properties ---
 IMAGE_STYLE_MAP = {
@@ -60,7 +60,7 @@ class BackgroundManager:
             helpers.check_dependencies(["xfconf-query", "xrandr", "xfdesktop"])
             PROFILE_DIR.mkdir(parents=True, exist_ok=True)
         except (helpers.DependencyError, OSError) as e:
-            raise XfceError(f"Cannot initialize BackgroundManager: {e}") from e
+            raise XfceError(f"Cannot initialize BackgroundManager: {e}") from e # Keeping XfceError for now
 
     # --- Private Helpers for xfconf ---
     def _get_prop(self, prop_path: str) -> str | None:

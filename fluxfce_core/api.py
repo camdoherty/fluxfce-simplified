@@ -1,11 +1,11 @@
-# fluxfce_core/api.py
+# lightfx_core/api.py
 """
-Public API Facade for the fluxfce_core library.
+Public API Facade for the lightfx_core library.
 
 This module provides the primary interface for external callers (like the CLI)
-to interact with the core functionalities of FluxFCE, including configuration,
+to interact with the core functionalities of LightFX, including configuration,
 scheduling, desktop appearance management, and systemd integration.
-It orchestrates calls to other internal modules within `fluxfce_core`.
+It orchestrates calls to other internal modules within `lightfx_core`.
 """
 
 import configparser
@@ -23,7 +23,7 @@ from .background_manager import BackgroundManager
 try:
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 except ImportError:
-    raise ImportError("Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+.")
+    raise ImportError("Required module 'zoneinfo' not found. LightFX requires Python 3.9+.")
 
 log = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ def install_default_background_profiles() -> None:
     try:
         bg_manager = BackgroundManager()
         bg_manager.install_default_profiles()
-    except exc.XfceError as e:
+    except exc.XfceError as e: # XfceError is specific, might become LightFXError later if generalized
         log.error(f"API: Failed to install default background profiles: {e}")
         # This is not a fatal error; the main installation can continue with a warning.
     except Exception as e:
@@ -82,7 +82,7 @@ gradient_direction = vertical
 """
 
     try:
-        profile_dir = helpers.pathlib.Path.home() / ".config" / "fluxfce" / "backgrounds"
+        profile_dir = helpers.pathlib.Path.home() / ".config" / "lightfx" / "backgrounds" # Will change to lightfx paths
         profile_dir.mkdir(parents=True, exist_ok=True)
 
         day_profile_path = profile_dir / "cinnamon-default-day.profile"
@@ -96,15 +96,15 @@ gradient_direction = vertical
     except OSError as e:
         log.error(f"Failed to write default Cinnamon profiles: {e}")
 
-def install_fluxfce(script_path: str, python_executable: Optional[str] = None) -> bool:
+def install_lightfx(script_path: str, python_executable: Optional[str] = None) -> bool:
     """API Façade: Installs static systemd units."""
-    log.info(f"API Facade: Installing static systemd units for {sysd._APP_NAME}.")
+    log.info(f"API Facade: Installing static systemd units for {sysd._APP_NAME}.") # _APP_NAME in systemd.py will be lightfx
     install_mgr = sysd.SystemdManager()
     return install_mgr.install_units(script_path=script_path, python_executable=python_executable)
 
-def uninstall_fluxfce() -> bool:
+def uninstall_lightfx() -> bool:
     """API Façade: Disables scheduling and removes all systemd units."""
-    log.info(f"API Facade: Uninstalling {sysd._APP_NAME} (disabling schedule, removing units).")
+    log.info(f"API Facade: Uninstalling {sysd._APP_NAME} (disabling schedule, removing units).") # _APP_NAME will be lightfx
     scheduler.disable_scheduling()
     uninstall_mgr = sysd.SystemdManager()
     return uninstall_mgr.remove_units()
@@ -161,7 +161,7 @@ def handle_run_login_check() -> bool:
 # --- Status Function ---
 
 def get_status() -> dict[str, Any]:
-    """Retrieves the current status of fluxfce."""
+    """Retrieves the current status of lightfx."""
     log.debug("API: Getting status...")
     status: dict[str, Any] = {
         "config": {},
@@ -184,7 +184,7 @@ def get_status() -> dict[str, Any]:
         status["config"]["dark_theme"] = config_obj.get("Appearance", "DARK_THEME", fallback="Not Set")
         status["config"]["day_bg_profile"] = config_obj.get("Appearance", "DAY_BACKGROUND_PROFILE", fallback="Not Set")
         status["config"]["night_bg_profile"] = config_obj.get("Appearance", "NIGHT_BACKGROUND_PROFILE", fallback="Not Set")
-    except exc.FluxFceError as e:
+    except exc.LightFXError as e: # Changed from FluxFceError
         status["config"]["error"] = str(e)
         log.error(f"API Status: Error loading config for status: {e}")
 
@@ -238,7 +238,7 @@ def get_status() -> dict[str, Any]:
     if status["config"].get("error"):
         summary["overall_status"] = "[ERROR]"
         summary["status_message"] = f"Configuration error: {status['config']['error']}"
-        summary["recommendation"] = "Please check your config or run 'fluxfce install'."
+        summary["recommendation"] = "Please check your config or run 'lightfx install'." # Changed fluxfce to lightfx
     elif status["sun_times"].get("error"):
         summary["overall_status"] = "[ERROR]"
         summary["status_message"] = f"Sun calculation error: {status['sun_times']['error']}"
@@ -251,7 +251,7 @@ def get_status() -> dict[str, Any]:
             if not is_enabled:
                 summary["overall_status"] = "[DISABLED]"
                 summary["status_message"] = "Automatic scheduling is disabled."
-                summary["recommendation"] = "Run 'fluxfce enable' to activate."
+                summary["recommendation"] = "Run 'lightfx enable' to activate." # Changed fluxfce to lightfx
             else:
                 summary["overall_status"] = "[OK]"
                 summary["status_message"] = "Enabled and scheduling is active."

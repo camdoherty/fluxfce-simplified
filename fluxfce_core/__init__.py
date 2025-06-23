@@ -1,11 +1,11 @@
-# fluxfce_core/__init__.py
+# lightfx_core/__init__.py
 
 # Make exceptions available directly
 from .exceptions import (
     CalculationError,
     ConfigError,
     DependencyError,
-    FluxFceError,
+    LightFXError,
     SystemdError,
     ValidationError,
     XfceError,
@@ -23,10 +23,10 @@ from .api import (
     handle_run_login_check,
     handle_schedule_dynamic_transitions_command,
     install_default_background_profiles,  # <-- ADDED THIS LINE
-    install_fluxfce,
+    install_lightfx,
     save_configuration,
     set_default_from_current,
-    uninstall_fluxfce,
+    uninstall_lightfx,
 )
 
 # --- Make core constants accessible ---
@@ -59,7 +59,7 @@ __all__ = [
     "CalculationError",
     "ConfigError",
     "DependencyError",
-    "FluxFceError",
+    "LightFXError",
     "SystemdError",
     "ValidationError",
     "XfceError",
@@ -71,10 +71,10 @@ __all__ = [
     "get_current_config",
     "get_status",
     "install_default_background_profiles",  # <-- AND ADDED THIS LINE
-    "install_fluxfce",
+    "install_lightfx",
     "save_configuration",
     "set_default_from_current",
-    "uninstall_fluxfce",
+    "uninstall_lightfx",
     # Internal Handlers (available for CLI, routed through api.py)
     "handle_internal_apply",
     "handle_run_login_check",
