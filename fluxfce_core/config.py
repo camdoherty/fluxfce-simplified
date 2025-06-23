@@ -1,4 +1,4 @@
-# fluxfce_core/config.py
+# lightfx_core/config.py
 """
 Configuration management for FluxFCE.
 
@@ -16,9 +16,10 @@ from .exceptions import ConfigError
 log = logging.getLogger(__name__)
 
 # --- Constants ---
-APP_NAME = "fluxfce"
+APP_NAME = "lightfx"
 CONFIG_DIR = pathlib.Path.home() / ".config" / APP_NAME
 CONFIG_FILE = CONFIG_DIR / "config.ini"
+PROFILES_DIR = CONFIG_DIR / "profiles"
 
 # --- START: CORRECTED AND COMPLETE DEFAULT_CONFIG ---
 DEFAULT_CONFIG: dict[str, dict[str, str]] = {

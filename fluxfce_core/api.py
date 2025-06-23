@@ -1,11 +1,11 @@
-# fluxfce_core/api.py
+# lightfx_core/api.py
 """
-Public API Facade for the fluxfce_core library.
+Public API Facade for the lightfx_core library.
 
 This module provides the primary interface for external callers (like the CLI)
 to interact with the core functionalities of FluxFCE, including configuration,
 scheduling, desktop appearance management, and systemd integration.
-It orchestrates calls to other internal modules within `fluxfce_core`.
+It orchestrates calls to other internal modules within `lightfx_core`.
 """
 
 import configparser
@@ -82,7 +82,7 @@ gradient_direction = vertical
 """
 
     try:
-        profile_dir = helpers.pathlib.Path.home() / ".config" / "fluxfce" / "backgrounds"
+        profile_dir = helpers.pathlib.Path.home() / ".config" / "lightfx" / "backgrounds"
         profile_dir.mkdir(parents=True, exist_ok=True)
 
         day_profile_path = profile_dir / "cinnamon-default-day.profile"

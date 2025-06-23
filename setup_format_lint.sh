@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Script to initialize Python formatting (black) and linting (ruff) for the fluxfce project.
+# Script to initialize Python formatting (black) and linting (ruff) for the lightfx project.
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
@@ -8,12 +8,12 @@ set -e
 # --- Configuration ---
 PROJECT_ROOT_DIR=$(pwd) # Assumes script is run from the project root
 PYTHON_FILES=(
-    "fluxfce_cli.py"
-    "fluxfce_deps_check.py" # Or your actual requirements checker script name
-    "fluxfce_core/"
+    "lightfx_cli.py"
+    "lightfx_deps_check.py" # Or your actual requirements checker script name
+    "lightfx_core/"
 )
 TARGET_PYTHON_VERSION="py39"
-VENV_NAME=".venv-fluxfce-dev" # Name for the project-specific virtual environment
+VENV_NAME=".venv-lightfx-dev" # Name for the project-specific virtual environment
 
 # --- Helper Functions ---
 print_info() {
@@ -129,7 +129,7 @@ unfixable = []
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.lint.isort]
-known-first-party = ["fluxfce_core", "fluxfce_dependency_setup"]
+known-first-party = ["lightfx_core", "lightfx_dependency_setup"]
 
 [tool.ruff.format]
 quote-style = "double"

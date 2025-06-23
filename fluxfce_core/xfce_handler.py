@@ -1,4 +1,4 @@
-# fluxfce_core/xfce_handler.py
+# lightfx_core/xfce_handler.py
 """
 Concrete DesktopHandler implementation for the XFCE Desktop Environment.
 """

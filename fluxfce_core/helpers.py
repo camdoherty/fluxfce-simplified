@@ -1,9 +1,9 @@
-# ~/dev/fluxfce-simplified/fluxfce_core/helpers.py
+# ~/dev/fluxfce-simplified/lightfx_core/helpers.py
 """
 Utility functions for the FluxFCE core library.
 
 This module provides a collection of helper functions used by other
-modules within `fluxfce_core`. These include utilities for:
+modules within `lightfx_core`. These include utilities for:
 - Running external commands.
 - Checking for system dependencies.
 - Detecting the system's IANA timezone.
@@ -442,14 +442,14 @@ def hex_to_rgba_doubles(hex_color: str) -> list[float]:
 
 def setup_library_logging(level=logging.WARNING):
     """
-    Configures basic logging for the fluxfce_core library components.
+    Configures basic logging for the lightfx_core library components.
     This is primarily intended for internal debugging and might be overridden
     by the calling application (GUI/CLI). By default, sets a higher level
     to avoid polluting the output of the consuming application unless
     debugging is explicitly enabled.
     """
-    # Configure logging for the entire 'fluxfce_core' package namespace
-    package_logger = logging.getLogger("fluxfce_core")
+    # Configure logging for the entire 'lightfx_core' package namespace
+    package_logger = logging.getLogger("lightfx_core")
 
     # Avoid adding multiple handlers if called repeatedly
     if not package_logger.handlers:
@@ -461,10 +461,10 @@ def setup_library_logging(level=logging.WARNING):
         package_logger.addHandler(handler)
 
     package_logger.setLevel(level)
-    log.info(f"fluxfce_core logging configured to level: {logging.getLevelName(level)}")
+    log.info(f"lightfx_core logging configured to level: {logging.getLevelName(level)}")
 
 
 # Example of how to potentially enable debug logging from outside:
 # import logging
-# from fluxfce_core import helpers
+# from lightfx_core import helpers
 # helpers.setup_library_logging(level=logging.DEBUG)

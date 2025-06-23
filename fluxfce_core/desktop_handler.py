@@ -1,4 +1,4 @@
-# fluxfce_core/desktop_handler.py
+# lightfx_core/desktop_handler.py
 """
 Abstract Base Class for Desktop Environment Handlers.
 """

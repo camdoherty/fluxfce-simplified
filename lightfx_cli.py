@@ -4,7 +4,7 @@
 fluxfce (CLI) - Simplified Desktop Theming Tool
 
 Command-line interface for managing automatic theme/background/screen
-switching for supported desktop environments using the fluxfce_core library.
+switching for supported desktop environments using the lightfx_core library.
 """
 
 import argparse
@@ -19,17 +19,17 @@ from datetime import datetime
 
 # Import the refactored core library API and exceptions
 try:
-    import fluxfce_core
-    from fluxfce_core import exceptions as core_exc
-    from fluxfce_core import (
+    import lightfx_core
+    from lightfx_core import exceptions as core_exc
+    from lightfx_core import (
         SCHEDULER_TIMER_NAME, SCHEDULER_SERVICE_NAME,
         LOGIN_SERVICE_NAME, RESUME_SERVICE_NAME
     )
-    from fluxfce_core import config as core_config
-    from fluxfce_core import install_default_background_profiles
+    from lightfx_core import config as core_config
+    from lightfx_core import install_default_background_profiles
 except ImportError as e:
-    print(f"Error: Failed to import the fluxfce_core library: {e}", file=sys.stderr)
-    print("Ensure fluxfce_core is installed or available in your Python path.", file=sys.stderr)
+    print(f"Error: Failed to import the lightfx_core library: {e}", file=sys.stderr)
+    print("Ensure lightfx_core is installed or available in your Python path.", file=sys.stderr)
     sys.exit(1)
 
 # --- Global Variables ---
@@ -37,7 +37,7 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 SCRIPT_PATH = str(pathlib.Path(__file__).resolve())
 PYTHON_EXECUTABLE = sys.executable
 DEPENDENCY_CHECKER_SCRIPT_NAME = "fluxfce_deps_check.py"
-TIMEZONES_JSON_PATH = SCRIPT_DIR / "fluxfce_core" / "assets" / "timezones.json"
+TIMEZONES_JSON_PATH = SCRIPT_DIR / "lightfx_core" / "assets" / "timezones.json"
 
 log = logging.getLogger("fluxfce_cli")
 
@@ -63,11 +63,11 @@ def setup_cli_logging(verbose: bool):
         log.handlers.clear()
 
     core_log_level = logging.DEBUG if verbose else logging.WARNING
-    core_logger = logging.getLogger("fluxfce_core")
+    core_logger = logging.getLogger("lightfx_core")
     core_logger.setLevel(core_log_level)
     if not core_logger.hasHandlers():
         core_handler = logging.StreamHandler(sys.stderr)
-        core_formatter = logging.Formatter("%(levelname)s: fluxfce_core: %(message)s")
+        core_formatter = logging.Formatter("%(levelname)s: lightfx_core: %(message)s")
         core_handler.setFormatter(core_formatter)
         core_logger.addHandler(core_handler)
         core_logger.propagate = False
@@ -88,8 +88,8 @@ def setup_cli_logging(verbose: bool):
 
     log.propagate = False
     if verbose:
-        log.debug("Verbose logging enabled for fluxfce_cli.")
-        core_logger.debug("Verbose logging enabled for fluxfce_core (via CLI).")
+        log.debug("Verbose logging enabled for lightfx_cli.")
+        core_logger.debug("Verbose logging enabled for lightfx_core (via CLI).")
 
 
 # --- Output Formatting ---
@@ -199,7 +199,7 @@ def _interactive_setup() -> configparser.ConfigParser:
     user_tz = None
 
     # 1. TIMEZONE
-    detected_tz = fluxfce_core.detect_system_timezone()
+    detected_tz = lightfx_core.detect_system_timezone()
     if detected_tz and ask_yes_no_cli(f"Detected timezone '{detected_tz}'. Use this?", default_yes=True):
         user_tz = detected_tz
     else:
@@ -241,7 +241,7 @@ def _interactive_setup() -> configparser.ConfigParser:
         while True:
             try:
                 lat_input = input("Enter Latitude (e.g., 43.65N): ").strip()
-                fluxfce_core.helpers.latlon_str_to_float(lat_input)
+                lightfx_core.helpers.latlon_str_to_float(lat_input)
                 config_obj.set("Location", "LATITUDE", lat_input)
                 break
             except core_exc.ValidationError as e:
@@ -253,7 +253,7 @@ def _interactive_setup() -> configparser.ConfigParser:
         while True:
             try:
                 lon_input = input("Enter Longitude (e.g., 79.38W): ").strip()
-                fluxfce_core.helpers.latlon_str_to_float(lon_input)
+                lightfx_core.helpers.latlon_str_to_float(lon_input)
                 config_obj.set("Location", "LONGITUDE", lon_input)
                 break
             except core_exc.ValidationError as e:
@@ -324,38 +324,38 @@ Examples:
                 sys.exit(1)
             log.info(f"{AnsiColors.GREEN}--- Dependency check complete ---{AnsiColors.RESET}")
 
-            log.info("\n--- Step 2: Configuring FluxFCE application settings ---")
-            if not fluxfce_core.CONFIG_FILE.exists():
+            log.info("\n--- Step 2: Configuring LightFX application settings ---")
+            if not lightfx_core.CONFIG_FILE.exists():
                 config_obj = _interactive_setup()
-                fluxfce_core.save_configuration(config_obj)
+                lightfx_core.save_configuration(config_obj)
             else:
-                log.info(f"Existing configuration found at {fluxfce_core.CONFIG_FILE}. Skipping interactive setup.")
-            log.info(f"{AnsiColors.GREEN}--- FluxFCE application configuration complete ---{AnsiColors.RESET}")
+                log.info(f"Existing configuration found at {lightfx_core.CONFIG_FILE}. Skipping interactive setup.")
+            log.info(f"{AnsiColors.GREEN}--- LightFX application configuration complete ---{AnsiColors.RESET}")
 
             # DE-aware step: Install DE-specific default background profiles
-            de = fluxfce_core.helpers.get_desktop_environment()
+            de = lightfx_core.helpers.get_desktop_environment()
             if de == "XFCE":
                 log.info("\n--- Step 2b: Installing default background profiles for XFCE ---")
-                fluxfce_core.install_default_background_profiles()
+                lightfx_core.install_default_background_profiles()
             elif de == "CINNAMON":
                 log.info("\n--- Step 2b: Installing default background profiles for Cinnamon ---")
                 # Import the new function
-                from fluxfce_core.api import install_default_cinnamon_profiles
+                from lightfx_core.api import install_default_cinnamon_profiles
                 install_default_cinnamon_profiles()
 
-            log.info("Default background profiles created. Use 'fluxfce set-default' to customize them.")
+            log.info("Default background profiles created. Use 'lightfx set-default' to customize them.")
 
             log.info("\n--- Step 3: Installing systemd units ---")
-            fluxfce_core.install_fluxfce(script_path=SCRIPT_PATH, python_executable=PYTHON_EXECUTABLE)
+            lightfx_core.install_fluxfce(script_path=SCRIPT_PATH, python_executable=PYTHON_EXECUTABLE)
 
             log.info("\n--- Step 4: Enabling automatic scheduling ---")
-            fluxfce_core.enable_scheduling(python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH)
+            lightfx_core.enable_scheduling(python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH)
 
-            log.info("\n" + "-"*45 + f"\n {AnsiColors.GREEN}fluxfce installed and enabled successfully.{AnsiColors.RESET} \n" + "-"*45)
-            log.info("Tip: Configure your look using 'fluxfce set-default --mode day|night'.")
+            log.info("\n" + "-"*45 + f"\n {AnsiColors.GREEN}lightfx installed and enabled successfully.{AnsiColors.RESET} \n" + "-"*45)
+            log.info("Tip: Configure your look using 'lightfx set-default --mode day|night'.")
             
             if ask_yes_no_cli("\nLaunch the graphical user interface now?", default_yes=True):
-                gui_script_path = SCRIPT_DIR / "fluxfce_gui.py"
+                gui_script_path = SCRIPT_DIR / "lightfx_gui.py"
                 if gui_script_path.exists():
                     log.info(f"Launching GUI from: {gui_script_path}")
                     try:
@@ -372,10 +372,10 @@ Examples:
 
         elif args.command == "uninstall":
             log.info("Starting uninstallation (system components)...")
-            fluxfce_core.uninstall_fluxfce()
-            log.info("FluxFCE systemd units removed and schedule cleared.")
+            lightfx_core.uninstall_fluxfce()
+            log.info("LightFX systemd units removed and schedule cleared.")
 
-            config_dir_path = fluxfce_core.CONFIG_DIR
+            config_dir_path = lightfx_core.CONFIG_DIR
             if config_dir_path.exists():
                 log.warning(f"\nConfiguration directory found at: {config_dir_path}")
                 if ask_yes_no_cli("Do you want to REMOVE this configuration directory and all profiles?", default_yes=False):
@@ -390,11 +390,11 @@ Examples:
 
         elif args.command == "day":
             log.info("Applying Day mode (scheduling will remain active)...")
-            fluxfce_core.apply_temporary_mode("day")
+            lightfx_core.apply_temporary_mode("day")
 
         elif args.command == "night":
             log.info("Applying Night mode (scheduling will remain active)...")
-            fluxfce_core.apply_temporary_mode("night")
+            lightfx_core.apply_temporary_mode("night")
 
         elif args.command == "enable":
             log.info("Enabling scheduling via systemd timers...")
@@ -402,46 +402,46 @@ Examples:
                 log.error(f"Config file {core_config.CONFIG_FILE} not found. Run 'install' first.")
                 exit_code = 1
             else:
-                fluxfce_core.enable_scheduling(python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH)
+                lightfx_core.enable_scheduling(python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH)
                 log.info("Automatic theme scheduling enabled.")
 
         elif args.command == "disable":
             log.info("Disabling scheduling (systemd timers)...")
-            fluxfce_core.disable_scheduling()
+            lightfx_core.disable_scheduling()
             log.info("Automatic theme scheduling disabled.")
 
         elif args.command == "status":
-            status = fluxfce_core.get_status()
+            status = lightfx_core.get_status()
             print_status(status, verbose=args.verbose)
 
         elif args.command == "force-day":
             log.info("Forcing Day mode and disabling scheduling...")
-            fluxfce_core.apply_manual_mode("day")
+            lightfx_core.apply_manual_mode("day")
 
         elif args.command == "force-night":
             log.info("Forcing Night mode and disabling scheduling...")
-            fluxfce_core.apply_manual_mode("night")
+            lightfx_core.apply_manual_mode("night")
 
         elif args.command == "set-default":
             mode = args.default_mode
             log.info(f"Setting current look as default for {mode.capitalize()} mode...")
             log.info("This will save the current GTK theme, screen settings, and overwrite the")
             log.info(f"'{mode}' background profile with your current desktop background(s).")
-            fluxfce_core.set_default_from_current(mode)
+            lightfx_core.set_default_from_current(mode)
             log.info(f"Current desktop settings saved as default for {mode.capitalize()} mode.")
 
         elif args.command == "internal-apply":
-            success = fluxfce_core.handle_internal_apply(args.internal_mode)
+            success = lightfx_core.handle_internal_apply(args.internal_mode)
             exit_code = 0 if success else 1
         
         elif args.command == "schedule-dynamic-transitions":
-            success = fluxfce_core.handle_schedule_dynamic_transitions_command(
+            success = lightfx_core.handle_schedule_dynamic_transitions_command(
                 python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH
             )
             exit_code = 0 if success else 1
 
         elif args.command == "run-login-check":
-            success = fluxfce_core.handle_run_login_check()
+            success = lightfx_core.handle_run_login_check()
             exit_code = 0 if success else 1
         else:
             log.error(f"Unknown command: {args.command}")
@@ -449,7 +449,7 @@ Examples:
             exit_code = 1
 
     except core_exc.FluxFceError as e:
-        log.error(f"{AnsiColors.RED}FluxFCE Error: {e}{AnsiColors.RESET}", exc_info=args.verbose)
+        log.error(f"{AnsiColors.RED}LightFX Error: {e}{AnsiColors.RESET}", exc_info=args.verbose)
         exit_code = 1
     except Exception as e_main:
         log.error(f"{AnsiColors.RED}An unexpected error occurred in CLI: {e_main}{AnsiColors.RESET}", exc_info=True)

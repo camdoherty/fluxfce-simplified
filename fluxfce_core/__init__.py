@@ -1,4 +1,4 @@
-# fluxfce_core/__init__.py
+# lightfx_core/__init__.py
 
 # Make exceptions available directly
 from .exceptions import (

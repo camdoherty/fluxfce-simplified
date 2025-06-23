@@ -1,4 +1,4 @@
-# fluxfce_core/scheduler.py
+# lightfx_core/scheduler.py
 """
 Manages Systemd-based scheduling for FluxFCE.
 
@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-# Imports from within fluxfce_core
+# Imports from within lightfx_core
 from . import config as cfg 
 from . import exceptions as exc
 from . import helpers, sun, systemd as sysd 

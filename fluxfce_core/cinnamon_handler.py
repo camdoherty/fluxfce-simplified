@@ -1,4 +1,4 @@
-# fluxfce_core/cinnamon_handler.py
+# lightfx_core/cinnamon_handler.py
 """
 Concrete DesktopHandler implementation for the Cinnamon Desktop Environment.
 Uses profile files for background settings for consistency.
@@ -21,7 +21,7 @@ SCHEMA_WM = "org.cinnamon.desktop.wm.preferences"
 SCHEMA_BG = "org.cinnamon.desktop.background"
 
 # --- Profile Constants ---
-PROFILE_DIR = helpers.pathlib.Path.home() / ".config" / "fluxfce" / "backgrounds"
+PROFILE_DIR = helpers.pathlib.Path.home() / ".config" / "lightfx" / "backgrounds"
 PROFILE_PREFIX = "cinnamon-"
 
 def _convert_cinnamon_color_to_hex(cinnamon_color: str) -> str:

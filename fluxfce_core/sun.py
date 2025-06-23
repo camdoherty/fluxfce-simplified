@@ -1,4 +1,4 @@
-# ~/dev/fluxfce-simplified/fluxfce_core/sun.py
+# ~/dev/fluxfce-simplified/lightfx_core/sun.py
 """
 Sunrise and sunset time calculations for FluxFCE.
 

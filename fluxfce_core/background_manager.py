@@ -1,4 +1,4 @@
-# fluxfce_core/background_manager.py
+# lightfx_core/background_manager.py
 """
 Manages saving and loading of XFCE4 desktop background profiles.
 
@@ -19,7 +19,7 @@ from .exceptions import XfceError
 log = logging.getLogger(__name__)
 
 # --- Configuration ---
-PROFILE_DIR = helpers.pathlib.Path.home() / ".config" / "fluxfce" / "backgrounds"
+PROFILE_DIR = helpers.pathlib.Path.home() / ".config" / "lightfx" / "backgrounds"
 
 # --- Mappings for XFCE Properties ---
 IMAGE_STYLE_MAP = {

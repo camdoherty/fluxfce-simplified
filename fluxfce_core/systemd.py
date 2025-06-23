@@ -1,4 +1,4 @@
-# ~/dev/fluxfce-simplified/fluxfce_core/systemd.py
+# ~/dev/fluxfce-simplified/lightfx_core/systemd.py
 """
 Systemd user unit management for FluxFCE.
 
@@ -21,7 +21,7 @@ from .exceptions import DependencyError, SystemdError
 log = logging.getLogger(__name__)
 
 # --- Constants ---
-_APP_NAME = "fluxfce" # Application name, used in unit descriptions and names
+_APP_NAME = "lightfx" # Application name, used in unit descriptions and names
 SYSTEMD_USER_DIR = pathlib.Path.home() / ".config" / "systemd" / "user"
 
 # --- Static Unit Names and File Paths ---

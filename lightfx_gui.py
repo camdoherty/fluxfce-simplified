@@ -5,7 +5,7 @@
 fluxfce (GUI) - Simplified Desktop Theming Tool
 
 Graphical user interface for managing automatic theme/background/screen
-switching for supported desktop environments using the fluxfce_core library.
+switching for supported desktop environments using the lightfx_core library.
 Runs as a background application with a system tray status icon.
 """
 
@@ -27,12 +27,12 @@ except (ImportError, ValueError):
     sys.exit(1)
 
 try:
-    import fluxfce_core
-    from fluxfce_core import exceptions as core_exc
-    from fluxfce_core import desktop_manager, helpers
+    import lightfx_core
+    from lightfx_core import exceptions as core_exc
+    from lightfx_core import desktop_manager, helpers
 except ImportError as e:
-    print(f"FATAL: fluxfce_core library not found: {e}", file=sys.stderr)
-    print("Please ensure fluxfce_core is installed or available in your Python path.", file=sys.stderr)
+    print(f"FATAL: lightfx_core library not found: {e}", file=sys.stderr)
+    print("Please ensure lightfx_core is installed or available in your Python path.", file=sys.stderr)
     sys.exit(1)
 
 # --- Basic Logging Setup ---
@@ -44,7 +44,7 @@ APP_SCRIPT_PATH = Path(__file__).resolve()
 SLIDER_DEBOUNCE_MS = 200
 UI_UPDATE_DELAY_MS = 250
 UI_REFRESH_INTERVAL_MS = 60 * 1000  # 1 minute
-ASSETS_DIR = Path(__file__).resolve().parent / "fluxfce_core" / "assets"
+ASSETS_DIR = Path(__file__).resolve().parent / "lightfx_core" / "assets"
 ICON_ENABLED = str(ASSETS_DIR / "icon-enabled.png")
 ICON_DISABLED = str(ASSETS_DIR / "icon-disabled.png")
 
@@ -73,7 +73,7 @@ class FluxFceWindow(Gtk.Window):
 
         # --- Read opacities from config and prepare for transparency ---
         try:
-            config = fluxfce_core.get_current_config()
+            config = lightfx_core.get_current_config()
             # Read window background opacity
             opacity = config.getfloat("GUI", "opacity", fallback=1.0)
             opacity = max(0.0, min(1.0, opacity))
@@ -350,8 +350,8 @@ class FluxFceWindow(Gtk.Window):
         if self.one_shot_refresh_id: GLib.source_remove(self.one_shot_refresh_id)
         self.one_shot_refresh_id = None
         try:
-            status = fluxfce_core.get_status()
-            config_parser = fluxfce_core.get_current_config()
+            status = lightfx_core.get_status()
+            config_parser = lightfx_core.get_current_config()
             self._update_status_header(status.get("summary", {}))
             self._update_profile_display("day", status, config_parser)
             self._update_profile_display("night", status, config_parser)
@@ -462,9 +462,9 @@ class FluxFceWindow(Gtk.Window):
     def on_toggle_switch_activated(self, switch, gparam):
         try:
             if switch.get_active():
-                fluxfce_core.enable_scheduling(sys.executable, str(APP_SCRIPT_PATH))
+                lightfx_core.enable_scheduling(sys.executable, str(APP_SCRIPT_PATH))
             else:
-                fluxfce_core.disable_scheduling()
+                lightfx_core.disable_scheduling()
         except core_exc.FluxFceError as e:
             self.show_error_dialog("Scheduling Error", f"Operation failed: {e}")
         GLib.idle_add(self.refresh_ui)
@@ -474,7 +474,7 @@ class FluxFceWindow(Gtk.Window):
         dialog.format_secondary_text(f"This will overwrite the current {mode} settings with the current desktop theme, background, and screen color.")
         if dialog.run() == Gtk.ResponseType.OK:
             try:
-                fluxfce_core.set_default_from_current(mode)
+                lightfx_core.set_default_from_current(mode)
                 self.show_info_dialog("Success", f"{mode.capitalize()} mode defaults have been saved.")
                 self.refresh_ui()
             except core_exc.FluxFceError as e: self.show_error_dialog("Save Error", f"Failed to save defaults: {e}")
@@ -482,7 +482,7 @@ class FluxFceWindow(Gtk.Window):
 
     def on_apply_temporary_clicked(self, widget, mode):
         try:
-            fluxfce_core.apply_temporary_mode(mode)
+            lightfx_core.apply_temporary_mode(mode)
             GLib.timeout_add(UI_UPDATE_DELAY_MS, self._update_sliders_from_backend)
         except core_exc.FluxFceError as e:
             self.show_error_dialog("Apply Error", f"Failed to apply {mode} mode: {e}")
@@ -532,11 +532,11 @@ class FluxFceWindow(Gtk.Window):
             return
 
         try:
-            config = fluxfce_core.get_current_config()
+            config = lightfx_core.get_current_config()
             key = "DAY_BACKGROUND_PROFILE" if mode == 'day' else "NIGHT_BACKGROUND_PROFILE"
             profile_name = config.get("Appearance", key)
             if not profile_name: raise core_exc.ConfigError(f"Could not find '{key}' in your configuration.")
-            profile_path = fluxfce_core.CONFIG_DIR / "backgrounds" / f"{profile_name}.profile"
+            profile_path = lightfx_core.CONFIG_DIR / "backgrounds" / f"{profile_name}.profile"
             self.open_file_in_editor(profile_path)
         except core_exc.FluxFceError as e:
             self.show_error_dialog("Error", f"Could not determine profile path:\n{e}")

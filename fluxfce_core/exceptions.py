@@ -1,4 +1,4 @@
-# fluxfce_core/exceptions.py
+# lightfx_core/exceptions.py
 """
 Custom exception classes for the FluxFCE core library.
 

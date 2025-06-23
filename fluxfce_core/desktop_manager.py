@@ -1,4 +1,4 @@
-# fluxfce_core/desktop_manager.py
+# lightfx_core/desktop_manager.py
 """
 High-level desktop-appearance operations for FluxFCE.
 
