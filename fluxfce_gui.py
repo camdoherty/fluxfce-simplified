@@ -86,7 +86,7 @@ class FluxFceWindow(Gtk.Window):
             widget_opacity = 1.0
 
         window_bg_css = ""
-        widget_opacity_css = "" # --- START of modifications ---
+        widget_opacity_css = ""
         screen = self.get_screen()
 
         if screen.is_composited():
@@ -100,6 +100,7 @@ class FluxFceWindow(Gtk.Window):
                 #fluxfce-main-window {{
                     background-color: alpha(@theme_bg_color, {opacity});
                     border: 1px solid alpha(@theme_fg_color, 0.2);
+                    border-radius: 8px;
                 }}
                 """
             else:
@@ -107,6 +108,7 @@ class FluxFceWindow(Gtk.Window):
                  window_bg_css = """
                  #fluxfce-main-window {
                      background-color: @theme_bg_color;
+                     border-radius: 8px;
                  }
                  """
 
@@ -123,9 +125,9 @@ class FluxFceWindow(Gtk.Window):
             window_bg_css = """
             #fluxfce-main-window {
                 background-color: @theme_bg_color;
+                border-radius: 8px;
             }
             """
-        # --- End of modifications ---
 
         # Custom styling with CSS for gradients and expanders
         style_provider = Gtk.CssProvider()
@@ -536,18 +538,36 @@ class FluxFceWindow(Gtk.Window):
         except (FileNotFoundError, OSError) as e:
             self.show_error_dialog("Could Not Open File", f"Failed to launch text editor using 'xdg-open'.\nError: {e}")
 
-    # --- TRAY WINDOW POSITIONING FIXES ---
+    # --- TRAY WINDOW POSITIONING FIXES (START of modifications) ---
 
-    def _calc_position(self, screen, icon_rect, win_w, win_h):
+    def _calc_position(self, screen, icon_rect, win_w, win_h, orient):
+        """Calculates window position based on icon, supporting all panel orientations."""
         display = Gdk.Display.get_default()
-        monitor_index = screen.get_monitor_at_point(icon_rect.x, icon_rect.y)
-        monitor = display.get_monitor(monitor_index)
+        monitor = display.get_monitor_at_point(icon_rect.x, icon_rect.y)
         workarea = monitor.get_workarea()
-        x = icon_rect.x + icon_rect.width // 2 - win_w // 2
-        if icon_rect.y < workarea.y + workarea.height // 2:
-            y = icon_rect.y + icon_rect.height + 5
-        else:
-            y = icon_rect.y - win_h - 5
+
+        if orient == Gtk.Orientation.HORIZONTAL:
+            # Horizontal panel (top or bottom)
+            x = icon_rect.x + icon_rect.width // 2 - win_w // 2
+            # Check if panel is in top or bottom half of the workarea
+            if icon_rect.y < workarea.y + workarea.height // 2:
+                # Top panel: position window below the icon
+                y = icon_rect.y + icon_rect.height
+            else:
+                # Bottom panel: position window above the icon
+                y = icon_rect.y - win_h
+        else: # Gtk.Orientation.VERTICAL
+            # Vertical panel (left or right)
+            y = icon_rect.y + icon_rect.height // 2 - win_h // 2
+            # Check if panel is in left or right half of the workarea
+            if icon_rect.x < workarea.x + workarea.width // 2:
+                # Left panel: position window to the right of the icon
+                x = icon_rect.x + icon_rect.width
+            else:
+                # Right panel: position window to the left of the icon
+                x = icon_rect.x - win_w
+
+        # Clamp coordinates to be within the monitor's workarea
         x = max(workarea.x, min(x, workarea.x + workarea.width - win_w))
         y = max(workarea.y, min(y, workarea.y + workarea.height - win_h))
         return x, y
@@ -557,11 +577,13 @@ class FluxFceWindow(Gtk.Window):
         if success:
             _min, nat = self.get_preferred_size()
             win_w, win_h = nat.width, nat.height
-            x, y = self._calc_position(screen, icon_rect, win_w, win_h)
+            # Pass the orientation to the calculation function
+            x, y = self._calc_position(screen, icon_rect, win_w, win_h, orient)
             self.move(x, y)
             self.show_all()
             self.present()
         else:
+            # Fallback if geometry is not immediately available
             self.show_all()
             GLib.timeout_add(50, self._get_geometry_and_move, status_icon, 0)
 
@@ -571,16 +593,21 @@ class FluxFceWindow(Gtk.Window):
             if not success:
                 raise RuntimeError("geometry unavailable")
             win_w, win_h = self.get_size()
-            x, y = self._calc_position(screen, icon_rect, win_w, win_h)
+            # Pass the orientation to the calculation function
+            x, y = self._calc_position(screen, icon_rect, win_w, win_h, orient)
             self.move(x, y)
             self.present()
             return GLib.SOURCE_REMOVE
         except Exception:
             if attempts < 5:
+                # Retry a few times if the geometry isn't ready
                 GLib.timeout_add(80, self._get_geometry_and_move, status_icon, attempts + 1)
             else:
+                # Final fallback to position near cursor
                 self._position_near_cursor()
             return GLib.SOURCE_REMOVE
+            
+    # --- TRAY WINDOW POSITIONING FIXES (END of modifications) ---
 
     def _position_near_cursor(self):
         display = Gdk.Display.get_default()
