@@ -12,6 +12,7 @@ import argparse
 import configparser
 import json
 import logging
+import os
 import pathlib
 import shutil
 import subprocess
@@ -39,11 +40,12 @@ SCRIPT_PATH = str(pathlib.Path(__file__).resolve())
 PYTHON_EXECUTABLE = sys.executable
 DEPENDENCY_CHECKER_SCRIPT_NAME = "fluxfce_deps_check.py"
 TIMEZONES_JSON_PATH = SCRIPT_DIR / "fluxfce_core" / "assets" / "timezones.json"
+AUTOSTART_DIR = pathlib.Path.home() / ".config" / "autostart"
+AUTOSTART_FILE_PATH = AUTOSTART_DIR / "fluxfce-gui.desktop"
 
 log = logging.getLogger("fluxfce_cli")
 
 # --- ANSI Color Codes for Terminal Output ---
-# Check if stdout is a TTY (interactive terminal) to decide whether to use colors.
 IS_TTY = sys.stdout.isatty()
 
 class AnsiColors:
@@ -276,7 +278,7 @@ def _launch_gui() -> bool:
         log.error("Please ensure 'fluxfce_gui.py' is in the same directory as this script.")
         return False
 
-    log.info("Launching FluxFCE graphical user interface...")
+    log.info("Launching fluxfce GUI...")
     try:
         subprocess.Popen(
             [PYTHON_EXECUTABLE, str(gui_script_path)],
@@ -290,36 +292,65 @@ def _launch_gui() -> bool:
         log.error(f"Failed to launch the GUI: {e}")
         return False
 
-# --- NEW FUNCTION START ---
 def _terminate_gui_process():
     """Finds and terminates any running fluxfce_gui.py process."""
     gui_script_name = "fluxfce_gui.py"
     log.info(f"Checking for and stopping any running '{gui_script_name}' process...")
 
-    # Use pkill -f to find the process by its full command line.
-    # This is more reliable than searching by process name alone.
     try:
-        # We use check=False because pkill exits with 1 if no process is found,
-        # which is not an error for our use case.
-        result = subprocess.run(
-            ["pkill", "-f", gui_script_name],
-            check=False,
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(["pkill", "-f", gui_script_name], check=False, capture_output=True, text=True)
         if result.returncode == 0:
             log.info(f"{AnsiColors.GREEN}Successfully terminated the running GUI process.{AnsiColors.RESET}")
         elif result.returncode == 1:
             log.debug("No running GUI process was found.")
         else:
-            # pkill returned some other error
             log.warning(f"An error occurred while trying to stop the GUI process. Stderr: {result.stderr}")
     except FileNotFoundError:
         log.warning("'pkill' command not found. Cannot stop the GUI process automatically.")
     except Exception as e:
         log.error(f"An unexpected error occurred while trying to terminate the GUI: {e}")
-# --- NEW FUNCTION END ---
 
+def _create_autostart_entry():
+    """Creates an XDG autostart .desktop file to launch the GUI on login."""
+    gui_script_path = SCRIPT_DIR / "fluxfce_gui.py"
+    if not gui_script_path.exists():
+        log.error("Cannot create autostart entry: fluxfce_gui.py not found.")
+        return
+
+    log.info("Creating user autostart entry for the GUI...")
+    
+    # --- MODIFIED BLOCK ---
+    # The --start-minimized flag has been removed from the Exec line.
+    desktop_entry_content = f"""[Desktop Entry]
+Type=Application
+Name=fluxfce GUI
+Comment=Manage XFCE day/night theming
+Icon=preferences-desktop-theme
+Exec={PYTHON_EXECUTABLE} "{gui_script_path}"
+Terminal=false
+Categories=Settings;DesktopSettings;
+"""
+    # --- END MODIFIED BLOCK ---
+    
+    try:
+        AUTOSTART_DIR.mkdir(parents=True, exist_ok=True)
+        with open(AUTOSTART_FILE_PATH, "w", encoding="utf-8") as f:
+            f.write(desktop_entry_content)
+        log.info(f"Autostart entry created at: {AUTOSTART_FILE_PATH}")
+    except OSError as e:
+        log.error(f"Failed to create autostart entry: {e}")
+
+def _remove_autostart_entry():
+    """Removes the XDG autostart .desktop file."""
+    if AUTOSTART_FILE_PATH.exists():
+        log.info("Removing user autostart entry for the GUI...")
+        try:
+            os.remove(AUTOSTART_FILE_PATH)
+            log.info("Autostart entry removed.")
+        except OSError as e:
+            log.error(f"Failed to remove autostart entry: {e}")
+    else:
+        log.debug("No autostart entry found to remove.")
 
 # --- Main Execution Logic ---
 def main():
@@ -381,13 +412,13 @@ Examples:
                 sys.exit(1)
             log.info(f"{AnsiColors.GREEN}--- Dependency check complete ---{AnsiColors.RESET}")
 
-            log.info("\n--- Step 2: Configuring FluxFCE application settings ---")
+            log.info("\n--- Step 2: Configuring fluxfce application settings ---")
             if not fluxfce_core.CONFIG_FILE.exists():
                 config_obj = _interactive_setup()
                 fluxfce_core.save_configuration(config_obj)
             else:
                 log.info(f"Existing configuration found at {fluxfce_core.CONFIG_FILE}. Skipping interactive setup.")
-            log.info(f"{AnsiColors.GREEN}--- FluxFCE application configuration complete ---{AnsiColors.RESET}")
+            log.info(f"{AnsiColors.GREEN}--- fluxfce application configuration complete ---{AnsiColors.RESET}")
 
             log.info("\n--- Step 2b: Installing default background profiles ---")
             fluxfce_core.install_default_background_profiles()
@@ -398,22 +429,26 @@ Examples:
 
             log.info("\n--- Step 4: Enabling automatic scheduling ---")
             fluxfce_core.enable_scheduling(python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH)
+            
+            log.info("\n--- Step 5: Finalizing Setup ---")
+            if ask_yes_no_cli("Run fluxfce GUI on login?", default_yes=True):
+                _create_autostart_entry()
+            else:
+                _remove_autostart_entry()
 
             log.info("\n" + "-"*45 + f"\n {AnsiColors.GREEN}fluxfce installed and enabled successfully.{AnsiColors.RESET} \n" + "-"*45)
-            log.info("Tip: Configure your look using 'fluxfce set-default --mode day|night'.")
+            log.info("Tip: Configure your DE appearance using: 'fluxfce set-default --mode day|night'.")
             
-            if ask_yes_no_cli("\nLaunch the graphical user interface now?", default_yes=True):
+            if ask_yes_no_cli("\nLaunch the GUI now?", default_yes=True):
                 _launch_gui()
 
         elif args.command == "uninstall":
-            # --- MODIFIED BLOCK START ---
-            # Terminate the GUI first to ensure a clean uninstall.
             _terminate_gui_process()
+            _remove_autostart_entry()
 
             log.info("Starting uninstallation of system components...")
-            # --- MODIFIED BLOCK END ---
             fluxfce_core.uninstall_fluxfce()
-            log.info("FluxFCE systemd units removed and schedule cleared.")
+            log.info("fluxfce systemd units removed and schedule cleared.")
 
             config_dir_path = fluxfce_core.CONFIG_DIR
             if config_dir_path.exists():
@@ -492,8 +527,8 @@ Examples:
             parser.print_help(sys.stderr)
             exit_code = 1
 
-    except core_exc.FluxFceError as e:
-        log.error(f"{AnsiColors.RED}FluxFCE Error: {e}{AnsiColors.RESET}", exc_info=args.verbose)
+    except core_exc.fluxfceError as e:
+        log.error(f"{AnsiColors.RED}fluxfce Error: {e}{AnsiColors.RESET}", exc_info=args.verbose)
         exit_code = 1
     except Exception as e_main:
         log.error(f"{AnsiColors.RED}An unexpected error occurred in CLI: {e_main}{AnsiColors.RESET}", exc_info=True)
