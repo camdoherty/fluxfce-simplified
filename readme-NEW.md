@@ -1,11 +1,11 @@
 # fluxfce
 
-**fluxfce** automates switching your XFCE desktop appearance between **Day** and **Night** modes at local sunrise and sunset. It uses an adapted NOAA algorithm for precise timing and relies on **Systemd user timers** for low-resource scheduling.
+**fluxfce** automates switching XFCE desktop appearance between **Day Mode** and **Night Mode** at sunrise and sunset. It uses an adapted NOAA algorithm for precise timing and is based on **Systemd user timers** so there's no persistent daemon.
 
 Manages Gtk theme, desktop background, and screen temperature / brightness
 
 <p align="center">
-  <img src="logo.png" alt="fluxfce Logo Placeholder" width="150">
+  <img src="logo.svg" alt="fluxfce Logo Placeholder" width="150">
 </p>
 
 ---
