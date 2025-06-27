@@ -1,20 +1,4 @@
-# fluxfce - stable - june9
-
-
- - Command to check all systemd units:
-```
-systemctl --user status \
-  fluxfce-apply-transition@day.service \
-  fluxfce-apply-transition@night.service \
-  fluxfce-login.service \
-  fluxfce-scheduler.timer \
-  fluxfce-sunrise-event.timer \
-  fluxfce-sunset-event.timer
-```
-
 **Fluxfce** automates switching XFCE desktop appearance (GTK Theme, Background Color/Gradient, Screen Temperature/Brightness) between user-defined Day and Night modes at sunrise and sunset times. It uses an adapted NOAA algorithm to calculate transition times. **Systemd user timers** are used for precise, low-resource scheduling.
-
-This is a refactored and simplified version focusing on core functionality, reliability, and maintainability.
 
 <p align="center">
   <img src="logo.png" alt="fluxfce Logo Placeholder" width="150">
@@ -24,11 +8,11 @@ This is a refactored and simplified version focusing on core functionality, reli
 
 ## Features
 
-- **Automatic Switching:** Automatically transitions between Day and Night modes at local sunrise and sunset.
-- **Easy Default Setting:** Save your current desktop look as the new default for Day or Night mode (`fluxfce set-default --mode day`).
-- **Component Control:** Adjusts:
+- **Automatic Switching:** Auto DE appearance switching at sunset and sunrise.
+- **Easy Default Setting:** Save your current desktop look as default for Day or Night mode (`fluxfce set-default --mode day`, or the `Save` buttons in the UI).
+- **Profiles can contain:**
   - GTK Theme (`Net/ThemeName`)
-  - Desktop Background (Solid color or vertical/horizontal gradient via `xfce4-desktop` properties)
+  - Per-workspace wallpaper (Solid color or vertical/horizontal gradient via `xfce4-desktop` properties)
   - Screen Temperature & Brightness (via `xsct`)
 - **Location Aware:** Calculates sunrise/sunset times based on user-configured latitude, longitude, and IANA timezone.
 - **Timezone Detection:** Attempts to automatically detect system timezone during initial install.

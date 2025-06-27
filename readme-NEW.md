@@ -1,8 +1,6 @@
-readme-NEW.md
-
 # fluxfce
 
-**fluxfce** automates switching your XFCE desktop appearance between user-defined **Day** and **Night** modes at local sunrise and sunset. It uses an adapted NOAA algorithm for precise timing and relies on **Systemd user timers** for low-resource scheduling.
+**fluxfce** automates switching your XFCE desktop appearance between **Day** and **Night** modes at local sunrise and sunset. It uses an adapted NOAA algorithm for precise timing and relies on **Systemd user timers** for low-resource scheduling.
 
 Manages Gtk theme, desktop background, and screen temperature / brightness
 
@@ -16,7 +14,7 @@ Manages Gtk theme, desktop background, and screen temperature / brightness
 
 - **Automatic Sunrise/Sunset Switching:** Transitions your desktop look at the correct local time.
 - **Profile-Based Customization:** Simply set up your desktop how you like it for day or night, and save that entire look to a profile with a single command.
-- **Comprehensive Appearance Control:** Adjusts:
+- **Comprehensive Appearance Control:**
   - GTK & Window Manager Theme (`xfconf`)
   - Desktop Background (any type supported by XFCE, including images, gradients, or solid colors)
   - Screen Temperature & Brightness (via `xsct`)
@@ -121,7 +119,8 @@ longitude = 79.38W
 timezone = America/Toronto
 
 [GUI]
-opacity = 0.7
+opacity = 0.85
+widget_opacity = 0.9
 
 [Appearance]
 light_theme = Adwaita
@@ -138,12 +137,12 @@ xsct_temp = 4500
 xsct_bright = 0.85
 ```
 
-- **Backgrounds are now stored in profiles** at `~/.config/fluxfce/backgrounds/`. The `set-default` command creates and updates these files for you. You can edit them manually to tweak background settings.
+- **Background settings are stored in profiles** at `~/.config/fluxfce/backgrounds/`. The `set-default` command creates and updates these files for you. You can edit them manually to tweak background settings.
 - **`xsct_temp`** and **`xsct_bright`**: An empty value will cause `xsct` to be reset to its default state.
 
 ## Troubleshooting
 
--   **Verbose Logging:** First, run any command with the `-v` flag for detailed output: `fluxfce -v status`.
+-   **Verbose Logging:** Run any command with the `-v` flag for detailed output: `fluxfce -v status`.
 
 -   **Check Dependency Script:** To re-run the dependency checker manually:
     ```bash
@@ -155,24 +154,12 @@ xsct_bright = 0.85
         ```bash
         systemctl --user list-timers --all | grep fluxfce
         ```
-    -   **Check the status of all `fluxfce` units** at once:
-        ```bash
-        systemctl --user status 'fluxfce-*.service' 'fluxfce-*.timer'
-        ```
     -   **View logs for a specific unit** (e.g., the scheduler service):
         ```bash
         journalctl --user -u fluxfce-scheduler.service -e --no-pager
         ```
         *(Replace `fluxfce-scheduler.service` with any unit name, like `fluxfce-apply-transition@night.service` or `fluxfce-resume.service`)*.
 
--   **Manual Service Test:** To manually trigger a transition and test the service:
-    ```bash
-    # Test the 'night' mode transition
-    systemctl --user start fluxfce-apply-transition@night.service
-    
-    # Check the logs if it failed
-    journalctl --user -u fluxfce-apply-transition@night.service
-    ```
 ## License
 
 MIT

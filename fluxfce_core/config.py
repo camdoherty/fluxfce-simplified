@@ -29,7 +29,8 @@ DEFAULT_CONFIG: dict[str, dict[str, str]] = {
         "TIMEZONE": "America/Toronto",
     },
     "GUI": {
-        "opacity": "0.7",
+        "opacity": "0.8",
+        "widget_opacity": "0.9"
     },
     "Appearance": {
         "LIGHT_THEME": "Adwaita",

@@ -267,6 +267,60 @@ def _interactive_setup() -> configparser.ConfigParser:
     return config_obj
 
 
+# --- Application Helpers ---
+def _launch_gui() -> bool:
+    """Finds and launches the fluxfce_gui.py script in a detached process."""
+    gui_script_path = SCRIPT_DIR / "fluxfce_gui.py"
+    if not gui_script_path.exists():
+        log.error(f"GUI script not found at expected location: {gui_script_path}")
+        log.error("Please ensure 'fluxfce_gui.py' is in the same directory as this script.")
+        return False
+
+    log.info("Launching FluxFCE graphical user interface...")
+    try:
+        subprocess.Popen(
+            [PYTHON_EXECUTABLE, str(gui_script_path)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,  # Detach from terminal
+        )
+        log.info("GUI started successfully in the background.")
+        return True
+    except Exception as e:
+        log.error(f"Failed to launch the GUI: {e}")
+        return False
+
+# --- NEW FUNCTION START ---
+def _terminate_gui_process():
+    """Finds and terminates any running fluxfce_gui.py process."""
+    gui_script_name = "fluxfce_gui.py"
+    log.info(f"Checking for and stopping any running '{gui_script_name}' process...")
+
+    # Use pkill -f to find the process by its full command line.
+    # This is more reliable than searching by process name alone.
+    try:
+        # We use check=False because pkill exits with 1 if no process is found,
+        # which is not an error for our use case.
+        result = subprocess.run(
+            ["pkill", "-f", gui_script_name],
+            check=False,
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            log.info(f"{AnsiColors.GREEN}Successfully terminated the running GUI process.{AnsiColors.RESET}")
+        elif result.returncode == 1:
+            log.debug("No running GUI process was found.")
+        else:
+            # pkill returned some other error
+            log.warning(f"An error occurred while trying to stop the GUI process. Stderr: {result.stderr}")
+    except FileNotFoundError:
+        log.warning("'pkill' command not found. Cannot stop the GUI process automatically.")
+    except Exception as e:
+        log.error(f"An unexpected error occurred while trying to terminate the GUI: {e}")
+# --- NEW FUNCTION END ---
+
+
 # --- Main Execution Logic ---
 def main():
     """Parses command-line arguments and dispatches to appropriate command handlers."""
@@ -277,6 +331,7 @@ def main():
 Examples:
   fluxfce install          # Interactive setup, install units, and enable scheduling
   fluxfce status -v        # Show detailed status, including profiles and services
+  fluxfce ui               # Launch the graphical user interface
   fluxfce day              # Apply Day mode now without disabling auto switching
   fluxfce enable           # Enable automatic scheduling (sets up systemd timers)
   fluxfce set-default --mode day # Save current desktop look as the new Day default
@@ -293,6 +348,7 @@ Examples:
     subparsers.add_parser("enable", help="Enable automatic scheduling (configures systemd timers).")
     subparsers.add_parser("disable", help="Disable automatic scheduling (clears relevant systemd timers).")
     subparsers.add_parser("status", help="Show config, calculated times, and schedule status.")
+    subparsers.add_parser("ui", help="Launch the graphical user interface (GUI).", aliases=["gui"])
     subparsers.add_parser("force-day", help="Apply Day Mode settings now (disables auto scheduling).")
     subparsers.add_parser("force-night", help="Apply Night Mode settings now (disables auto scheduling).")
     
@@ -347,23 +403,15 @@ Examples:
             log.info("Tip: Configure your look using 'fluxfce set-default --mode day|night'.")
             
             if ask_yes_no_cli("\nLaunch the graphical user interface now?", default_yes=True):
-                gui_script_path = SCRIPT_DIR / "fluxfce_gui.py"
-                if gui_script_path.exists():
-                    log.info(f"Launching GUI from: {gui_script_path}")
-                    try:
-                        subprocess.Popen(
-                            [PYTHON_EXECUTABLE, str(gui_script_path)],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            start_new_session=True, # Detach from terminal
-                        )
-                    except Exception as e:
-                        log.error(f"Failed to launch the GUI: {e}")
-                else:
-                    log.error(f"Could not find the GUI script at {gui_script_path}")
+                _launch_gui()
 
         elif args.command == "uninstall":
-            log.info("Starting uninstallation (system components)...")
+            # --- MODIFIED BLOCK START ---
+            # Terminate the GUI first to ensure a clean uninstall.
+            _terminate_gui_process()
+
+            log.info("Starting uninstallation of system components...")
+            # --- MODIFIED BLOCK END ---
             fluxfce_core.uninstall_fluxfce()
             log.info("FluxFCE systemd units removed and schedule cleared.")
 
@@ -405,6 +453,10 @@ Examples:
         elif args.command == "status":
             status = fluxfce_core.get_status()
             print_status(status, verbose=args.verbose)
+
+        elif args.command in ["ui", "gui"]:
+            if not _launch_gui():
+                exit_code = 1
 
         elif args.command == "force-day":
             log.info("Forcing Day mode and disabling scheduling...")
