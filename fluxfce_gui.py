@@ -461,15 +461,38 @@ class FluxFceWindow(Gtk.Window):
         GLib.idle_add(self.refresh_ui)
 
     def on_set_default_clicked(self, widget, mode):
-        dialog = Gtk.MessageDialog(transient_for=self, flags=0, message_type=Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.OK_CANCEL, text=f"Save as {mode.capitalize()} Default?")
-        dialog.format_secondary_text(f"This will overwrite the current {mode} settings with the current desktop theme, background, and screen color.")
-        if dialog.run() == Gtk.ResponseType.OK:
+        """Shows a confirmation dialog to save the current look as a new default."""
+        dialog = Gtk.MessageDialog(
+            transient_for=self,
+            flags=0,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.NONE,  # <-- THE FIX: Use the correct enum instead of None
+            text=f"Save as {mode.capitalize()} Default?"
+        )
+        dialog.format_secondary_text(
+            f"This will overwrite the current {mode} settings with the current "
+            "desktop theme, background, and screen temp & brightness."
+        )
+
+        # Add a standard "Cancel" button
+        dialog.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        
+        # Add our custom-labeled "Save" button. The underscore makes 'S' a keyboard shortcut.
+        dialog.add_button(f"_Save {mode.capitalize()} Mode", Gtk.ResponseType.OK)
+
+        # Run the dialog and get the user's response
+        response = dialog.run()
+        dialog.destroy()
+
+        # Only proceed if the user clicked our custom "Save" button
+        if response == Gtk.ResponseType.OK:
             try:
                 fluxfce_core.set_default_from_current(mode)
-                self.show_info_dialog("Success", f"{mode.capitalize()} mode defaults have been saved.")
+                # The second confirmation dialog has been removed.
+                # We still refresh the UI to show the new settings, which is good feedback.
                 self.refresh_ui()
-            except core_exc.FluxFceError as e: self.show_error_dialog("Save Error", f"Failed to save defaults: {e}")
-        dialog.destroy()
+            except core_exc.FluxFceError as e:
+                self.show_error_dialog("Save Error", f"Failed to save defaults: {e}")   
 
     def on_apply_temporary_clicked(self, widget, mode):
         try:
