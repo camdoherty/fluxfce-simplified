@@ -229,7 +229,9 @@ def _interactive_setup() -> configparser.ConfigParser:
             for city, data in tz_data.items():
                 if data.get("timezone") == user_tz:
                     lat, lon = data.get("latitude"), data.get("longitude")
-                    prompt = f"Found a match for '{user_tz}': {city}. Use these coordinates ({lat}, {lon})?"
+                    log.info(f"\n{AnsiColors.YELLOW}[NOTE] The detected coordinates are a best guess based on your timezone.{AnsiColors.RESET}")
+                    log.info(" For the most accurate sunrise/sunset times, please enter precise coordinates.")                                     
+                    prompt = f"Found a match for your timezone: {city}. Use these coordinates ({lat}, {lon})?"
                     if ask_yes_no_cli(prompt, default_yes=True):
                         config_obj.set("Location", "LATITUDE", lat)
                         config_obj.set("Location", "LONGITUDE", lon)
@@ -431,7 +433,7 @@ Examples:
             fluxfce_core.enable_scheduling(python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH)
             
             log.info("\n--- Step 5: Finalizing Setup ---")
-            if ask_yes_no_cli("Run fluxfce GUI on login?", default_yes=True):
+            if ask_yes_no_cli("Run fluxfce GUI (minimized) on login?", default_yes=True):
                 _create_autostart_entry()
             else:
                 _remove_autostart_entry()
