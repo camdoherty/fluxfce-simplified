@@ -1,3 +1,5 @@
+Test
+
 **Fluxfce** automates switching XFCE desktop appearance (GTK Theme, Background Color/Gradient, Screen Temperature/Brightness) between user-defined Day and Night modes at sunrise and sunset times. It uses an adapted NOAA algorithm to calculate transition times. **Systemd user timers** are used for precise, low-resource scheduling.
 
 <p align="center">
