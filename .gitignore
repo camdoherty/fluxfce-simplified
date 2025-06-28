@@ -13,11 +13,10 @@ codebase-*
 .gitignore
 /codebase.txt
 
+/backup
+backup/*
 prompt*
 prompt.md
-backup/fluxfce-temp-control.py
-backup/detect-backgrounds.sh
-backup/fluxfce-bright-control.py
 system-logs.txt
 fluxfce_gui.log
 backup/readme-NEW.md
