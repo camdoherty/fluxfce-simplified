@@ -673,9 +673,32 @@ class Application:
 
     def _build_right_click_menu(self):
         menu = Gtk.Menu()
+
+        # --- Enable/Disable Scheduling ---
         self.toggle_item = Gtk.MenuItem(label="Enable Scheduling")
         self.toggle_item.connect("activate", self.on_menu_toggle_clicked)
         menu.append(self.toggle_item)
+
+        # --- Open UI ---
+        open_ui_item = Gtk.MenuItem(label="Open UI")
+        open_ui_item.connect("activate", self.on_menu_open_ui_clicked)
+        menu.append(open_ui_item)
+
+        menu.append(Gtk.SeparatorMenuItem())
+
+        # --- Save Mode Submenu ---
+        save_menu_item = Gtk.MenuItem(label="Save Mode")
+        menu.append(save_menu_item)
+        save_submenu = Gtk.Menu()
+        save_menu_item.set_submenu(save_submenu)
+        save_day_item = Gtk.MenuItem(label="Save Current Settings as Day Mode")
+        save_day_item.connect("activate", self.window.on_set_default_clicked, "day")
+        save_submenu.append(save_day_item)
+        save_night_item = Gtk.MenuItem(label="Save Current Settings as Night Mode")
+        save_night_item.connect("activate", self.window.on_set_default_clicked, "night")
+        save_submenu.append(save_night_item)
+
+        # --- Apply Mode Submenu ---
         apply_menu_item = Gtk.MenuItem(label="Apply Mode")
         menu.append(apply_menu_item)
         apply_submenu = Gtk.Menu()
@@ -686,10 +709,13 @@ class Application:
         night_item = Gtk.MenuItem(label="Apply Night Mode")
         night_item.connect("activate", self.window.on_apply_temporary_clicked, "night")
         apply_submenu.append(night_item)
+
+        # --- Separator and Quit ---
         menu.append(Gtk.SeparatorMenuItem())
         quit_item = Gtk.MenuItem(label="Exit")
         quit_item.connect("activate", self.on_quit_activate)
         menu.append(quit_item)
+
         menu.show_all()
         return menu
 
@@ -703,6 +729,10 @@ class Application:
         if not self.right_click_menu:
             self.right_click_menu = self._build_right_click_menu()
         self.right_click_menu.popup(None, None, Gtk.StatusIcon.position_menu, icon, button, activate_time)
+
+    def on_menu_open_ui_clicked(self, widget):
+        """Handler for the 'Open UI' menu item."""
+        self.on_icon_left_click(self.status_icon)
 
     def on_menu_toggle_clicked(self, widget):
         is_active = self.window.toggle_switch.get_active()
