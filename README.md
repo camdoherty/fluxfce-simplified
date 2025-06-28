@@ -7,7 +7,7 @@
 
 ---
 
-<p align="left">
+<p align="center">
   <img src="screenshot.png" alt="fluxfce Screenshot" width=450>
 </p>
 
