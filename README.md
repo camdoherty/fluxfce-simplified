@@ -1,8 +1,8 @@
-##
 
-<p align="center">
+
+<h2 align="center">
   <img src="logo.png" alt="fluxfce logo" width=150>
-</p>
+</h2>
 
 
 *Note: this is public BETA*
