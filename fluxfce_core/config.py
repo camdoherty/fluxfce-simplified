@@ -29,8 +29,8 @@ DEFAULT_CONFIG: dict[str, dict[str, str]] = {
         "TIMEZONE": "America/Toronto",
     },
     "GUI": {
-        "opacity": "0.8",
-        "widget_opacity": "0.9"
+        "opacity": "0.88",
+        "widget_opacity": "0.92"
     },
     "Appearance": {
         "LIGHT_THEME": "Adwaita",
@@ -43,8 +43,8 @@ DEFAULT_CONFIG: dict[str, dict[str, str]] = {
         "XSCT_BRIGHT": "1.0",
     },
     "ScreenNight": {
-        "XSCT_TEMP": "4500",
-        "XSCT_BRIGHT": "0.85",
+        "XSCT_TEMP": "5000",
+        "XSCT_BRIGHT": "1.0",
     },
 }
 
