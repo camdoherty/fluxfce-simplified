@@ -75,7 +75,7 @@ After installation:
     Manually configure your desktop for your ideal **Day** appearance: set the GTK theme, wallpaper(s), and screen settings.
 
 2.  **Save the Day Profile**  
-    Once it's perfect, run this command (or use the "Save" button in the UI):
+    Run this command (or use the "Save" button in the UI):
     ```bash
     fluxfce set-default --mode day
     ```
@@ -83,12 +83,13 @@ After installation:
     Now, reconfigure your desktop for your ideal **Night** appearance.
 
 4.  **Save the Night Profile**  
-    When ready, save the night look with this command:
+    Run this command (or use the "Save" button in the UI):
     ```bash
     fluxfce set-default --mode night
     ```
 
 Scheduling should now be active and `fluxfce` will automatically transition between your saved profiles at sunrise and sunset.
+
 
 ## Command Reference
 
@@ -110,7 +111,7 @@ Scheduling should now be active and `fluxfce` will automatically transition betw
 
 ## The GUI
 
-`fluxfce` includes a simple,  lightweight 'tray application' GUI.
+`fluxfce` includes a simple, lightweight 'tray application' GUI and status indicator.
 
 **Launch it by running:**
 ```bash
