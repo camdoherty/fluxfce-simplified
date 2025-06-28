@@ -5,7 +5,7 @@
 </h2>
 
 
-*fluxfce v0.95 (beta)*
+*fluxfce v0.95 (BETA)*
 
 **fluxfce** automates switching your XFCE desktop appearance — managing GTK theme, desktop background (multi-workspace aware), and screen temperature/brightness — between **Day Mode** and **Night Mode** at local sunrise and sunset. It uses an adapted NOAA algorithm for precise timing and is based on `systemd` user timers, so there's no persistent background daemon.
 
@@ -13,6 +13,10 @@
 
 <p align="center">
   <img src="screenshot.png" alt="fluxfce Screenshot" width=450>
+</p>
+
+<p align="center" style="color:orange;">
+  <strong>WARNING:</strong> This is beta software. Please use with caution and report any issues.
 </p>
 
 
@@ -47,6 +51,11 @@
     -   `python3-gi`, `python3-gi-cairo`, `gir1.2-gtk-3.0`: For the optional GUI.
 
 ## Installation
+
+<p style="color:orange;">
+  <strong>WARNING:</strong> Running the install command will change your theme to Aditawa (Day) and Adwaita-dark (Night) and change desktop wallpapers to white (Day) / black (Night). This is expected behavior but UX will be improved in a later release.
+</p>
+  
 
 1.  **Clone the repository:**
     ```bash

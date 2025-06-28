@@ -99,7 +99,6 @@ class FluxFceWindow(Gtk.Window):
                 window_bg_css = f"""
                 #fluxfce-main-window {{
                     background-color: alpha(@theme_bg_color, {opacity});
-                    border: 1px solid alpha(@theme_fg_color, 0.2);
                     border-radius: 8px;
                 }}
                 """
