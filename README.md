@@ -69,7 +69,7 @@
 
 ## Getting Started:
 
-After installation, "show" `fluxfce` how you want your desktop to look.
+After installation:
 
 1.  **Set Your Day Look**  
     Manually configure your desktop for your ideal **Day** appearance: set the GTK theme, wallpaper(s), and screen settings.
@@ -79,7 +79,6 @@ After installation, "show" `fluxfce` how you want your desktop to look.
     ```bash
     fluxfce set-default --mode day
     ```
-
 3.  **Set Your Night Look**  
     Now, reconfigure your desktop for your ideal **Night** appearance.
 
