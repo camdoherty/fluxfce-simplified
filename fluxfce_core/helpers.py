@@ -1,4 +1,15 @@
 # ~/dev/fluxfce-simplified/fluxfce_core/helpers.py
+"""
+Utility functions for the FluxFCE core library.
+
+This module provides a collection of helper functions used by other
+modules within `fluxfce_core`. These include utilities for:
+- Running external commands.
+- Checking for system dependencies.
+- Detecting the system's IANA timezone.
+- Validating and converting data (e.g., coordinates, hex colors).
+- Basic library logging setup.
+"""
 
 import logging
 import os

@@ -1,26 +1,29 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Output file
-OUTPUT_FILE="codebase.txt"
-# Directory to search (current directory)
-SEARCH_DIR="."
-# Separator string
-SEPARATOR="##############"
+# Generate date string in YYYY-MM-DD format
+DATE=$(date +%Y-%m-%d)
+# Define output file name
+OUTPUT="codebase-$DATE.txt"
 
-# Clear the output file if it exists
-> "$OUTPUT_FILE"
+# Initialize (or truncate) the output file
+> "$OUTPUT"
 
-# Find relevant files, excluding __pycache__ and .git
-find "$SEARCH_DIR" \( -path "$SEARCH_DIR/__pycache__" -o -path "$SEARCH_DIR/.git" \) -prune -o \
-\( -name "*.py" -o -name "*.md" \) -print | sort | while IFS= read -r FILE; do
-    echo "$SEPARATOR" >> "$OUTPUT_FILE"
-    echo "$FILE" >> "$OUTPUT_FILE" # Print relative path
-    echo "" >> "$OUTPUT_FILE" # Blank line
-    cat "$FILE" >> "$OUTPUT_FILE"
-    echo "" >> "$OUTPUT_FILE" # Blank line after content
+# Find all .py, .md, and .toml files (explicit extensions) and sort them
+find . -type f \( -name '*.py' -o -name '*.md' -o -name '*.toml' \) | sort | while IFS= read -r file; do
+  # Remove leading './' for a clean relative path
+  relpath="${file#./}"
+
+  # Append separator, path, and file content to the output
+  {
+    echo
+    echo '##############'
+    echo "$relpath"
+    echo
+    cat "$file"
+    echo
+  } >> "$OUTPUT"
 done
 
-# Add a final separator
-echo "$SEPARATOR" >> "$OUTPUT_FILE"
-
-echo "Codebase concatenated into $OUTPUT_FILE"
+# Inform the user
+echo "All matching files have been concatenated into $OUTPUT"

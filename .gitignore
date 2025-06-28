@@ -1,3 +1,21 @@
+/tmp/
+/.ruff_cache/
+/fluxfce_core/__pycache__/
+/notes
+bug.log
+todo*
+srss.py
+setup_format_lint.sh
+codebase-to-txt.sh
+
+hand-over-prompt
+codebase.txt
+codebase-*
+.gitignore
+/codebase.txt
+todo.md
+prompt.md
+
 # Python
 __pycache__/
 *.py[cod]
@@ -33,3 +51,4 @@ Thumbs.db
 
 setup_format_lint.sh output (if you decide to ignore it)
 output.log
+

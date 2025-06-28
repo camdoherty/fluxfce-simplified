@@ -1,0 +1,147 @@
+{
+  "Toronto": {
+    "latitude": "43.65N",
+    "longitude": "79.38W",
+    "timezone": "America/Toronto"
+  },
+  "Mexico City": {
+    "latitude": "19.43N",
+    "longitude": "99.13W",
+    "timezone": "America/Mexico_City"
+  },
+  "New York City": {
+    "latitude": "40.71N",
+    "longitude": "74.01W",
+    "timezone": "America/New_York"
+  },
+  "Los Angeles": {
+    "latitude": "34.05N",
+    "longitude": "118.24W",
+    "timezone": "America/Los_Angeles"
+  },
+  "Chicago": {
+    "latitude": "41.88N",
+    "longitude": "87.63W",
+    "timezone": "America/Chicago"
+  },
+  "Houston": {
+    "latitude": "29.76N",
+    "longitude": "95.37W",
+    "timezone": "America/Chicago"
+  },
+  "Phoenix": {
+    "latitude": "33.45N",
+    "longitude": "112.07W",
+    "timezone": "America/Phoenix"
+  },
+  "Philadelphia": {
+    "latitude": "39.95N",
+    "longitude": "75.17W",
+    "timezone": "America/New_York"
+  },
+  "San Antonio": {
+    "latitude": "29.42N",
+    "longitude": "98.49W",
+    "timezone": "America/Chicago"
+  },
+  "San Diego": {
+    "latitude": "32.72N",
+    "longitude": "117.16W",
+    "timezone": "America/Los_Angeles"
+  },
+  "Dallas": {
+    "latitude": "32.78N",
+    "longitude": "96.81W",
+    "timezone": "America/Chicago"
+  },
+  "San Jose": {
+    "latitude": "37.34N",
+    "longitude": "121.89W",
+    "timezone": "America/Los_Angeles"
+  },
+  "Austin": {
+    "latitude": "30.27N",
+    "longitude": "97.74W",
+    "timezone": "America/Chicago"
+  },
+  "Jacksonville": {
+    "latitude": "30.33N",
+    "longitude": "81.66W",
+    "timezone": "America/New_York"
+  },
+  "San Francisco": {
+    "latitude": "37.77N",
+    "longitude": "122.42W",
+    "timezone": "America/Los_Angeles"
+  },
+  "Columbus": {
+    "latitude": "39.96N",
+    "longitude": "83.00W",
+    "timezone": "America/New_York"
+  },
+  "Indianapolis": {
+    "latitude": "39.77N",
+    "longitude": "86.16W",
+    "timezone": "America/Indiana/Indianapolis"
+  },
+  "Denver": {
+    "latitude": "39.74N",
+    "longitude": "104.99W",
+    "timezone": "America/Denver"
+  },
+  "Washington, D.C.": {
+    "latitude": "38.90N",
+    "longitude": "77.04W",
+    "timezone": "America/New_York"
+  },
+  "Boston": {
+    "latitude": "42.36N",
+    "longitude": "71.06W",
+    "timezone": "America/New_York"
+  },
+  "Seattle": {
+    "latitude": "47.61N",
+    "longitude": "122.33W",
+    "timezone": "America/Los_Angeles"
+  },
+  "Vancouver": {
+    "latitude": "49.28N",
+    "longitude": "123.12W",
+    "timezone": "America/Vancouver"
+  },
+  "Montreal": {
+    "latitude": "45.50N",
+    "longitude": "73.57W",
+    "timezone": "America/Toronto"
+  },
+  "Calgary": {
+    "latitude": "51.04N",
+    "longitude": "114.07W",
+    "timezone": "America/Edmonton"
+  },
+  "Ottawa": {
+    "latitude": "45.42N",
+    "longitude": "75.70W",
+    "timezone": "America/Toronto"
+  },
+  "Edmonton": {
+    "latitude": "53.55N",
+    "longitude": "113.49W",
+    "timezone": "America/Edmonton"
+  },
+  "Guadalajara": {
+    "latitude": "20.66N",
+    "longitude": "103.35W",
+    "timezone": "America/Mexico_City"
+  },
+  "Monterrey": {
+    "latitude": "25.69N",
+    "longitude": "100.32W",
+    "timezone": "America/Monterrey"
+  },
+  "Tijuana": {
+    "latitude": "32.51N",
+    "longitude": "117.04W",
+    "timezone": "America/Tijuana"
+  }
+}

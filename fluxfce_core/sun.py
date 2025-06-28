@@ -1,4 +1,11 @@
 # ~/dev/fluxfce-simplified/fluxfce_core/sun.py
+"""
+Sunrise and sunset time calculations for FluxFCE.
+
+This module uses an adaptation of the NOAA algorithm to determine civil
+twilight (sunrise/sunset) times for a given geographic location and date.
+It accounts for timezone conversions to provide local event times.
+"""
 
 import logging
 import math

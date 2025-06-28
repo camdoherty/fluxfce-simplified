@@ -1,388 +1,238 @@
-# ~/dev/fluxfce-simplified/fluxfce_core/scheduler.py
+# fluxfce_core/scheduler.py
+"""
+Manages Systemd-based scheduling for FluxFCE.
+
+This module handles the creation and management of dynamic systemd timers
+for sunrise/sunset events and the main daily scheduler task.
+"""
 
 import logging
-import pathlib
-import re
-import shlex
 from datetime import datetime, timedelta
+from typing import Optional
 
-# zoneinfo needed for datetime comparison within scheduling logic
+# Imports from within fluxfce_core
+from . import config as cfg # For get_current_config via _load_config_with_defaults if not passed
+from . import exceptions as exc
+from . import helpers, sun, systemd as sysd # Use sysd alias for clarity
+
+# For type hinting configparser object if passed directly
+import configparser 
+
+# zoneinfo needed for sun time calculations here
 try:
-    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    from zoneinfo import (
+        ZoneInfo,
+        ZoneInfoNotFoundError,
+    )
 except ImportError:
     raise ImportError(
         "Required module 'zoneinfo' not found. FluxFCE requires Python 3.9+."
     )
 
-# Import helpers, sun calculation, and exceptions
-from . import helpers, sun
-from .exceptions import (
-    CalculationError,
-    DependencyError,
-    SchedulerError,
-    ValidationError,
-)
-
 log = logging.getLogger(__name__)
 
-# --- Constants ---
-# Tag used to identify jobs scheduled by this application in the 'at' queue
-AT_JOB_TAG = "# fluxfce_marker"
-# Name used for systemd-cat logging identifier
-SYSTEMD_CAT_TAG = "fluxfce-atjob"
+# --- Private Helper to Load Config (if needed, similar to desktop_manager) ---
+# This assumes we might need to load config if not passed around explicitly
+# Or, these functions can be modified to accept a config_obj if preferred
+_cfg_mgr_scheduler = cfg.ConfigManager() # Module-level instance
+
+def _load_scheduler_config() -> configparser.ConfigParser:
+    """Loads configuration for scheduler functions."""
+    # This reuses the existing ConfigManager logic.
+    # No need to re-implement _load_config_with_defaults here if it's generic enough.
+    # Let's assume get_current_config from api.py (or its future equivalent) is preferred.
+    # For now, we'll replicate a simple load for self-containment,
+    # but this could be refactored to use a shared config loading utility.
+    try:
+        return _cfg_mgr_scheduler.load_config()
+    except exc.ConfigError as e:
+        log.error(f"Scheduler: Failed to load configuration: {e}")
+        raise
+    except Exception as e:
+        log.exception(f"Scheduler: Unexpected error loading configuration: {e}")
+        raise exc.FluxFceError(f"Scheduler: Unexpected error loading configuration: {e}") from e
+
+_sysd_mgr_scheduler = sysd.SystemdManager() # Module-level instance for SystemdManager
 
 
-class AtdScheduler:
-    """Handles scheduling and clearing of theme transition jobs via 'at'."""
+# --- Scheduling Functions (Moved from api.py) ---
 
-    def __init__(self):
-        """Check for essential dependencies."""
+def handle_schedule_dynamic_transitions_command(
+    python_exe_path: str, script_exe_path: str
+) -> bool:
+    """
+    Calculates next sun events, writes dynamic systemd timer files, reloads the
+    systemd daemon, and starts the dynamic timers.
+    Called by the fluxfce-scheduler.service.
+    """
+    log.info("Scheduler: Handling 'schedule-dynamic-transitions' command...")
+    try:
+        # current_config = get_current_config() # Original call
+        current_config = _load_scheduler_config() # Use local loader or pass config_obj
+
+        lat_str = current_config.get("Location", "LATITUDE")
+        lon_str = current_config.get("Location", "LONGITUDE")
+        tz_name = current_config.get("Location", "TIMEZONE")
+
+        if not all([lat_str, lon_str, tz_name, 
+                    lat_str != "Not Set", lon_str != "Not Set", tz_name != "Not Set"]):
+            raise exc.ConfigError("Scheduler: Location (latitude, longitude, timezone) not fully configured.")
+
+        lat = helpers.latlon_str_to_float(lat_str)
+        lon = helpers.latlon_str_to_float(lon_str)
+        
         try:
-            # Core `at` commands needed for scheduling/clearing
-            helpers.check_dependencies(["at", "atq", "atrm"])
-            # systemd-cat needed for logging scheduled job output
-            # systemctl needed for getting user environment
-            helpers.check_dependencies(
-                ["systemd-cat", "systemctl"]
-            )  # <--- ADDED systemctl check
-        except DependencyError as e:
-            raise SchedulerError(f"Cannot initialize AtdScheduler: {e}") from e
-        # Ensure atd service itself is running
-        try:
-            helpers.check_atd_service()
-        except (
-            Exception
-        ) as e:  # Catch DependencyError or FluxFceError from check_atd_service
-            raise SchedulerError(
-                f"Cannot initialize AtdScheduler: 'atd' service check failed: {e}"
-            ) from e
+            local_tz = ZoneInfo(tz_name)
+        except ZoneInfoNotFoundError as e_tz:
+            raise exc.ConfigError(f"Scheduler: Invalid timezone in configuration: {tz_name}") from e_tz
 
-    def _get_pending_jobs(self) -> list[dict[str, str]]:
-        """
-        Gets list of pending 'at' jobs created by fluxfce.
+        now_local = datetime.now(local_tz)
+        today_local = now_local.date()
+        next_event_times: dict[str, Optional[datetime]] = {"day": None, "night": None}
 
-        Returns:
-            A list of dictionaries, where each dict represents a job:
-            [{'id': str, 'time_str': str, 'command': str, 'mode': 'day'|'night'|'unknown'}, ...]
-
-        Raises:
-            SchedulerError: If `atq` or `at -c` commands fail unexpectedly.
-        """
-        # This method remains unchanged from your provided version
-        log.debug("Getting pending fluxfce 'at' jobs...")
-        pending_jobs = []
-        try:
-            code, stdout, stderr = helpers.run_command(["atq"])
-            if code != 0 and "queue is empty" not in stderr.lower():
-                raise SchedulerError(f"atq command failed (code {code}): {stderr}")
-            if not stdout:
-                log.debug("atq: Queue is empty.")
-                return []
-
-            job_id_pattern = re.compile(r"^(\d+)\s+.*")
-            job_ids_found = []
-            for line in stdout.splitlines():
-                match = job_id_pattern.match(line.strip())
-                if match:
-                    job_ids_found.append(match.group(1))
-
-            for job_id in job_ids_found:
-                log.debug(f"Checking job ID {job_id} for marker '{AT_JOB_TAG}'...")
-                code_show, stdout_show, stderr_show = helpers.run_command(
-                    ["at", "-c", job_id]
-                )
-                if code_show != 0:
-                    log.warning(
-                        f"Failed to get content of 'at' job {job_id}: {stderr_show}"
-                    )
-                    continue
-                if AT_JOB_TAG in stdout_show:
-                    log.debug(f"Found fluxfce marker in job {job_id}")
-                    time_str = "Unknown Time"
-                    for line in stdout.splitlines():
-                        if line.strip().startswith(job_id):
-                            time_match = re.search(
-                                r"^\d+\s+([\w\s\d:.-]+)\s+[a-z]\s+\w+", line.strip()
-                            )
-                            if time_match:
-                                time_str = time_match.group(1).strip()
-                            break
-                    command = "unknown command"
-                    mode = "unknown"
-                    cmd_match = re.search(
-                        r"internal-apply\s+--mode\s+(\w+)", stdout_show
-                    )
-                    if cmd_match:
-                        command = f"internal-apply --mode {cmd_match.group(1)}"
-                        mode = (
-                            cmd_match.group(1)
-                            if cmd_match.group(1) in ["day", "night"]
-                            else "unknown"
-                        )
-                    pending_jobs.append(
-                        {
-                            "id": job_id,
-                            "time_str": time_str,
-                            "command": command,
-                            "mode": mode,
-                        }
-                    )
-                    log.debug(f"Found relevant pending job: {pending_jobs[-1]}")
-            return pending_jobs
-        except Exception as e:
-            if isinstance(e, SchedulerError):
-                raise
-            log.exception(f"Error getting pending 'at' jobs: {e}")
-            raise SchedulerError(
-                f"An unexpected error occurred getting pending 'at' jobs: {e}"
-            ) from e
-
-    def clear_scheduled_transitions(self) -> bool:
-        """
-        Removes all pending 'at' jobs created by this script (identified by AT_JOB_TAG).
-
-        Returns:
-            True if all identified jobs were successfully removed or no jobs were found.
-            False if errors occurred during removal of one or more jobs.
-
-        Raises:
-            SchedulerError: If listing jobs fails or unexpected errors occur.
-        """
-        # This method remains unchanged from your provided version
-        log.info("Clearing previously scheduled fluxfce transitions...")
-        jobs_to_clear = self._get_pending_jobs()
-        if not jobs_to_clear:
-            log.info("No relevant 'at' jobs found to clear.")
-            return True
-        all_cleared = True
-        cleared_count = 0
-        for job in jobs_to_clear:
-            job_id = job["id"]
-            log.debug(f"Removing 'at' job {job_id}...")
+        for day_offset in range(2): # Check today and tomorrow
+            target_date = today_local + timedelta(days=day_offset)
             try:
-                code, _, stderr = helpers.run_command(["atrm", job_id])
-                if code == 0:
-                    log.info(
-                        f"Removed scheduled job {job_id} ({job['command']} at {job['time_str']})"
-                    )
-                    cleared_count += 1
-                else:
-                    log.error(
-                        f"Failed to remove 'at' job {job_id}: {stderr} (code: {code})"
-                    )
-                    all_cleared = False
-            except Exception as e:
-                log.exception(f"Error removing 'at' job {job_id}: {e}")
-                all_cleared = False
-        log.info(
-            f"Finished clearing jobs ({cleared_count} removed). Success: {all_cleared}"
-        )
-        return all_cleared
-
-    def schedule_transitions(
-        self,
-        lat: float,
-        lon: float,
-        tz_name: str,
-        python_exe_path: str,
-        script_exe_path: str,
-        days_to_schedule: int = 7,  # <-- Added parameter with default
-    ) -> bool:
-        """
-        Calculates sunrise/sunset for the next N days, clears old jobs, and
-        schedules new 'at' jobs for all future transitions within that window.
-        Attempts to inject DISPLAY and XAUTHORITY environment variables into the job.
-
-        Args:
-            lat: Latitude for sun calculation.
-            lon: Longitude for sun calculation.
-            tz_name: IANA timezone name.
-            python_exe_path: Absolute path to the Python interpreter.
-            script_exe_path: Absolute path to the fluxfce script.
-            days_to_schedule: Number of days ahead to calculate and schedule (default: 7).
-
-        Returns:
-            True if at least one transition was successfully scheduled.
-            False if no future transitions could be determined or scheduling failed.
-
-        Raises:
-            SchedulerError, CalculationError, ValidationError, FileNotFoundError, Exception
-        """
-        if not isinstance(days_to_schedule, int) or days_to_schedule <= 0:
-            log.warning(
-                f"Invalid days_to_schedule value ({days_to_schedule}), using default 7."
-            )
-            days_to_schedule = 7
-
-        log.info(
-            f"Calculating and scheduling transitions for next {days_to_schedule} days for {lat}, {lon} (TZ: {tz_name})..."
+                sun_times = sun.get_sun_times(lat, lon, target_date, tz_name)
+                if not next_event_times["day"] and sun_times["sunrise"] > now_local:
+                    next_event_times["day"] = sun_times["sunrise"]
+                if not next_event_times["night"] and sun_times["sunset"] > now_local:
+                    next_event_times["night"] = sun_times["sunset"]
+            except exc.CalculationError as e:
+                log.warning(f"Scheduler: Could not calculate sun times for {target_date}: {e}")
+            if next_event_times["day"] and next_event_times["night"]:
+                break
+        
+        _sysd_mgr_scheduler._run_systemctl(
+            ["stop", sysd.SUNRISE_EVENT_TIMER_NAME, sysd.SUNSET_EVENT_TIMER_NAME],
+            check_errors=False, capture_output=True
         )
 
-        # Validate paths
-        if not pathlib.Path(python_exe_path).is_file():
-            raise FileNotFoundError(f"Python executable not found: {python_exe_path}")
-        if not pathlib.Path(script_exe_path).is_file():
-            raise FileNotFoundError(f"Target script not found: {script_exe_path}")
+        scheduled_any_timer = False
+        utc_tz = ZoneInfo("UTC")
 
-        # 1. Clear existing jobs first
-        self.clear_scheduled_transitions()  # Raises SchedulerError on failure
+        if next_event_times["day"]:
+            utc_event_time = next_event_times["day"].astimezone(utc_tz)
+            _sysd_mgr_scheduler.write_dynamic_event_timer_unit_file("day", utc_event_time)
+            scheduled_any_timer = True
+            log.info(f"Scheduler: Dynamic timer for SUNRISE prepared for: {utc_event_time.isoformat()}")
+        else:
+            log.warning("Scheduler: No upcoming sunrise event found. Removing existing timer if any.")
+            (sysd.SYSTEMD_USER_DIR / sysd.SUNRISE_EVENT_TIMER_NAME).unlink(missing_ok=True)
 
-        # 2. Get current time and timezone info
-        try:
-            tz_info = ZoneInfo(tz_name)
-            now_local = datetime.now(tz_info)
-            today = now_local.date()
-        except ZoneInfoNotFoundError:
-            raise ValidationError(f"Invalid Timezone '{tz_name}' during scheduling.")
-        except Exception as e:
-            raise SchedulerError(
-                f"Error getting current time/date for timezone '{tz_name}': {e}"
-            ) from e
+        if next_event_times["night"]:
+            utc_event_time = next_event_times["night"].astimezone(utc_tz)
+            _sysd_mgr_scheduler.write_dynamic_event_timer_unit_file("night", utc_event_time)
+            scheduled_any_timer = True
+            log.info(f"Scheduler: Dynamic timer for SUNSET prepared for: {utc_event_time.isoformat()}")
+        else:
+            log.warning("Scheduler: No upcoming sunset event found. Removing existing timer if any.")
+            (sysd.SYSTEMD_USER_DIR / sysd.SUNSET_EVENT_TIMER_NAME).unlink(missing_ok=True)
 
-        # 3. Get Environment Injection Logic
-        env_prefix = ""
-        try:
-            log.debug(
-                "Attempting to get user environment via systemctl show-environment"
+        _sysd_mgr_scheduler._run_systemctl(["daemon-reload"], capture_output=True)
+
+        if next_event_times["day"]:
+            _sysd_mgr_scheduler._run_systemctl(["start", sysd.SUNRISE_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
+        if next_event_times["night"]:
+            _sysd_mgr_scheduler._run_systemctl(["start", sysd.SUNSET_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
+        
+        if not scheduled_any_timer:
+            log.warning("Scheduler: No sun event timers could be scheduled (e.g. polar day/night).")
+        else:
+            log.info("Scheduler: Dynamic event timers (re)written, daemon reloaded, and timers (re)started.")
+        return True
+
+    except (exc.ConfigError, exc.ValidationError, exc.SystemdError, exc.FluxFceError) as e:
+        log.error(f"Scheduler: Failed to schedule dynamic transitions: {e}")
+        return False
+    except Exception as e:
+        log.exception(f"Scheduler: Unexpected error during 'schedule-dynamic-transitions': {e}")
+        return False
+
+def enable_scheduling(
+    python_exe_path: str,
+    script_exe_path: str,
+    # It's good practice for higher-level functions like this to call lower-level ones.
+    # We'll need access to the desktop_manager's apply current function.
+    # For now, let's assume it will be called from api.py after this returns.
+    # Or we could import desktop_manager here if we make it a hard dependency.
+    # Let's keep it simple for now and assume api.py handles the apply_current_period.
+) -> bool:
+    """
+    Enables automatic theme transitions:
+    1. Defines dynamic event timers for the next sunrise/sunset.
+    2. Enables and starts the main daily scheduler timer (`fluxfce-scheduler.timer`).
+    """
+    # Note: The application of the current theme (via handle_run_login_check)
+    # will be handled by the calling function in api.py after this function succeeds.
+
+    log.info("Scheduler: Enabling scheduling with dynamic systemd timers...")
+    try:
+        define_schedule_ok = handle_schedule_dynamic_transitions_command(
+            python_exe_path=python_exe_path, script_exe_path=script_exe_path
+        )
+        if not define_schedule_ok:
+            log.warning("Scheduler: Initial definition of dynamic event timers failed or scheduled nothing, "
+                        "but proceeding to enable the main daily scheduler.")
+
+        code, _, stderr = _sysd_mgr_scheduler._run_systemctl(
+            ["enable", "--now", sysd.SCHEDULER_TIMER_NAME], capture_output=True
+        )
+        if code != 0:
+            raise exc.SystemdError(
+                f"Scheduler: Failed to enable and start main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}): {stderr.strip()}"
             )
-            code_env, stdout_env, stderr_env = helpers.run_command(
-                ["systemctl", "--user", "show-environment"]
-            )
-            if code_env == 0 and stdout_env:
-                display_var = None
-                xauthority_var = None
-                for line in stdout_env.splitlines():
-                    if line.startswith("DISPLAY="):
-                        display_val = line.split("=", 1)[1]
-                        display_var = shlex.quote(display_val)
-                    elif line.startswith("XAUTHORITY="):
-                        xauth_val = line.split("=", 1)[1]
-                        xauthority_var = shlex.quote(xauth_val)
-                if display_var:
-                    env_prefix += f"export DISPLAY={display_var}; "
-                    log.debug(f"Found DISPLAY variable (quoted): {display_var}")
-                    if xauthority_var:
-                        env_prefix += f"export XAUTHORITY={xauthority_var}; "
-                        log.debug(
-                            f"Found XAUTHORITY variable (quoted): {xauthority_var}"
-                        )
-                    else:
-                        log.warning(
-                            "Found DISPLAY but not XAUTHORITY in user environment. xsct might still fail if XAUTHORITY is required."
-                        )
-                else:
-                    log.warning(
-                        "Could not find DISPLAY variable in systemctl user environment. xsct calls in 'at' jobs will likely fail."
-                    )
-            else:
-                log.warning(
-                    f"systemctl show-environment failed (code {code_env}) or returned empty. Cannot inject environment for 'at' jobs. Stderr: {stderr_env}"
-                )
-        except Exception as e:
-            log.warning(
-                f"Failed to get or parse user environment: {e}. Cannot inject environment for 'at' jobs."
-            )
+        
+        log.info(f"Scheduler: Main scheduler ({sysd.SCHEDULER_TIMER_NAME}) enabled; its service runs once now to set schedule.")
+        log.info("Scheduler: Scheduling setup completed successfully by scheduler module.")
+        return True
+        
+    except (exc.SystemdError, exc.FluxFceError) as e: 
+        log.error(f"Scheduler: Failed to enable scheduling: {e}")
+        raise 
+    except Exception as e: 
+        log.exception(f"Scheduler: Unexpected error enabling scheduling: {e}")
+        raise exc.FluxFceError(f"Scheduler: An unexpected error occurred while enabling scheduling: {e}") from e
 
-        # 4. Collect potential future events for the next N days
-        potential_events: dict[datetime, str] = {}
-        for i in range(days_to_schedule):  # <-- Loop N days
-            target_date = today + timedelta(days=i)
+def disable_scheduling() -> bool:
+    """
+    Disables automatic theme transitions.
+    """
+    log.info("Scheduler: Disabling scheduling and removing dynamic systemd timers...")
+    try:
+        _sysd_mgr_scheduler._run_systemctl(["stop", sysd.SCHEDULER_TIMER_NAME], check_errors=False, capture_output=True)
+        _sysd_mgr_scheduler._run_systemctl(["disable", sysd.SCHEDULER_TIMER_NAME], check_errors=False, capture_output=True)
+        log.debug(f"Scheduler: Main scheduler timer ({sysd.SCHEDULER_TIMER_NAME}) stopped and disabled.")
+
+        _sysd_mgr_scheduler._run_systemctl(["stop", sysd.SUNRISE_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
+        _sysd_mgr_scheduler._run_systemctl(["stop", sysd.SUNSET_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
+        log.debug("Scheduler: Dynamic event timers stopped.")
+
+        for timer_name in [sysd.SUNRISE_EVENT_TIMER_NAME, sysd.SUNSET_EVENT_TIMER_NAME]:
+            timer_path = sysd.SYSTEMD_USER_DIR / timer_name
             try:
-                sun_times = sun.get_sun_times(
-                    lat, lon, target_date, tz_name
-                )  # Raises CalculationError/ValidationError
-                # Only consider events strictly in the future relative to 'now'
-                if sun_times["sunrise"] > now_local:
-                    potential_events[sun_times["sunrise"]] = "day"
-                if sun_times["sunset"] > now_local:
-                    potential_events[sun_times["sunset"]] = "night"
-            except CalculationError as e:
-                log.warning(
-                    f"Could not calculate sun times for {target_date} ({lat},{lon}): {e}. Skipping date."
-                )
-            except ValidationError as e:  # Should only happen once if TZ is bad
-                log.error(
-                    f"Invalid timezone '{tz_name}' during sun time calculation: {e}"
-                )
-                raise  # Propagate validation error
+                timer_path.unlink(missing_ok=True)
+                log.debug(f"Scheduler: Removed {timer_name} (if existed).")
+            except OSError as e:
+                log.warning(f"Scheduler: Could not remove {timer_name}: {e}")
 
-        if not potential_events:
-            log.warning(
-                f"No future sunrise/sunset events found to schedule in the next {days_to_schedule} days."
-            )
-            return False  # Nothing to schedule
+        _sysd_mgr_scheduler._run_systemctl(["daemon-reload"], capture_output=True)
+        log.debug("Scheduler: Systemd daemon reloaded.")
+        
+        units_to_reset = [
+            sysd.SCHEDULER_TIMER_NAME, 
+            sysd.SUNRISE_EVENT_TIMER_NAME, 
+            sysd.SUNSET_EVENT_TIMER_NAME,
+            sysd.SCHEDULER_SERVICE_NAME 
+        ]
+        _sysd_mgr_scheduler._run_systemctl(["reset-failed", *units_to_reset], check_errors=False, capture_output=True)
 
-        # 5. Sort events chronologically
-        final_events_to_schedule = dict(sorted(potential_events.items()))
-        log.info(
-            f"Found {len(final_events_to_schedule)} events to schedule in the next {days_to_schedule} days."
-        )
+        log.info("Scheduler: Scheduling disabled successfully.")
+        return True
 
-        # 6. Proceed with scheduling ALL selected events
-        scheduled_count = 0
-        schedule_failed = False
-        safe_python_exe = shlex.quote(python_exe_path)
-        safe_script_path = shlex.quote(script_exe_path)
-
-        for event_time, mode in final_events_to_schedule.items():
-            at_time_str = event_time.strftime("%H:%M %Y-%m-%d")
-            systemd_cat_command_list = [
-                "systemd-cat",
-                "-t",
-                SYSTEMD_CAT_TAG,
-                "--level-prefix=false",
-                safe_python_exe,
-                safe_script_path,
-                "internal-apply",
-                "--mode",
-                mode,
-            ]
-            command_to_pipe_to_at = (
-                f"{env_prefix}{' '.join(systemd_cat_command_list)} {AT_JOB_TAG}"
-            )
-            log.debug(f"Scheduling '{mode}' for {at_time_str}...")
-
-            try:
-                code, stdout, stderr = helpers.run_command(
-                    ["at", at_time_str], input_str=command_to_pipe_to_at
-                )
-                if code == 0:
-                    log.info(
-                        f"Successfully scheduled '{mode}' transition for {event_time.isoformat()} via 'at'."
-                    )
-                    if stderr:
-                        log.debug(f"'at' command output: {stderr}")
-                    scheduled_count += 1
-                else:
-                    log.error(
-                        f"Failed to schedule '{mode}' transition for {at_time_str} using 'at': {stderr} (code: {code})"
-                    )
-                    schedule_failed = True
-            except Exception as e:
-                log.exception(
-                    f"Error running 'at' command for {mode} at {at_time_str}: {e}"
-                )
-                schedule_failed = True
-
-        log.info(
-            f"Scheduling complete ({scheduled_count} / {len(final_events_to_schedule)} jobs successfully scheduled)."
-        )
-
-        if schedule_failed:
-            raise SchedulerError(
-                f"One or more 'at' commands failed during scheduling ({scheduled_count} succeeded). Check logs."
-            )
-
-        return scheduled_count > 0
-
-    def list_scheduled_transitions(self) -> list[dict[str, str]]:
-        """
-        Returns a list of pending fluxfce transition jobs.
-
-        Returns:
-            A list of job dictionaries: [{'id': str, 'time_str': str, 'command': str, 'mode': str}, ...]
-
-        Raises:
-            SchedulerError: If listing jobs fails.
-        """
-        return self._get_pending_jobs()
+    except (exc.SystemdError, exc.FluxFceError) as e:
+        log.error(f"Scheduler: Failed to disable scheduling: {e}")
+        raise
+    except Exception as e:
+        log.exception(f"Scheduler: Unexpected error disabling scheduling: {e}")
+        raise exc.FluxFceError(f"Scheduler: An unexpected error occurred while disabling scheduling: {e}") from e
