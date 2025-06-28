@@ -21,3 +21,6 @@ system-logs.txt
 fluxfce_gui.log
 backup/readme-NEW.md
 reddit_post.md
+.rooignore
+codebase-to-txt.sh
+todo
