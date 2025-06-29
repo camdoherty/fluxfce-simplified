@@ -191,3 +191,102 @@ class XfceHandler:
         if code != 0:
             raise XfceError(f"Failed to set screen via xsct: {stderr}")
         return True
+
+    def run_fade_transition(
+        self,
+        target_temp: int,
+        target_bright: float,
+        duration_minutes: int,
+        steps_per_minute: int,
+    ) -> bool:
+        """
+        Performs a linear fade of screen temperature and brightness over a duration.
+
+        Args:
+            target_temp: The final temperature in Kelvin.
+            target_bright: The final brightness (0.1 to 1.0).
+            duration_minutes: The total duration of the fade in minutes.
+            steps_per_minute: How many times to update the screen settings per minute.
+        """
+        import time
+
+        DEFAULT_START_TEMP = 6500
+        DEFAULT_START_BRIGHT = 1.0
+
+        log.info(
+            f"Starting fade to Temp={target_temp}K, Brightness={target_bright:.2f} "
+            f"over {duration_minutes} mins."
+        )
+
+        # 1. Get Start State
+        start_settings = self.get_screen_settings()
+        start_temp = start_settings.get("temperature")
+        start_bright = start_settings.get("brightness")
+
+        if start_temp is None:
+            start_temp = DEFAULT_START_TEMP
+            log.info(f"Current temp is None, starting fade from default {start_temp}K")
+        if start_bright is None:
+            start_bright = DEFAULT_START_BRIGHT
+            log.info(f"Current bright is None, starting fade from default {start_bright:.2f}")
+
+        # Ensure values are floats for interpolation
+        start_temp_f = float(start_temp)
+        start_bright_f = float(start_bright)
+        target_temp_f = float(target_temp)
+        target_bright_f = float(target_bright)
+
+        duration_seconds = duration_minutes * 60.0
+        if duration_seconds <= 0:
+            log.warning("Fade duration is zero or negative. Applying final settings immediately.")
+            return self.set_screen_temp(target_temp, target_bright)
+
+        total_steps = duration_minutes * steps_per_minute
+        if total_steps <= 0:
+            log.warning("Invalid step configuration. Applying final settings immediately.")
+            return self.set_screen_temp(target_temp, target_bright)
+
+        interval_seconds = duration_seconds / total_steps
+        log.debug(
+            f"Fade parameters: duration={duration_seconds}s, steps={total_steps}, interval={interval_seconds:.2f}s"
+        )
+
+        start_time = time.monotonic()
+        step_count = 0
+
+        try:
+            while step_count < total_steps:
+                elapsed_time = time.monotonic() - start_time
+                if elapsed_time >= duration_seconds:
+                    break  # Duration has passed
+
+                progress = elapsed_time / duration_seconds
+                progress = max(0.0, min(1.0, progress)) # Clamp progress
+
+                current_temp = start_temp_f + (target_temp_f - start_temp_f) * progress
+                current_bright = start_bright_f + (target_bright_f - start_bright_f) * progress
+
+                log.debug(
+                    f"Fade step {step_count + 1}/{total_steps}: Progress={progress*100:.1f}%, "
+                    f"Temp={int(current_temp)}K, Bright={current_bright:.3f}"
+                )
+                self.set_screen_temp(int(current_temp), current_bright)
+
+                step_count += 1
+                
+                # Calculate sleep time to align with the next interval
+                next_step_time = start_time + (step_count * interval_seconds)
+                sleep_duration = next_step_time - time.monotonic()
+
+                if sleep_duration > 0:
+                    time.sleep(sleep_duration)
+
+        except KeyboardInterrupt:
+            log.info("Fade transition interrupted by user.")
+            return False
+        except XfceError as e:
+            log.error(f"Error during fade step, aborting: {e}")
+            return False
+
+        log.info("Fade complete. Applying final target settings for precision.")
+        return self.set_screen_temp(target_temp, target_bright)

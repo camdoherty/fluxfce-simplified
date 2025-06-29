@@ -51,35 +51,37 @@ def handle_schedule_dynamic_transitions_command(
     python_exe_path: str, script_exe_path: str
 ) -> bool:
     """
-    Calculates next sun events, writes dynamic systemd timer files, reloads the
-    systemd daemon, and starts the dynamic timers.
+    Calculates next sun events and fades, writes dynamic systemd timer files,
+    reloads the systemd daemon, and starts the dynamic timers.
     Called by the fluxfce-scheduler.service.
     """
     log.info("Scheduler: Handling 'schedule-dynamic-transitions' command...")
     try:
         current_config = _load_scheduler_config()
 
+        # --- Read Location Config ---
         lat_str = current_config.get("Location", "LATITUDE")
         lon_str = current_config.get("Location", "LONGITUDE")
         tz_name = current_config.get("Location", "TIMEZONE")
 
-        if not all([lat_str, lon_str, tz_name, 
-                    lat_str != "Not Set", lon_str != "Not Set", tz_name != "Not Set"]):
+        if not all([lat_str, lon_str, tz_name, lat_str != "Not Set", lon_str != "Not Set", tz_name != "Not Set"]):
             raise exc.ConfigError("Scheduler: Location (latitude, longitude, timezone) not fully configured.")
 
         lat = helpers.latlon_str_to_float(lat_str)
         lon = helpers.latlon_str_to_float(lon_str)
-        
-        try:
-            local_tz = ZoneInfo(tz_name)
-        except ZoneInfoNotFoundError as e_tz:
-            raise exc.ConfigError(f"Scheduler: Invalid timezone in configuration: {tz_name}") from e_tz
+        local_tz = ZoneInfo(tz_name)
 
+        # --- Read Fade Config ---
+        fade_enabled = current_config.getboolean("Fade Transition", "FADE_ENABLED", fallback=False)
+        fade_duration = current_config.getint("Fade Transition", "FADE_DURATION_MINUTES", fallback=0)
+        fade_offset = current_config.getint("Fade Transition", "FADE_OFFSET_MINUTES", fallback=0)
+
+        # --- Calculate Next Events ---
         now_local = datetime.now(local_tz)
         today_local = now_local.date()
         next_event_times: dict[str, Optional[datetime]] = {"day": None, "night": None}
 
-        for day_offset in range(2): # Check today and tomorrow
+        for day_offset in range(2):  # Check today and tomorrow
             target_date = today_local + timedelta(days=day_offset)
             try:
                 sun_times = sun.get_sun_times(lat, lon, target_date, tz_name)
@@ -91,53 +93,62 @@ def handle_schedule_dynamic_transitions_command(
                 log.warning(f"Scheduler: Could not calculate sun times for {target_date}: {e}")
             if next_event_times["day"] and next_event_times["night"]:
                 break
-        
-        # FIX: Only stop timers that actually exist to prevent "not loaded" messages.
+
+        # --- Stop Existing Timers ---
         timers_to_stop = []
         if (sysd.SYSTEMD_USER_DIR / sysd.SUNRISE_EVENT_TIMER_NAME).exists():
             timers_to_stop.append(sysd.SUNRISE_EVENT_TIMER_NAME)
         if (sysd.SYSTEMD_USER_DIR / sysd.SUNSET_EVENT_TIMER_NAME).exists():
             timers_to_stop.append(sysd.SUNSET_EVENT_TIMER_NAME)
+        for mode in ["day", "night"]:
+            fade_timer_name = f"{sysd._APP_NAME}-fade@{mode}.timer"
+            if (sysd.SYSTEMD_USER_DIR / fade_timer_name).exists():
+                timers_to_stop.append(fade_timer_name)
 
         if timers_to_stop:
             log.debug(f"Stopping existing dynamic timers: {', '.join(timers_to_stop)}")
-            _sysd_mgr_scheduler._run_systemctl(
-                ["stop", *timers_to_stop],
-                check_errors=False, capture_output=True
-            )
+            _sysd_mgr_scheduler._run_systemctl(["stop", *timers_to_stop], check_errors=False, capture_output=True)
 
-        scheduled_any_timer = False
+        # --- Prepare and Start New Timers ---
         utc_tz = ZoneInfo("UTC")
-
-        if next_event_times["day"]:
-            utc_event_time = next_event_times["day"].astimezone(utc_tz)
+        timers_to_start = []
+        
+        # Schedule main sunrise/sunset event timers
+        if event_time := next_event_times.get("day"):
+            utc_event_time = event_time.astimezone(utc_tz)
             _sysd_mgr_scheduler.write_dynamic_event_timer_unit_file("day", utc_event_time)
-            scheduled_any_timer = True
-            log.info(f"Scheduler: Dynamic timer for SUNRISE prepared for: {utc_event_time.isoformat()}")
-        else:
-            log.warning("Scheduler: No upcoming sunrise event found. Removing existing timer if any.")
-            (sysd.SYSTEMD_USER_DIR / sysd.SUNRISE_EVENT_TIMER_NAME).unlink(missing_ok=True)
+            timers_to_start.append(sysd.SUNRISE_EVENT_TIMER_NAME)
+            log.info(f"Scheduler: Main SUNRISE event timer prepared for: {utc_event_time.isoformat()}")
 
-        if next_event_times["night"]:
-            utc_event_time = next_event_times["night"].astimezone(utc_tz)
+        if event_time := next_event_times.get("night"):
+            utc_event_time = event_time.astimezone(utc_tz)
             _sysd_mgr_scheduler.write_dynamic_event_timer_unit_file("night", utc_event_time)
-            scheduled_any_timer = True
-            log.info(f"Scheduler: Dynamic timer for SUNSET prepared for: {utc_event_time.isoformat()}")
-        else:
-            log.warning("Scheduler: No upcoming sunset event found. Removing existing timer if any.")
-            (sysd.SYSTEMD_USER_DIR / sysd.SUNSET_EVENT_TIMER_NAME).unlink(missing_ok=True)
+            timers_to_start.append(sysd.SUNSET_EVENT_TIMER_NAME)
+            log.info(f"Scheduler: Main SUNSET event timer prepared for: {utc_event_time.isoformat()}")
 
+        # Schedule fade timers if enabled
+        if fade_enabled and fade_duration > 0:
+            log.info("Fade is enabled, preparing fade timers.")
+            for mode, event_time in next_event_times.items():
+                if event_time:
+                    fade_start_time = event_time + timedelta(minutes=fade_offset) - timedelta(minutes=fade_duration)
+                    if fade_start_time > now_local:
+                        utc_fade_time = fade_start_time.astimezone(utc_tz)
+                        _sysd_mgr_scheduler.write_dynamic_fade_timer_unit_file(mode, utc_fade_time)
+                        fade_timer_name = f"{sysd._APP_NAME}-fade@{mode}.timer"
+                        timers_to_start.append(fade_timer_name)
+                        log.info(f"Scheduler: FADE to {mode.upper()} timer prepared for: {utc_fade_time.isoformat()}")
+                    else:
+                        log.info(f"Fade start time for {mode} is in the past, skipping fade timer.")
+        
         _sysd_mgr_scheduler._run_systemctl(["daemon-reload"], capture_output=True)
 
-        if next_event_times["day"]:
-            _sysd_mgr_scheduler._run_systemctl(["start", sysd.SUNRISE_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
-        if next_event_times["night"]:
-            _sysd_mgr_scheduler._run_systemctl(["start", sysd.SUNSET_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
-        
-        if not scheduled_any_timer:
-            log.warning("Scheduler: No sun event timers could be scheduled (e.g. polar day/night).")
+        if timers_to_start:
+            _sysd_mgr_scheduler._run_systemctl(["start", *timers_to_start], check_errors=False, capture_output=True)
+            log.info(f"Scheduler: Started dynamic timers: {', '.join(timers_to_start)}")
         else:
-            log.info("Scheduler: Dynamic event timers (re)written, daemon reloaded, and timers (re)started.")
+            log.warning("Scheduler: No sun event or fade timers could be scheduled.")
+        
         return True
 
     except (exc.ConfigError, exc.ValidationError, exc.SystemdError, exc.FluxFceError) as e:
@@ -213,7 +224,8 @@ def disable_scheduling() -> bool:
             sysd.SCHEDULER_TIMER_NAME,
             sysd.SUNRISE_EVENT_TIMER_NAME,
             sysd.SUNSET_EVENT_TIMER_NAME,
-            sysd.SCHEDULER_SERVICE_NAME
+            sysd.SCHEDULER_SERVICE_NAME,
+            f"{sysd._APP_NAME}-fade@.timer",
         ]
 
         # Stop and disable the main scheduler timer first.
@@ -224,7 +236,10 @@ def disable_scheduling() -> bool:
         # Stop the dynamic event timers.
         _sysd_mgr_scheduler._run_systemctl(["stop", sysd.SUNRISE_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
         _sysd_mgr_scheduler._run_systemctl(["stop", sysd.SUNSET_EVENT_TIMER_NAME], check_errors=False, capture_output=True)
+        _sysd_mgr_scheduler._run_systemctl(["stop", f"{sysd._APP_NAME}-fade@day.timer"], check_errors=False, capture_output=True)
+        _sysd_mgr_scheduler._run_systemctl(["stop", f"{sysd._APP_NAME}-fade@night.timer"], check_errors=False, capture_output=True)
         log.debug("Scheduler: Dynamic event timers stopped.")
+        log.debug("Scheduler: Dynamic fade timers stopped.")
 
         # 1. Reset the failed state of all scheduling units while systemd still knows about them.
         _sysd_mgr_scheduler._run_systemctl(["reset-failed", *scheduling_units], check_errors=False, capture_output=True)
@@ -239,6 +254,16 @@ def disable_scheduling() -> bool:
                 log.debug(f"Scheduler: Removed {timer_name} (if it existed).")
             except OSError as e:
                 log.warning(f"Scheduler: Could not remove {timer_name}: {e}")
+
+        # Remove dynamic fade timer files.
+        for mode in ["day", "night"]:
+            fade_timer_name = f"{sysd._APP_NAME}-fade@{mode}.timer"
+            timer_path = sysd.SYSTEMD_USER_DIR / fade_timer_name
+            try:
+                timer_path.unlink(missing_ok=True)
+                log.debug(f"Scheduler: Removed {fade_timer_name} (if it existed).")
+            except OSError as e:
+                log.warning(f"Scheduler: Could not remove {fade_timer_name}: {e}")
 
         # 3. Finally, tell systemd to reload, forgetting the units whose files were just removed.
         _sysd_mgr_scheduler._run_systemctl(["daemon-reload"], capture_output=True)

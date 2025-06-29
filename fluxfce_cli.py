@@ -391,6 +391,8 @@ Examples:
     # Internal commands, hidden from public help
     parser_internal_apply = subparsers.add_parser("internal-apply", help=argparse.SUPPRESS)
     parser_internal_apply.add_argument("--mode", choices=["day", "night"], required=True, dest="internal_mode")
+    parser_internal_fade = subparsers.add_parser("internal-fade-transition", help=argparse.SUPPRESS)
+    parser_internal_fade.add_argument("--mode", choices=["day", "night"], required=True, dest="fade_mode")
     subparsers.add_parser("schedule-dynamic-transitions", help=argparse.SUPPRESS)
     subparsers.add_parser("run-login-check", help=argparse.SUPPRESS)
 
@@ -524,6 +526,9 @@ Examples:
             success = fluxfce_core.handle_internal_apply(args.internal_mode)
             exit_code = 0 if success else 1
         
+        elif args.command == "internal-fade-transition":
+            success = fluxfce_core.handle_internal_fade_transition(args.fade_mode)
+            exit_code = 0 if success else 1
         elif args.command == "schedule-dynamic-transitions":
             success = fluxfce_core.handle_schedule_dynamic_transitions_command(
                 python_exe_path=PYTHON_EXECUTABLE, script_exe_path=SCRIPT_PATH

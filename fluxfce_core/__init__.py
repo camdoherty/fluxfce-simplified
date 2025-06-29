@@ -20,6 +20,7 @@ from .api import (
     get_current_config,
     get_status,
     handle_internal_apply,
+    handle_internal_fade_transition,
     handle_run_login_check,
     handle_schedule_dynamic_transitions_command,
     install_default_background_profiles,  # <-- ADDED THIS LINE
@@ -77,6 +78,7 @@ __all__ = [
     "uninstall_fluxfce",
     # Internal Handlers (available for CLI, routed through api.py)
     "handle_internal_apply",
+    "handle_internal_fade_transition",
     "handle_run_login_check",
     "handle_schedule_dynamic_transitions_command",
     # Helper Functions

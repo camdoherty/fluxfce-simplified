@@ -122,6 +122,35 @@ def handle_run_login_check() -> bool:
     log.debug("API Facade: Relaying 'run-login-check' to desktop_manager.")
     return desktop_manager.handle_run_login_check()
 
+def handle_internal_fade_transition(mode: str) -> bool:
+    """API Façade: Relays to xfce.run_fade_transition."""
+    from . import xfce
+
+    log.debug(f"API Facade: Relaying 'internal-fade-transition --mode {mode}' to XFCE handler.")
+    try:
+        config_obj = get_current_config()
+        
+        # Read fade parameters
+        fade_duration = config_obj.getint("Fade Transition", "FADE_DURATION_MINUTES")
+        steps_per_minute = config_obj.getint("Fade Transition", "FADE_STEPS_PER_MINUTE")
+
+        # Read target screen settings
+        screen_section = "ScreenDay" if mode == "day" else "ScreenNight"
+        target_temp = config_obj.getint(screen_section, "XSCT_TEMP")
+        target_bright = config_obj.getfloat(screen_section, "XSCT_BRIGHT")
+
+        # Execute the fade
+        xfce_handler = xfce.XfceHandler()
+        return xfce_handler.run_fade_transition(
+            target_temp=target_temp,
+            target_bright=target_bright,
+            duration_minutes=fade_duration,
+            steps_per_minute=steps_per_minute,
+        )
+    except (exc.FluxFceError, ValueError, configparser.Error) as e:
+        log.error(f"API: Error during internal fade for '{mode}': {e}")
+        return False
+
 # --- Status Function ---
 
 def get_status() -> dict[str, Any]:

@@ -28,6 +28,7 @@ SYSTEMD_USER_DIR = pathlib.Path.home() / ".config" / "systemd" / "user"
 SCHEDULER_TIMER_NAME = f"{_APP_NAME}-scheduler.timer"
 SCHEDULER_SERVICE_NAME = f"{_APP_NAME}-scheduler.service"
 APPLY_TRANSITION_SERVICE_TEMPLATE_NAME = f"{_APP_NAME}-apply-transition@.service"
+FADE_TRANSITION_SERVICE_TEMPLATE_NAME = f"{_APP_NAME}-fade-transition@.service"
 LOGIN_SERVICE_NAME = f"{_APP_NAME}-login.service"
 RESUME_SERVICE_NAME = f"{_APP_NAME}-resume.service"
 USER_SLEEP_TARGET_NAME = "sleep.target" # User-level anchor for sleep.target
@@ -35,6 +36,7 @@ USER_SLEEP_TARGET_NAME = "sleep.target" # User-level anchor for sleep.target
 SCHEDULER_TIMER_FILE = SYSTEMD_USER_DIR / SCHEDULER_TIMER_NAME
 SCHEDULER_SERVICE_FILE = SYSTEMD_USER_DIR / SCHEDULER_SERVICE_NAME
 APPLY_TRANSITION_SERVICE_TEMPLATE_FILE = SYSTEMD_USER_DIR / APPLY_TRANSITION_SERVICE_TEMPLATE_NAME
+FADE_TRANSITION_SERVICE_TEMPLATE_FILE = SYSTEMD_USER_DIR / FADE_TRANSITION_SERVICE_TEMPLATE_NAME
 LOGIN_SERVICE_FILE = SYSTEMD_USER_DIR / LOGIN_SERVICE_NAME
 RESUME_SERVICE_FILE = SYSTEMD_USER_DIR / RESUME_SERVICE_NAME
 USER_SLEEP_TARGET_FILE = SYSTEMD_USER_DIR / USER_SLEEP_TARGET_NAME # Path for user-level sleep.target
@@ -48,6 +50,7 @@ STATIC_UNIT_FILES_MAP = {
     SCHEDULER_TIMER_NAME: SCHEDULER_TIMER_FILE,
     SCHEDULER_SERVICE_NAME: SCHEDULER_SERVICE_FILE,
     APPLY_TRANSITION_SERVICE_TEMPLATE_NAME: APPLY_TRANSITION_SERVICE_TEMPLATE_FILE,
+    FADE_TRANSITION_SERVICE_TEMPLATE_NAME: FADE_TRANSITION_SERVICE_TEMPLATE_FILE,
     LOGIN_SERVICE_NAME: LOGIN_SERVICE_FILE,
     RESUME_SERVICE_NAME: RESUME_SERVICE_FILE,
     USER_SLEEP_TARGET_NAME: USER_SLEEP_TARGET_FILE, # Added user-level sleep.target
@@ -65,6 +68,9 @@ ALL_POTENTIAL_FLUXFCE_UNIT_NAMES = [
     SCHEDULER_SERVICE_NAME,
     f"{_APP_NAME}-apply-transition@day.service",
     f"{_APP_NAME}-apply-transition@night.service",
+    f"{_APP_NAME}-fade-transition@day.service",
+    f"{_APP_NAME}-fade-transition@night.service",
+    f"{_APP_NAME}-fade@.timer",
     LOGIN_SERVICE_NAME,
     RESUME_SERVICE_NAME,
     SUNRISE_EVENT_TIMER_NAME,
@@ -112,6 +118,21 @@ ConditionEnvironment=DISPLAY
 [Service]
 Type=oneshot
 ExecStart={python_executable} "{script_path}" internal-apply --mode %i
+StandardOutput=journal
+StandardError=journal
+"""
+
+_FADE_TRANSITION_TEMPLATE = """\
+[Unit]
+Description={app_name}: Fade screen to %I mode
+; This service runs for the entire duration of the fade
+PartOf=graphical-session.target
+After=graphical-session.target
+ConditionEnvironment=DISPLAY
+
+[Service]
+Type=oneshot
+ExecStart={python_executable} "{script_path}" internal-fade-transition --mode %i
 StandardOutput=journal
 StandardError=journal
 """
@@ -165,6 +186,7 @@ _STATIC_UNIT_TEMPLATES = {
     SCHEDULER_TIMER_NAME: _SCHEDULER_TIMER_TEMPLATE,
     SCHEDULER_SERVICE_NAME: _SCHEDULER_SERVICE_TEMPLATE,
     APPLY_TRANSITION_SERVICE_TEMPLATE_NAME: _APPLY_TRANSITION_TEMPLATE,
+    FADE_TRANSITION_SERVICE_TEMPLATE_NAME: _FADE_TRANSITION_TEMPLATE,
     LOGIN_SERVICE_NAME: _LOGIN_SERVICE_TEMPLATE,
     RESUME_SERVICE_NAME: _RESUME_SERVICE_TEMPLATE,
     USER_SLEEP_TARGET_NAME: _USER_SLEEP_TARGET_TEMPLATE, # Added template for user sleep.target
@@ -344,6 +366,8 @@ class SystemdManager:
             # Potentially running instances of the apply transition service
             f"{_APP_NAME}-apply-transition@day.service",
             f"{_APP_NAME}-apply-transition@night.service",
+            f"{_APP_NAME}-fade-transition@day.service",
+            f"{_APP_NAME}-fade-transition@night.service",
         ]
         
         # Stop units
@@ -379,6 +403,16 @@ class SystemdManager:
                 log.debug(f"Removed dynamic timer file: {dynamic_file_path} (if it existed)")
             except OSError as e:
                 log.warning(f"Error removing dynamic timer file {dynamic_file_path}: {e} (continuing)")
+
+        # Remove dynamic fade timer files
+        for mode in ["day", "night"]:
+            fade_timer_name = f"{self.app_name}-fade@{mode}.timer"
+            fade_file_path = SYSTEMD_USER_DIR / fade_timer_name
+            try:
+                fade_file_path.unlink(missing_ok=True)
+                log.debug(f"Removed dynamic fade timer file: {fade_file_path} (if it existed)")
+            except OSError as e:
+                log.warning(f"Error removing dynamic fade timer file {fade_file_path}: {e} (continuing)")
         
         reload_code, _, reload_err = self._run_systemctl(["daemon-reload"], capture_output=True)
         if reload_code != 0:
@@ -395,6 +429,53 @@ class SystemdManager:
         
         log.info(f"{self.app_name} systemd units removed.")
         return True
+
+    def write_dynamic_fade_timer_unit_file(
+        self,
+        mode: str,
+        utc_execution_time: datetime,
+    ) -> bool:
+        """
+        Creates or overwrites a dynamic fade timer file.
+        The timer triggers an instance of FADE_TRANSITION_SERVICE_TEMPLATE_NAME.
+        `utc_execution_time` MUST be timezone-aware and set to UTC.
+        """
+        if mode not in ["day", "night"]:
+            log.error(f"Invalid mode '{mode}' specified for dynamic fade timer.")
+            return False
+
+        if utc_execution_time.tzinfo is None or utc_execution_time.tzinfo.utcoffset(utc_execution_time) is None:
+            msg = f"utc_execution_time for dynamic fade timer ({mode}) must be UTC and timezone-aware."
+            log.error(msg)
+            raise ValueError(msg)
+
+        timer_name = f"{self.app_name}-fade@{mode}.timer"
+        timer_file_path = SYSTEMD_USER_DIR / timer_name
+        
+        service_instance_to_trigger = f"{FADE_TRANSITION_SERVICE_TEMPLATE_NAME.replace('@.', f'@{mode}')}"
+        on_calendar_utc_str = utc_execution_time.strftime('%Y-%m-%d %H:%M:%S UTC')
+
+        timer_content = f"""\
+[Unit]
+Description={self.app_name}: Event Timer for {mode.capitalize()} Fade Transition (Dynamic)
+Requires={service_instance_to_trigger}
+
+[Timer]
+Unit={service_instance_to_trigger}
+OnCalendar={on_calendar_utc_str}
+AccuracySec=1s
+WakeSystem=false
+
+[Install]
+"""
+        try:
+            SYSTEMD_USER_DIR.mkdir(parents=True, exist_ok=True)
+            timer_file_path.write_text(timer_content, encoding="utf-8")
+            log.info(f"Written dynamic fade timer file: {timer_file_path} for event at {on_calendar_utc_str}")
+            return True
+        except OSError as e:
+            log.error(f"Failed to write dynamic fade timer file {timer_file_path}: {e}")
+            raise SystemdError(f"Failed to write dynamic fade timer file {timer_file_path}: {e}") from e
 
     def write_dynamic_event_timer_unit_file(
         self,

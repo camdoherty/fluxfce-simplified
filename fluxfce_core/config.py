@@ -46,6 +46,12 @@ DEFAULT_CONFIG: dict[str, dict[str, str]] = {
         "XSCT_TEMP": "5000",
         "XSCT_BRIGHT": "1.0",
     },
+    "Fade Transition": {
+        "FADE_ENABLED": "true",
+        "FADE_DURATION_MINUTES": "30",
+        "FADE_OFFSET_MINUTES": "0",
+        "FADE_STEPS_PER_MINUTE": "4",
+    },
 }
 
 class ConfigManager:

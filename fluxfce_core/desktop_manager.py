@@ -52,24 +52,7 @@ def _apply_single_mode(mode: Literal["day", "night"]) -> bool:
     else:
         log.warning(f"Background profile for mode '{mode}' is not configured.")
 
-    # 3. Screen Temperature / Brightness
-    try:
-        # --- START: CORRECTED CODE BLOCK ---
-        # First, get the string values, defaulting to None if the option doesn't exist.
-        temp_str = conf.get(screen_section, "XSCT_TEMP", fallback=None)
-        bright_str = conf.get(screen_section, "XSCT_BRIGHT", fallback=None)
-
-        # Convert to numbers ONLY if the string value is not None and not empty.
-        # This correctly handles cases where the config key exists but its value is blank.
-        temp = int(temp_str) if temp_str and temp_str.strip() else None
-        bright = float(bright_str) if bright_str and bright_str.strip() else None
-        
-        # This call now reliably happens. If temp/bright are None, xsct will be reset.
-        xfce_handler.set_screen_temp(temp, bright)
-        # --- END: CORRECTED CODE BLOCK ---
-    except (ValueError, TypeError) as e:
-        # This will now only catch genuine errors, e.g., if a value is "abc".
-        log.warning(f"Invalid numeric value for screen settings in config for {mode} mode: {e}")
+>>>>>>>
 
     return True
 

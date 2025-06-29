@@ -22,6 +22,7 @@
 
 ## Features
 
+-   **Gradual Fade Transitions:** Smoothly fades screen temperature and brightness over a configurable duration leading up to sunrise/sunset.
 -   **Automatic Sunrise/Sunset Switching:** Transitions your desktop look at the correct local time, every day.
 -   **Profile-Based Customization:** Set up your desktop exactly how you like it for day or night, and save that entire look to a profile with a single command.
 -   **Comprehensive Appearance Control:**
@@ -165,6 +166,12 @@ xsct_bright = 1.0
 [ScreenNight]
 xsct_temp = 4500
 xsct_bright = 0.85
+
+[Fade Transition]
+fade_enabled = true
+fade_duration_minutes = 30
+fade_offset_minutes = 0
+fade_steps_per_minute = 4
 ```
 ***Tip:*** *To reset screen temperature or brightness for a mode, leave its `xsct_temp` or `xsct_bright` value empty in the config file. `xsct` will revert to its default state during that transition.*
 
@@ -180,15 +187,19 @@ xsct_bright = 0.85
 -   **Systemd Timers and Services:**
     -   **Expected systemd unit states when fluxfce is Enabled `systemctl --user -all | grep fluxfce`:**
 
-        | Unit Name                                   | LOAD   | ACTIVE   | SUB     | Unit Description                                              |
-        |---------------------------------------------|--------|----------|---------|---------------------------------------------------------------|
-        | `fluxfce-apply-transition@day.service`      | loaded | inactive | dead    | fluxfce: Apply day Mode Transition                            |
-        | `fluxfce-apply-transition@night.service`    | loaded | inactive | dead    | fluxfce: Apply night Mode Transition                          |
-        | `fluxfce-login.service`                     | loaded | inactive | dead    | fluxfce: Apply theme on first login                           |
-        | `fluxfce-scheduler.service`                 | loaded | inactive | dead    | fluxfce: Daily Service to Reschedule Sunrise/Sunset Event Timers |
-        | `fluxfce-scheduler.timer`                   | loaded | active   | waiting | fluxfce: Daily Timer to Reschedule Sunrise/Sunset Event Timers |
-        | `fluxfce-sunrise-event.timer`               | loaded | active   | waiting | fluxfce: Event Timer for Day Transition (Dynamic)             |
-        | `fluxfce-sunset-event.timer`                | loaded | active   | waiting | fluxfce: Event Timer for Night Transition (Dynamic)           |
+| Unit Name                                   | LOAD   | ACTIVE   | SUB     | Unit Description                                              |
+|---------------------------------------------|--------|----------|---------|---------------------------------------------------------------|
+| `fluxfce-apply-transition@day.service`      | loaded | inactive | dead    | fluxfce: Apply day Mode Transition                            |
+| `fluxfce-apply-transition@night.service`    | loaded | inactive | dead    | fluxfce: Apply night Mode Transition                          |
+| `fluxfce-fade-transition@day.service`       | loaded | inactive | dead    | fluxfce: Fade screen to day mode                              |
+| `fluxfce-fade-transition@night.service`     | loaded | inactive | dead    | fluxfce: Fade screen to night mode                            |
+| `fluxfce-fade@day.timer`                    | loaded | active   | waiting | fluxfce: Event Timer for Day Fade Transition (Dynamic)        |
+| `fluxfce-fade@night.timer`                  | loaded | active   | waiting | fluxfce: Event Timer for Night Fade Transition (Dynamic)      |
+| `fluxfce-login.service`                     | loaded | inactive | dead    | fluxfce: Apply theme on first login                           |
+| `fluxfce-scheduler.service`                 | loaded | inactive | dead    | fluxfce: Daily Service to Reschedule Sunrise/Sunset Event Timers |
+| `fluxfce-scheduler.timer`                   | loaded | active   | waiting | fluxfce: Daily Timer to Reschedule Sunrise/Sunset Event Timers |
+| `fluxfce-sunrise-event.timer`               | loaded | active   | waiting | fluxfce: Event Timer for Day Transition (Dynamic)             |
+| `fluxfce-sunset-event.timer`                | loaded | active   | waiting | fluxfce: Event Timer for Night Transition (Dynamic)           |
 
 
 ## License
