@@ -846,6 +846,11 @@ class Application:
         self.toggle_item.connect("activate", self.on_menu_toggle_clicked)
         menu.append(self.toggle_item)
 
+        # --- Edit Config ---
+        edit_config_item = Gtk.MenuItem(label="Edit config.ini")
+        edit_config_item.connect("activate", self.on_edit_config_clicked)
+        menu.append(edit_config_item)
+
         # --- Open UI ---
         open_ui_item = Gtk.MenuItem(label="Open UI")
         open_ui_item.connect("activate", self.on_menu_open_ui_clicked)
@@ -900,6 +905,16 @@ class Application:
     def on_menu_open_ui_clicked(self, widget):
         """Handler for the 'Open UI' menu item."""
         self.on_icon_left_click(self.status_icon)
+
+    def on_edit_config_clicked(self, widget):
+        """Opens the main config.ini file in the default editor."""
+        try:
+            # Use the core library's constant for the config directory
+            config_path = fluxfce_core.CONFIG_DIR / "config.ini"
+            self.window.open_file_in_editor(config_path)
+        except Exception as e:
+            # The window might not be created yet, so we can't assume show_error_dialog exists
+            log.error(f"Could not open config file: {e}")
 
     def on_menu_toggle_clicked(self, widget):
         is_active = self.window.toggle_switch.get_active()
