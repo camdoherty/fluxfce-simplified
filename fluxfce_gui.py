@@ -59,6 +59,7 @@ class FluxFceWindow(Gtk.Window):
 
         # Window properties
         self.set_type_hint(Gdk.WindowTypeHint.POPUP_MENU)
+        self.set_skip_taskbar_hint(True)
         self.set_border_width(10)
         self.set_default_size(420, -1)
         self.set_resizable(False)
