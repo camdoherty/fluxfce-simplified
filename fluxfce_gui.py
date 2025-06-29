@@ -712,42 +712,44 @@ class FluxFceWindow(Gtk.Window):
 
     def _calc_position(self, screen, icon_rect, win_w, win_h, orient):
         """
-        Calculates window position to be adjacent to the panel but biased
-        towards the center of the screen for better ergonomics.
+        Calculates window position to be adjacent to the panel, with its
+        corner aligned to the mouse cursor's position at the time of click.
         """
         display = Gdk.Display.get_default()
         monitor = display.get_monitor_at_point(icon_rect.x, icon_rect.y)
         workarea = monitor.get_workarea()
 
-        # Center points for weighting the position
-        icon_center_x = icon_rect.x + icon_rect.width / 2
-        icon_center_y = icon_rect.y + icon_rect.height / 2
+        # Get the current cursor position
+        _seat, cursor_x, cursor_y = display.get_default_seat().get_pointer().get_position()
+
+        # Determine panel location based on the icon's position relative to the monitor's center
         monitor_center_x = workarea.x + workarea.width / 2
         monitor_center_y = workarea.y + workarea.height / 2
-
-        # Weighting factor (0.0 to 1.0).
-        # 0.0 = centered on icon, 1.0 = centered on monitor.
-        # A value around 0.3-0.4 provides a noticeable but not jarring shift.
-        weight = 0.35
+        icon_center_y = icon_rect.y + icon_rect.height / 2
+        icon_center_x = icon_rect.x + icon_rect.width / 2
 
         if orient == Gtk.Orientation.HORIZONTAL:
             # --- Horizontal Panel (Top or Bottom) ---
-            # Weighted average for the X position
-            target_x = (icon_center_x * (1 - weight)) + (monitor_center_x * weight)
-            x = target_x - (win_w / 2)
+            # Align window's x position with cursor, biased towards screen center
+            if cursor_x < monitor_center_x:
+                x = cursor_x  # Align left edge of window with cursor
+            else:
+                x = cursor_x - win_w  # Align right edge of window with cursor
 
-            # Y position is determined by panel location (top or bottom half)
+            # Position window flush against the panel
             if icon_center_y < monitor_center_y:
                 y = icon_rect.y + icon_rect.height  # Panel at top
             else:
                 y = icon_rect.y - win_h  # Panel at bottom
         else:
             # --- Vertical Panel (Left or Right) ---
-            # Weighted average for the Y position
-            target_y = (icon_center_y * (1 - weight)) + (monitor_center_y * weight)
-            y = target_y - (win_h / 2)
+            # Align window's y position with cursor, biased towards screen center
+            if cursor_y < monitor_center_y:
+                y = cursor_y # Align top edge of window with cursor
+            else:
+                y = cursor_y - win_h # Align bottom edge of window with cursor
 
-            # X position is determined by panel location (left or right half)
+            # Position window flush against the panel
             if icon_center_x < monitor_center_x:
                 x = icon_rect.x + icon_rect.width  # Panel on left
             else:
