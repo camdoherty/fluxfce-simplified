@@ -447,7 +447,7 @@ Examples:
                 _remove_autostart_entry()
 
             log.info("\n" + "-"*45 + f"\n {AnsiColors.GREEN}fluxfce installed and enabled successfully.{AnsiColors.RESET} \n" + "-"*45)
-            log.info("Tip: for best results ensure "Set matching Xfwm4 theme if there is one" is enabled in XFCE Theme settings (`xfce4-appearance-settings`)")
+            log.info("Tip: For best results ensure "Set matching Xfwm4 theme if there is one" is enabled in XFCE Theme settings `xfce4-appearance-settings'.")
             log.info("Tip: Configure your DE appearance using: 'fluxfce set-default --mode day|night'.")
             
             if ask_yes_no_cli("\nLaunch the GUI now?", default_yes=True):
