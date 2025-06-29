@@ -60,8 +60,8 @@ class FluxFceWindow(Gtk.Window):
         # Window properties
         self.set_type_hint(Gdk.WindowTypeHint.POPUP_MENU)
         self.set_skip_taskbar_hint(True)
-        self.set_border_width(10)
-        self.set_default_size(420, -1)
+        self.set_border_width(8)
+        self.set_default_size(360, -1)
         self.set_resizable(False)
         self.set_decorated(False)
 
@@ -168,6 +168,11 @@ class FluxFceWindow(Gtk.Window):
         scale.transparent-slider.horizontal trough > highlight {{
             border-image: none;
         }}
+
+        scale.transparent-slider.horizontal slider {{
+            min-width: 20px;
+            min-height: 20px;
+        }}
         """.encode('utf-8')
 
         style_provider.load_from_data(css)
@@ -183,6 +188,8 @@ class FluxFceWindow(Gtk.Window):
             return
 
         # UI state variables
+        self.btn_apply_day = None
+        self.btn_apply_night = None
         self.toggle_switch_handler_id = None
         self.temp_slider_handler_id = None
         self.bright_slider_handler_id = None
@@ -190,6 +197,10 @@ class FluxFceWindow(Gtk.Window):
         self.periodic_refresh_id = None
         self.one_shot_refresh_id = None
         self._last_height = None
+
+        # --- Size groups for aligning profile and manual control columns ---
+        self.col0_size_group = Gtk.SizeGroup(Gtk.SizeGroupMode.HORIZONTAL)
+        self.col2_size_group = Gtk.SizeGroup(Gtk.SizeGroupMode.HORIZONTAL)
 
         self._build_ui()
 
@@ -212,7 +223,7 @@ class FluxFceWindow(Gtk.Window):
 
     def _build_ui(self):
         """Constructs the entire UI, including a custom title bar and content."""
-        main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.add(main_vbox)
 
     #    main_vbox.pack_start(self._build_title_bar(), False, True, 0)
@@ -221,8 +232,8 @@ class FluxFceWindow(Gtk.Window):
 
         # Add a separator for visual distinction between major sections
         separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-        separator.set_margin_top(3)
-        separator.set_margin_bottom(3)
+        separator.set_margin_top(2)
+        separator.set_margin_bottom(2)
         main_vbox.pack_start(separator, False, True, 0)
 
         main_vbox.pack_start(self._build_manual_control_section(), False, True, 0)
@@ -230,11 +241,11 @@ class FluxFceWindow(Gtk.Window):
     def _build_status_section(self):
         """Builds the top section with next transition info and toggle switch."""
         # The main container for this whole section
-        section_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        section_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
 
         # The hbox for the label and switch
-        next_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        self.lbl_next_transition = Gtk.Label(label="...", xalign=0, ellipsize=Pango.EllipsizeMode.END)
+        next_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        self.lbl_next_transition = Gtk.Label(label="...", xalign=0, ellipsize=Pango.EllipsizeMode.END, wrap=True, justify=Gtk.Justification.LEFT)
         next_hbox.pack_start(self.lbl_next_transition, True, True, 0)
 
         self.toggle_switch = Gtk.Switch()
@@ -248,7 +259,7 @@ class FluxFceWindow(Gtk.Window):
         # Add the separator to the bottom of the section's box
         separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
         # Add a top margin to the separator to create space between it and the status text
-        separator.set_margin_top(4)
+        separator.set_margin_top(3)
         section_box.pack_start(separator, False, True, 0)
 
         return section_box
@@ -257,29 +268,41 @@ class FluxFceWindow(Gtk.Window):
         # Use an expander to allow collapsing this section
         frame = Gtk.Expander(use_markup=True, label="<b>Mode</b>")
         frame.set_expanded(True)
-        frame.set_tooltip_text("Manage Day/Night mode profiles and apply them")
 
-        profile_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=6)
+        profile_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, margin=4)
         frame.add(profile_box)
 
         # Create and store all the new widgets for the 'day' row
-        (self.day_grid, self.lbl_day_theme, self.lbl_day_screen, self.lbl_day_wallpaper) = self._create_profile_row("day", "☀️", "Day Mode")
+        (self.day_grid, self.lbl_day_screen, self.lbl_day_theme, self.lbl_day_background) = self._create_profile_row(
+            "day", " ", "Day Mode", self.col0_size_group, self.col2_size_group
+        )
         profile_box.pack_start(self.day_grid, False, False, 0)
         profile_box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 2)
 
         # Create and store all the new widgets for the 'night' row
-        (self.night_grid, self.lbl_night_theme, self.lbl_night_screen, self.lbl_night_wallpaper) = self._create_profile_row("night", "🌙", "Night Mode")
+        (self.night_grid, self.lbl_night_screen, self.lbl_night_theme, self.lbl_night_background) = self._create_profile_row(
+            "night", " ", "Night Mode", self.col0_size_group, self.col2_size_group
+        )
         profile_box.pack_start(self.night_grid, False, False, 0)
         return frame
 
-    def _create_profile_row(self, mode, icon, title):
+    def _create_profile_row(self, mode, icon, title, col0_group, col2_group):
         # The main grid for this profile row
-        grid = Gtk.Grid(column_spacing=10, row_spacing=2)
+        grid = Gtk.Grid(column_spacing=8, row_spacing=2, hexpand=True)
 
-        # --- Row 1: Buttons ---
+        # --- Row 1: Buttons (in a 3-column grid to align with sliders) ---
+        buttons_grid = Gtk.Grid(column_spacing=4, hexpand=True)
+        grid.attach(buttons_grid, 0, 0, 2, 1)
+
         btn_apply = Gtk.Button(halign=Gtk.Align.FILL, hexpand=True)
-        btn_apply.set_tooltip_text(f"Temporarily apply the {mode.capitalize()} mode settings")
-        btn_apply_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+
+        # Store the button so its tooltip can be updated dynamically.
+        if mode == 'day':
+            self.btn_apply_day = btn_apply
+        else:
+            self.btn_apply_night = btn_apply
+
+        btn_apply_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         btn_apply_box.pack_start(Gtk.Label(label=icon), False, False, 0)
         btn_apply_box.pack_start(Gtk.Label(label=title), False, False, 0)
         btn_apply.add(btn_apply_box)
@@ -289,46 +312,48 @@ class FluxFceWindow(Gtk.Window):
         btn_save.set_tooltip_text(f"Save current desktop look as the new {mode.capitalize()} default")
         btn_save.connect("clicked", self.on_set_default_clicked, mode)
 
-        # Attach buttons to the main grid
-        grid.attach(btn_apply, 0, 0, 1, 1)
-        grid.attach(btn_save, 1, 0, 1, 1)
+        # Column 1: The expanding "Apply" button
+        buttons_grid.attach(btn_apply, 1, 0, 1, 1)
+
+        # Column 2: The "Save" button
+        col2_group.add_widget(btn_save)
+        buttons_grid.attach(btn_save, 2, 0, 1, 1)
 
         # --- Row 2: Details Grid for proper alignment ---
-        details_grid = Gtk.Grid(column_spacing=6, row_spacing=1, margin_top=1)
+        details_grid = Gtk.Grid(column_spacing=22, row_spacing=1, margin_top=4, margin_start=30)
         details_grid.get_style_context().add_class("dim-label")
-        # Make the value column expand to fill space
         details_grid.set_column_homogeneous(False)
         details_grid.set_hexpand(True)
         grid.attach(details_grid, 0, 1, 2, 1) # Span both columns
 
-        # Create labels for Theme, Screen, Wallpaper
-        lbl_theme_title = Gtk.Label(label="Theme:", xalign=0, yalign=0.5)
+        # Create labels for Screen, Theme, Background
         lbl_screen_title = Gtk.Label(label="Screen:", xalign=0, yalign=0.5)
-        lbl_wallpaper_title = Gtk.Label(label="Wallpaper:", xalign=0, yalign=0.5)
+        lbl_theme_title = Gtk.Label(label="Theme:", xalign=0, yalign=0.5)
+        lbl_background_title = Gtk.Label(label="Background:", xalign=0, yalign=0.5)
 
-        lbl_theme_value = Gtk.Label(xalign=0, yalign=0.5, use_markup=True, ellipsize=Pango.EllipsizeMode.END)
         lbl_screen_value = Gtk.Label(xalign=0, yalign=0.5, use_markup=True, ellipsize=Pango.EllipsizeMode.END)
-        lbl_wallpaper_value = Gtk.Label(xalign=0, yalign=0.5, use_markup=True, ellipsize=Pango.EllipsizeMode.END)
+        lbl_theme_value = Gtk.Label(xalign=0, yalign=0.5, use_markup=True, ellipsize=Pango.EllipsizeMode.END)
+        lbl_background_value = Gtk.Label(xalign=0, yalign=0.5, use_markup=True, ellipsize=Pango.EllipsizeMode.END)
 
         # --- Create EventBox for clickable links ---
         theme_event_box = Gtk.EventBox()
         theme_event_box.add(lbl_theme_value)
         theme_event_box.connect("button-press-event", self.on_details_link_clicked, "theme", mode)
 
-        wallpaper_event_box = Gtk.EventBox()
-        wallpaper_event_box.add(lbl_wallpaper_value)
-        wallpaper_event_box.connect("button-press-event", self.on_details_link_clicked, "wallpaper", mode)
+        background_event_box = Gtk.EventBox()
+        background_event_box.add(lbl_background_value)
+        background_event_box.connect("button-press-event", self.on_details_link_clicked, "background", mode)
 
-        # Attach all labels to the details grid
-        details_grid.attach(lbl_theme_title, 0, 0, 1, 1)
-        details_grid.attach(theme_event_box, 1, 0, 1, 1)
-        details_grid.attach(lbl_screen_title, 0, 1, 1, 1)
-        details_grid.attach(lbl_screen_value, 1, 1, 1, 1)
-        details_grid.attach(lbl_wallpaper_title, 0, 2, 1, 1)
-        details_grid.attach(wallpaper_event_box, 1, 2, 1, 1)
+        # Attach all labels to the details grid in the new order
+        details_grid.attach(lbl_screen_title, 0, 0, 1, 1)
+        details_grid.attach(lbl_screen_value, 1, 0, 1, 1)
+        details_grid.attach(lbl_theme_title, 0, 1, 1, 1)
+        details_grid.attach(theme_event_box, 1, 1, 1, 1)
+        details_grid.attach(lbl_background_title, 0, 2, 1, 1)
+        details_grid.attach(background_event_box, 1, 2, 1, 1)
 
         # Return the main grid and the individual value labels so they can be updated
-        return grid, lbl_theme_value, lbl_screen_value, lbl_wallpaper_value
+        return grid, lbl_screen_value, lbl_theme_value, lbl_background_value
 
     def _build_manual_control_section(self):
         # Use an expander to allow collapsing this section
@@ -337,14 +362,14 @@ class FluxFceWindow(Gtk.Window):
         frame.set_tooltip_text("Temporarily adjust screen temperature and brightness")
 
         # Use a Grid for precise alignment
-        grid = Gtk.Grid(column_spacing=6, row_spacing=4, margin=6, hexpand=True)
+        grid = Gtk.Grid(column_spacing=4, row_spacing=2, margin=4, hexpand=True)
         frame.add(grid)
 
         # --- Temperature Control ---
-        temp_overlay = Gtk.Overlay()
+        temp_overlay = Gtk.Overlay(height_request=45)
         grid.attach(temp_overlay, 1, 0, 1, 1)
 
-        temp_gradient_bar = Gtk.Box(hexpand=True, valign=Gtk.Align.CENTER, height_request=8)
+        temp_gradient_bar = Gtk.Box(hexpand=True, valign=Gtk.Align.CENTER, height_request=12, margin_start=5, margin_end=5)
         temp_gradient_bar.get_style_context().add_class("temp-gradient")
         temp_overlay.add(temp_gradient_bar)
 
@@ -354,20 +379,23 @@ class FluxFceWindow(Gtk.Window):
         self.temp_slider_handler_id = self.slider_temp.connect("value-changed", self.on_slider_value_changed)
         temp_overlay.add_overlay(self.slider_temp)
 
-        self.lbl_temp_readout = Gtk.Label(label="... K", width_chars=7)
-        btn_reset_temp = Gtk.Button.new_from_icon_name("edit-undo-symbolic", Gtk.IconSize.BUTTON)
-        btn_reset_temp.set_tooltip_text("Reset Temperature to Default (6500K)")
-        btn_reset_temp.connect("clicked", self.on_reset_slider_clicked, "temp")
+        self.lbl_temp_readout = Gtk.Label(label="... K", width_chars=6)
+        temp_reset_box = Gtk.EventBox()
+        temp_reset_box.add(self.lbl_temp_readout)
+        temp_reset_box.set_tooltip_text("Click to reset temperature")
+        temp_reset_box.connect("button-press-event", self.on_reset_label_clicked, "temp")
 
-        grid.attach(Gtk.Image.new_from_icon_name("weather-clear-symbolic", Gtk.IconSize.BUTTON), 0, 0, 1, 1)
-        grid.attach(self.lbl_temp_readout, 2, 0, 1, 1)
-        grid.attach(btn_reset_temp, 3, 0, 1, 1)
+        temp_icon = Gtk.Image.new_from_icon_name("weather-clear-symbolic", Gtk.IconSize.BUTTON)
+        self.col0_size_group.add_widget(temp_icon)
+        self.col2_size_group.add_widget(temp_reset_box)
+        grid.attach(temp_icon, 0, 0, 1, 1)
+        grid.attach(temp_reset_box, 2, 0, 1, 1)
 
         # --- Brightness Control ---
-        bright_overlay = Gtk.Overlay()
+        bright_overlay = Gtk.Overlay(height_request=45)
         grid.attach(bright_overlay, 1, 1, 1, 1)
 
-        bright_gradient_bar = Gtk.Box(hexpand=True, valign=Gtk.Align.CENTER, height_request=8)
+        bright_gradient_bar = Gtk.Box(hexpand=True, valign=Gtk.Align.CENTER, height_request=12, margin_start=5, margin_end=5)
         bright_gradient_bar.get_style_context().add_class("bright-gradient")
         bright_overlay.add(bright_gradient_bar)
 
@@ -377,14 +405,17 @@ class FluxFceWindow(Gtk.Window):
         self.bright_slider_handler_id = self.slider_bright.connect("value-changed", self.on_slider_value_changed)
         bright_overlay.add_overlay(self.slider_bright)
 
-        self.lbl_bright_readout = Gtk.Label(label="... %", width_chars=7)
-        btn_reset_bright = Gtk.Button.new_from_icon_name("edit-undo-symbolic", Gtk.IconSize.BUTTON)
-        btn_reset_bright.set_tooltip_text("Reset Brightness to Default (100%)")
-        btn_reset_bright.connect("clicked", self.on_reset_slider_clicked, "bright")
+        self.lbl_bright_readout = Gtk.Label(label="... %", width_chars=5)
+        bright_reset_box = Gtk.EventBox()
+        bright_reset_box.add(self.lbl_bright_readout)
+        bright_reset_box.set_tooltip_text("Click to reset brightness")
+        bright_reset_box.connect("button-press-event", self.on_reset_label_clicked, "bright")
 
-        grid.attach(Gtk.Image.new_from_icon_name("display-brightness-symbolic", Gtk.IconSize.BUTTON), 0, 1, 1, 1)
-        grid.attach(self.lbl_bright_readout, 2, 1, 1, 1)
-        grid.attach(btn_reset_bright, 3, 1, 1, 1)
+        bright_icon = Gtk.Image.new_from_icon_name("display-brightness-symbolic", Gtk.IconSize.BUTTON)
+        self.col0_size_group.add_widget(bright_icon)
+        self.col2_size_group.add_widget(bright_reset_box)
+        grid.attach(bright_icon, 0, 1, 1, 1)
+        grid.attach(bright_reset_box, 2, 1, 1, 1)
 
         return frame
 
@@ -398,8 +429,29 @@ class FluxFceWindow(Gtk.Window):
             self._update_profile_display("day", status, config_parser)
             self._update_profile_display("night", status, config_parser)
             self._update_sliders_from_backend()
+            self._update_profile_tooltips(status.get("summary", {}))
         except core_exc.FluxFceError as e:
             self.show_error_dialog("Core Error", f"Failed to get status: {e}")
+
+    def _update_profile_tooltips(self, summary):
+        """Updates the tooltips for the apply buttons based on scheduling status."""
+        is_enabled = summary.get("overall_status") == "[OK]"
+
+        # Tooltip for Day Button
+        if self.btn_apply_day:
+            if is_enabled:
+                tooltip = "Apply Day Mode temporarily. The schedule will automatically resume at sunset or on session restart."
+            else:
+                tooltip = "Apply Day Mode. This setting will persist because scheduling is disabled."
+            self.btn_apply_day.set_tooltip_text(tooltip)
+
+        # Tooltip for Night Button
+        if self.btn_apply_night:
+            if is_enabled:
+                tooltip = "Apply Night Mode temporarily. The schedule will automatically resume at sunrise or on session restart."
+            else:
+                tooltip = "Apply Night Mode. This setting will persist because scheduling is disabled."
+            self.btn_apply_night.set_tooltip_text(tooltip)
 
     def _update_status_header(self, summary):
         is_enabled = summary.get("overall_status") == "[OK]"
@@ -428,9 +480,7 @@ class FluxFceWindow(Gtk.Window):
                 relative_str = GLib.markup_escape_text(time_left_str)
 
                 # Construct the final markup string with the new bolding format
-                self.lbl_next_transition.set_markup(
-                    f"<b>{transition_term}</b> at <b>{time_str}</b> (in <b>{relative_str}</b>)"
-                )
+                self.lbl_next_transition.set_markup(f"<b>{transition_term}</b> at {time_str} (in {relative_str})")
 
                 delta_ms = delta.total_seconds() * 1000
                 if delta_ms > 0:
@@ -447,16 +497,12 @@ class FluxFceWindow(Gtk.Window):
             profile_name = config.get("day_bg_profile", "N/A")
             theme = config.get("light_theme", "N/A")
             temp, bright = config_parser.get("ScreenDay", "XSCT_TEMP", fallback=""), config_parser.get("ScreenDay", "XSCT_BRIGHT", fallback="")
-            lbl_theme_value, lbl_screen_value, lbl_wallpaper_value = self.lbl_day_theme, self.lbl_day_screen, self.lbl_day_wallpaper
+            lbl_screen_value, lbl_theme_value, lbl_background_value = self.lbl_day_screen, self.lbl_day_theme, self.lbl_day_background
         else: # night
             profile_name = config.get("night_bg_profile", "N/A")
             theme = config.get("dark_theme", "N/A")
             temp, bright = config_parser.get("ScreenNight", "XSCT_TEMP", fallback=""), config_parser.get("ScreenNight", "XSCT_BRIGHT", fallback="")
-            lbl_theme_value, lbl_screen_value, lbl_wallpaper_value = self.lbl_night_theme, self.lbl_night_screen, self.lbl_night_wallpaper
-
-        # --- Set Theme Label ---
-        lbl_theme_value.set_markup(f"<small><u><b>{GLib.markup_escape_text(theme)}</b></u></small>")
-        lbl_theme_value.set_tooltip_text("Click to open system theme preferences (xfce4-appearance-settings)")
+            lbl_screen_value, lbl_theme_value, lbl_background_value = self.lbl_night_screen, self.lbl_night_theme, self.lbl_night_background
 
         # --- Set Screen Label ---
         temp_str = f"{temp} K" if temp else "Default"
@@ -464,9 +510,13 @@ class FluxFceWindow(Gtk.Window):
         lbl_screen_value.set_markup(f"<small><b>{temp_str}</b>, <b>{bright_str}</b></small>")
         lbl_screen_value.set_tooltip_text("Current screen settings for this mode (use controls below to adjust)")
 
-        # --- Set Wallpaper Label ---
-        lbl_wallpaper_value.set_markup(f"<small><u><b>{GLib.markup_escape_text(profile_name)}.profile</b></u></small>")
-        lbl_wallpaper_value.set_tooltip_text(f"Click to edit background profile '{profile_name}.profile'")
+        # --- Set Theme Label ---
+        lbl_theme_value.set_markup(f"<small><u><b>{GLib.markup_escape_text(theme)}</b></u></small>")
+        lbl_theme_value.set_tooltip_text("Click to open system theme preferences (xfce4-appearance-settings)")
+
+        # --- Set Background Label ---
+        lbl_background_value.set_markup(f"<small><u><b>{GLib.markup_escape_text(profile_name)}.profile</b></u></small>")
+        lbl_background_value.set_tooltip_text(f"Click to edit background profile '{profile_name}.profile'")
 
     def _update_sliders_from_backend(self):
         log.debug("Updating sliders from backend screen state.")
@@ -579,18 +629,34 @@ class FluxFceWindow(Gtk.Window):
         self.slider_debounce_id = None
         return GLib.SOURCE_REMOVE
 
-    def on_reset_slider_clicked(self, widget, control_type):
+    def on_reset_label_clicked(self, widget, event, control_type):
+        """Resets a slider to the default for the current day/night mode."""
+        if event.button != Gdk.BUTTON_PRIMARY:
+            return False
+
         try:
+            status = fluxfce_core.get_status()
+            current_mode = status.get("summary", {}).get("current_mode", "day")
+            config = fluxfce_core.get_current_config()
+
+            section = "ScreenDay" if current_mode == 'day' else "ScreenNight"
+            
+            # Get current screen settings to only change one value at a time
             settings = self.xfce_handler.get_screen_settings()
             temp, bright = settings.get("temperature", 6500), settings.get("brightness", 1.0)
+
             if control_type == "temp":
-                temp = 6500
+                temp = config.getint(section, "XSCT_TEMP", fallback=6500)
             elif control_type == "bright":
-                bright = 1.0
+                bright = config.getfloat(section, "XSCT_BRIGHT", fallback=1.0)
+
             self.xfce_handler.set_screen_temp(temp, bright)
             GLib.timeout_add(UI_UPDATE_DELAY_MS, self._update_sliders_from_backend)
-        except core_exc.XfceError as e:
+
+        except (core_exc.FluxFceError, ValueError) as e:
             self.show_error_dialog("Reset Error", f"Failed to reset {control_type}: {e}")
+
+        return True # Event handled
 
     def on_details_link_clicked(self, widget, event, link_type, mode):
         """Handles clicks on the new Theme and Wallpaper links."""
@@ -604,7 +670,7 @@ class FluxFceWindow(Gtk.Window):
                 subprocess.Popen(["xfce4-appearance-settings"])
             except (FileNotFoundError, OSError) as e:
                 self.show_error_dialog("Could Not Open Settings", f"Failed to launch 'xfce4-appearance-settings'.\nError: {e}")
-        elif link_type == "wallpaper":
+        elif link_type == "background":
             # Re-use the existing logic for editing profiles
             self.on_edit_profile_clicked(widget, mode)
 

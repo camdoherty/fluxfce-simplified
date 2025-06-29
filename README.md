@@ -12,7 +12,7 @@
 ---
 
 <p align="center">
-  <img src="screenshot.png" alt="fluxfce Screenshot" width=450>
+  <img src="screenshot.png" alt="fluxfce Screenshot" width=800>
 </p>
 
 <p align="center" style="color:orange;">
