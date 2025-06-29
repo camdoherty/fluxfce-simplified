@@ -53,7 +53,7 @@
 ## Installation
 
 <p style="color:orange;">
-  <strong>WARNING:</strong> Running the install command will change your theme to Aditawa (Day) and Adwaita-dark (Night) and change desktop wallpapers to white (Day) / black (Night). This is expected behavior but UX will be improved in a later release.
+  <strong>WARNING:</strong> Running the install command will change your theme to Adwaita (Day) and Adwaita-dark (Night) and change desktop wallpapers to white (Day) / black (Night). This is expected behavior but UX will be improved in a later release.
 </p>
   
 
