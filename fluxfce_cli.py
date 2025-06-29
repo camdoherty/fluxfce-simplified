@@ -415,8 +415,8 @@ Examples:
             log.info(f"{AnsiColors.GREEN}--- Dependency check complete ---{AnsiColors.RESET}")
 
             log.info(f"\n{AnsiColors.YELLOW}{'-'*60}{AnsiColors.RESET}")
-            log.info(f"{AnsiColors.YELLOW}WARNING: The FluxFCE installer will modify your desktop appearance.{AnsiColors.RESET}")
-            log.info(f"{AnsiColors.YELLOW}Continuing will change the Theme and Desktop Backgrounds to default FluxFCE settings.{AnsiColors.RESET}")
+            log.info(f"{AnsiColors.YELLOW}WARNING: The fluxfce installer will modify your desktop appearance.{AnsiColors.RESET}")
+            log.info(f"{AnsiColors.YELLOW}Continuing will change the Theme and Desktop Backgrounds to default fluxfce settings.{AnsiColors.RESET}")
             log.info(f"{AnsiColors.YELLOW}{'-'*60}{AnsiColors.RESET}")
             if not ask_yes_no_cli("Are you sure you want to continue with the installation?", default_yes=False):
                 log.info("\nInstallation aborted by user.")
