@@ -59,7 +59,7 @@ class FluxFceWindow(Gtk.Window):
 
         # Window properties
         self.set_type_hint(Gdk.WindowTypeHint.POPUP_MENU)
-        self.set_border_width(12)
+        self.set_border_width(10)
         self.set_default_size(420, -1)
         self.set_resizable(False)
         self.set_decorated(False)
@@ -211,26 +211,34 @@ class FluxFceWindow(Gtk.Window):
 
     def _build_ui(self):
         """Constructs the entire UI, including a custom title bar and content."""
-        main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
+        main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.add(main_vbox)
 
     #    main_vbox.pack_start(self._build_title_bar(), False, True, 0)
         main_vbox.pack_start(self._build_status_section(), False, True, 0)
         main_vbox.pack_start(self._build_profiles_section(), False, True, 0)
+
+        # Add a separator for visual distinction between major sections
+        separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        separator.set_margin_top(3)
+        separator.set_margin_bottom(3)
+        main_vbox.pack_start(separator, False, True, 0)
+
         main_vbox.pack_start(self._build_manual_control_section(), False, True, 0)
 
     def _build_status_section(self):
         """Builds the top section with next transition info and toggle switch."""
         # The main container for this whole section
-        section_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        section_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
 
         # The hbox for the label and switch
-        next_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        next_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self.lbl_next_transition = Gtk.Label(label="...", xalign=0, ellipsize=Pango.EllipsizeMode.END)
         next_hbox.pack_start(self.lbl_next_transition, True, True, 0)
 
         self.toggle_switch = Gtk.Switch()
         self.toggle_switch.set_valign(Gtk.Align.CENTER)
+        self.toggle_switch.set_tooltip_text("Enable or disable automatic theme and screen transitions")
         self.toggle_switch_handler_id = self.toggle_switch.connect("notify::active", self.on_toggle_switch_activated)
         next_hbox.pack_end(self.toggle_switch, False, False, 0)
 
@@ -239,53 +247,96 @@ class FluxFceWindow(Gtk.Window):
         # Add the separator to the bottom of the section's box
         separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
         # Add a top margin to the separator to create space between it and the status text
-        separator.set_margin_top(10)
+        separator.set_margin_top(4)
         section_box.pack_start(separator, False, True, 0)
 
         return section_box
 
     def _build_profiles_section(self):
         # Use an expander to allow collapsing this section
-        frame = Gtk.Expander(use_markup=True, label="<b>Day / Night Modes</b>")
+        frame = Gtk.Expander(use_markup=True, label="<b>Mode</b>")
         frame.set_expanded(True)
+        frame.set_tooltip_text("Manage Day/Night mode profiles and apply them")
 
-        profile_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=10)
+        profile_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=6)
         frame.add(profile_box)
-        (self.day_grid, self.lbl_day_details, self.btn_edit_day_profile) = self._create_profile_row("day", "☀️", "Day Mode")
+
+        # Create and store all the new widgets for the 'day' row
+        (self.day_grid, self.lbl_day_theme, self.lbl_day_screen, self.lbl_day_wallpaper) = self._create_profile_row("day", "☀️", "Day Mode")
         profile_box.pack_start(self.day_grid, False, False, 0)
-        profile_box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 5)
-        (self.night_grid, self.lbl_night_details, self.btn_edit_night_profile) = self._create_profile_row("night", "🌙", "Night Mode")
+        profile_box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 2)
+
+        # Create and store all the new widgets for the 'night' row
+        (self.night_grid, self.lbl_night_theme, self.lbl_night_screen, self.lbl_night_wallpaper) = self._create_profile_row("night", "🌙", "Night Mode")
         profile_box.pack_start(self.night_grid, False, False, 0)
         return frame
 
     def _create_profile_row(self, mode, icon, title):
-        grid = Gtk.Grid(column_spacing=6, row_spacing=4)
+        # The main grid for this profile row
+        grid = Gtk.Grid(column_spacing=10, row_spacing=2)
+
+        # --- Row 1: Buttons ---
         btn_apply = Gtk.Button(halign=Gtk.Align.FILL, hexpand=True)
+        btn_apply.set_tooltip_text(f"Temporarily apply the {mode.capitalize()} mode settings")
         btn_apply_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         btn_apply_box.pack_start(Gtk.Label(label=icon), False, False, 0)
         btn_apply_box.pack_start(Gtk.Label(label=title), False, False, 0)
         btn_apply.add(btn_apply_box)
         btn_apply.connect("clicked", self.on_apply_temporary_clicked, mode)
-        grid.attach(btn_apply, 0, 0, 1, 1)
+
         btn_save = Gtk.Button.new_from_icon_name("document-save-symbolic", Gtk.IconSize.BUTTON)
         btn_save.set_tooltip_text(f"Save current desktop look as the new {mode.capitalize()} default")
         btn_save.connect("clicked", self.on_set_default_clicked, mode)
+
+        # Attach buttons to the main grid
+        grid.attach(btn_apply, 0, 0, 1, 1)
         grid.attach(btn_save, 1, 0, 1, 1)
-        btn_edit_profile = Gtk.Button.new_from_icon_name("document-edit-symbolic", Gtk.IconSize.BUTTON)
-        btn_edit_profile.connect("clicked", self.on_edit_profile_clicked, mode)
-        grid.attach(btn_edit_profile, 2, 0, 1, 1)
-        lbl_details = Gtk.Label(xalign=0, yalign=0, use_markup=True)
-        lbl_details.get_style_context().add_class("dim-label")
-        grid.attach(lbl_details, 0, 1, 3, 1)
-        return grid, lbl_details, btn_edit_profile
+
+        # --- Row 2: Details Grid for proper alignment ---
+        details_grid = Gtk.Grid(column_spacing=6, row_spacing=1, margin_top=1)
+        details_grid.get_style_context().add_class("dim-label")
+        # Make the value column expand to fill space
+        details_grid.set_column_homogeneous(False)
+        details_grid.set_hexpand(True)
+        grid.attach(details_grid, 0, 1, 2, 1) # Span both columns
+
+        # Create labels for Theme, Screen, Wallpaper
+        lbl_theme_title = Gtk.Label(label="Theme:", xalign=0, yalign=0.5)
+        lbl_screen_title = Gtk.Label(label="Screen:", xalign=0, yalign=0.5)
+        lbl_wallpaper_title = Gtk.Label(label="Wallpaper:", xalign=0, yalign=0.5)
+
+        lbl_theme_value = Gtk.Label(xalign=0, yalign=0.5, use_markup=True, ellipsize=Pango.EllipsizeMode.END)
+        lbl_screen_value = Gtk.Label(xalign=0, yalign=0.5, use_markup=True, ellipsize=Pango.EllipsizeMode.END)
+        lbl_wallpaper_value = Gtk.Label(xalign=0, yalign=0.5, use_markup=True, ellipsize=Pango.EllipsizeMode.END)
+
+        # --- Create EventBox for clickable links ---
+        theme_event_box = Gtk.EventBox()
+        theme_event_box.add(lbl_theme_value)
+        theme_event_box.connect("button-press-event", self.on_details_link_clicked, "theme", mode)
+
+        wallpaper_event_box = Gtk.EventBox()
+        wallpaper_event_box.add(lbl_wallpaper_value)
+        wallpaper_event_box.connect("button-press-event", self.on_details_link_clicked, "wallpaper", mode)
+
+        # Attach all labels to the details grid
+        details_grid.attach(lbl_theme_title, 0, 0, 1, 1)
+        details_grid.attach(theme_event_box, 1, 0, 1, 1)
+        details_grid.attach(lbl_screen_title, 0, 1, 1, 1)
+        details_grid.attach(lbl_screen_value, 1, 1, 1, 1)
+        details_grid.attach(lbl_wallpaper_title, 0, 2, 1, 1)
+        details_grid.attach(wallpaper_event_box, 1, 2, 1, 1)
+
+        # Return the main grid and the individual value labels so they can be updated
+        return grid, lbl_theme_value, lbl_screen_value, lbl_wallpaper_value
 
     def _build_manual_control_section(self):
         # Use an expander to allow collapsing this section
         frame = Gtk.Expander(use_markup=True, label="<b>X Screen Control</b>")
         frame.set_expanded(True)
+        frame.set_tooltip_text("Temporarily adjust screen temperature and brightness")
 
         # Use a Grid for precise alignment
-        grid = Gtk.Grid(column_spacing=6, row_spacing=8, margin=10, hexpand=True)
+        grid = Gtk.Grid(column_spacing=6, row_spacing=4, margin=6, hexpand=True)
         frame.add(grid)
 
         # --- Temperature Control ---
@@ -392,17 +443,29 @@ class FluxFceWindow(Gtk.Window):
     def _update_profile_display(self, mode, status, config_parser):
         config = status.get("config", {})
         if mode == "day":
-            profile_name, theme = config.get("day_bg_profile", "N/A"), config.get("light_theme", "N/A")
+            profile_name = config.get("day_bg_profile", "N/A")
+            theme = config.get("light_theme", "N/A")
             temp, bright = config_parser.get("ScreenDay", "XSCT_TEMP", fallback=""), config_parser.get("ScreenDay", "XSCT_BRIGHT", fallback="")
-            label_widget, button_widget = self.lbl_day_details, self.btn_edit_day_profile
-        else:
-            profile_name, theme = config.get("night_bg_profile", "N/A"), config.get("dark_theme", "N/A")
+            lbl_theme_value, lbl_screen_value, lbl_wallpaper_value = self.lbl_day_theme, self.lbl_day_screen, self.lbl_day_wallpaper
+        else: # night
+            profile_name = config.get("night_bg_profile", "N/A")
+            theme = config.get("dark_theme", "N/A")
             temp, bright = config_parser.get("ScreenNight", "XSCT_TEMP", fallback=""), config_parser.get("ScreenNight", "XSCT_BRIGHT", fallback="")
-            label_widget, button_widget = self.lbl_night_details, self.btn_edit_night_profile
+            lbl_theme_value, lbl_screen_value, lbl_wallpaper_value = self.lbl_night_theme, self.lbl_night_screen, self.lbl_night_wallpaper
+
+        # --- Set Theme Label ---
+        lbl_theme_value.set_markup(f"<small><u><b>{GLib.markup_escape_text(theme)}</b></u></small>")
+        lbl_theme_value.set_tooltip_text("Click to open system theme preferences (xfce4-appearance-settings)")
+
+        # --- Set Screen Label ---
         temp_str = f"{temp} K" if temp else "Default"
         bright_str = f"{float(bright):.0%}" if bright else "Default"
-        label_widget.set_markup(f"<small>Theme: <b>{theme}</b>\nScreen: <b>{temp_str}</b>, <b>{bright_str}</b></small>")
-        button_widget.set_tooltip_text(f"Edit background profile '{profile_name}.profile'")
+        lbl_screen_value.set_markup(f"<small><b>{temp_str}</b>, <b>{bright_str}</b></small>")
+        lbl_screen_value.set_tooltip_text("Current screen settings for this mode (use controls below to adjust)")
+
+        # --- Set Wallpaper Label ---
+        lbl_wallpaper_value.set_markup(f"<small><u><b>{GLib.markup_escape_text(profile_name)}.profile</b></u></small>")
+        lbl_wallpaper_value.set_tooltip_text(f"Click to edit background profile '{profile_name}.profile'")
 
     def _update_sliders_from_backend(self):
         log.debug("Updating sliders from backend screen state.")
@@ -528,6 +591,24 @@ class FluxFceWindow(Gtk.Window):
         except core_exc.XfceError as e:
             self.show_error_dialog("Reset Error", f"Failed to reset {control_type}: {e}")
 
+    def on_details_link_clicked(self, widget, event, link_type, mode):
+        """Handles clicks on the new Theme and Wallpaper links."""
+        # We only care about the primary mouse button (left-click)
+        if event.button != Gdk.BUTTON_PRIMARY:
+            return False
+
+        if link_type == "theme":
+            try:
+                # Use the more specific command for appearance settings
+                subprocess.Popen(["xfce4-appearance-settings"])
+            except (FileNotFoundError, OSError) as e:
+                self.show_error_dialog("Could Not Open Settings", f"Failed to launch 'xfce4-appearance-settings'.\nError: {e}")
+        elif link_type == "wallpaper":
+            # Re-use the existing logic for editing profiles
+            self.on_edit_profile_clicked(widget, mode)
+
+        return True # Stop event propagation
+
     def on_edit_profile_clicked(self, widget, mode):
         try:
             config = fluxfce_core.get_current_config()
@@ -563,36 +644,53 @@ class FluxFceWindow(Gtk.Window):
     # --- TRAY WINDOW POSITIONING FIXES (START of modifications) ---
 
     def _calc_position(self, screen, icon_rect, win_w, win_h, orient):
-        """Calculates window position based on icon, supporting all panel orientations."""
+        """
+        Calculates window position to be adjacent to the panel but biased
+        towards the center of the screen for better ergonomics.
+        """
         display = Gdk.Display.get_default()
         monitor = display.get_monitor_at_point(icon_rect.x, icon_rect.y)
         workarea = monitor.get_workarea()
 
-        if orient == Gtk.Orientation.HORIZONTAL:
-            # Horizontal panel (top or bottom)
-            x = icon_rect.x + icon_rect.width // 2 - win_w // 2
-            # Check if panel is in top or bottom half of the workarea
-            if icon_rect.y < workarea.y + workarea.height // 2:
-                # Top panel: position window below the icon
-                y = icon_rect.y + icon_rect.height
-            else:
-                # Bottom panel: position window above the icon
-                y = icon_rect.y - win_h
-        else: # Gtk.Orientation.VERTICAL
-            # Vertical panel (left or right)
-            y = icon_rect.y + icon_rect.height // 2 - win_h // 2
-            # Check if panel is in left or right half of the workarea
-            if icon_rect.x < workarea.x + workarea.width // 2:
-                # Left panel: position window to the right of the icon
-                x = icon_rect.x + icon_rect.width
-            else:
-                # Right panel: position window to the left of the icon
-                x = icon_rect.x - win_w
+        # Center points for weighting the position
+        icon_center_x = icon_rect.x + icon_rect.width / 2
+        icon_center_y = icon_rect.y + icon_rect.height / 2
+        monitor_center_x = workarea.x + workarea.width / 2
+        monitor_center_y = workarea.y + workarea.height / 2
 
-        # Clamp coordinates to be within the monitor's workarea
+        # Weighting factor (0.0 to 1.0).
+        # 0.0 = centered on icon, 1.0 = centered on monitor.
+        # A value around 0.3-0.4 provides a noticeable but not jarring shift.
+        weight = 0.35
+
+        if orient == Gtk.Orientation.HORIZONTAL:
+            # --- Horizontal Panel (Top or Bottom) ---
+            # Weighted average for the X position
+            target_x = (icon_center_x * (1 - weight)) + (monitor_center_x * weight)
+            x = target_x - (win_w / 2)
+
+            # Y position is determined by panel location (top or bottom half)
+            if icon_center_y < monitor_center_y:
+                y = icon_rect.y + icon_rect.height  # Panel at top
+            else:
+                y = icon_rect.y - win_h  # Panel at bottom
+        else:
+            # --- Vertical Panel (Left or Right) ---
+            # Weighted average for the Y position
+            target_y = (icon_center_y * (1 - weight)) + (monitor_center_y * weight)
+            y = target_y - (win_h / 2)
+
+            # X position is determined by panel location (left or right half)
+            if icon_center_x < monitor_center_x:
+                x = icon_rect.x + icon_rect.width  # Panel on left
+            else:
+                x = icon_rect.x - win_w  # Panel on right
+
+        # Clamp coordinates to be safely within the monitor's workarea
         x = max(workarea.x, min(x, workarea.x + workarea.width - win_w))
         y = max(workarea.y, min(y, workarea.y + workarea.height - win_h))
-        return x, y
+
+        return int(x), int(y)
 
     def show_and_position(self, status_icon):
         success, screen, icon_rect, orient = status_icon.get_geometry()
