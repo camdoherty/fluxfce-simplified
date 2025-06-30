@@ -359,7 +359,7 @@ class FluxFceWindow(Gtk.Window):
         # Use an expander to allow collapsing this section
         frame = Gtk.Expander(use_markup=True, label="<b>X Screen Control</b>")
         frame.set_expanded(True)
-        frame.set_tooltip_text("Temporarily adjust screen temperature and brightness")
+        frame.set_tooltip_text("Adjust screen temperature and brightness")
 
         # Use a Grid for precise alignment
         grid = Gtk.Grid(column_spacing=4, row_spacing=2, margin=4, hexpand=True)
@@ -440,7 +440,7 @@ class FluxFceWindow(Gtk.Window):
         # Tooltip for Day Button
         if self.btn_apply_day:
             if is_enabled:
-                tooltip = "Apply Day Mode temporarily. The schedule will automatically resume at sunset or on session restart."
+                tooltip = "Apply Day Mode. Scheduling will remain enabled."
             else:
                 tooltip = "Apply Day Mode. This setting will persist because scheduling is disabled."
             self.btn_apply_day.set_tooltip_text(tooltip)
@@ -448,7 +448,7 @@ class FluxFceWindow(Gtk.Window):
         # Tooltip for Night Button
         if self.btn_apply_night:
             if is_enabled:
-                tooltip = "Apply Night Mode temporarily. The schedule will automatically resume at sunrise or on session restart."
+                tooltip = "Apply Night Mode. Scheduling will remain enabled."
             else:
                 tooltip = "Apply Night Mode. This setting will persist because scheduling is disabled."
             self.btn_apply_night.set_tooltip_text(tooltip)
