@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="fluxfce logo" width="120">
+  <img src="logo.png" alt="fluxfce logo" width="80">
 </p>
   
 *fluxfce v0.95 (BETA)* 
