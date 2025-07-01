@@ -1,4 +1,4 @@
-<p>
+<p align="center">
   <img src="logo.png" alt="fluxfce logo" width="120">
 </p>
   
@@ -8,7 +8,7 @@
 
 ---
 
-<p>
+<p align="center">
   <img src="screenshot.png" alt="fluxfce Screenshot" width=640>
 </p>
 
