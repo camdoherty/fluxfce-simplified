@@ -2,7 +2,7 @@
   <img src="logo.png" alt="fluxfce logo" width="80">
 </p>
   
-*fluxfce v0.95 (BETA)*   
+*fluxfce v0.95 (beta)*   
 **fluxfce** automates switching your XFCE desktop appearance — managing GTK theme, desktop background (multi-workspace aware), and screen temperature/brightness — between **Day Mode** and **Night Mode** at local sunrise and sunset. It uses an adapted NOAA algorithm for precise timing and is based on `systemd` user timers, so there's no persistent background daemon.
 
 <p align="center">
@@ -10,7 +10,7 @@
 </p>
 
 <p align="center" style="color:orange;">
-  WARNING: This is beta software. Please use with caution and report any bugs.
+  Warning: This is beta software. Use with caution and report any bugs.
 </p>
 
 
@@ -47,10 +47,9 @@
 ## Installation
 
 <p style="color:orange;">
-  <strong>WARNING:</strong> Running the install command will change your theme to Adwaita (Day) and Adwaita-dark (Night) and change desktop wallpapers to white (Day) / black (Night). This is expected behavior but UX will be improved in a later release.
+  <strong>Running `fluxfce install` will change your theme desktop wallpapers. This is expected but UX will be improved in a later release.</strong>
 </p>
   
-
 1.  **Clone the repository:**
     ```bash
     git clone https://github.com/camdoherty/fluxfce-simplified.git
