@@ -46,9 +46,7 @@
 
 ## Installation
 
-<p style="color:orange;">
-  <strong>Running `fluxfce install` will change your theme desktop wallpapers. This is expected but UX will be improved in a later release.</strong>
-</p>
+  <strong style="color:orange">Running `fluxfce install` will change your theme desktop wallpapers. This is expected. UX will be improved in a future release.</strong>
   
 1.  **Clone the repository:**
     ```bash
