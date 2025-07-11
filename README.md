@@ -1,12 +1,13 @@
-<p align="center"><img src="logo.png" alt="fluxfce logo" width="80"><br> 
-    <i>fluxfce v0.95 (beta)</i>
-</p>
-  
-**fluxfce** is a lightweight `Day Mode` / `Night Mode` CLI + tray application for Linux XFCE.
+<div align="center">
+  <img src="logo.png" alt="fluxfce logo" width="80"><br>
+  <i>v0.95 beta</i>
+</div>
+<br>
 
-It automates switching between user-defined "Day" and "Night" **profiles**, which can include, GTK theme, wallpapers, and screen color/temperature (i.e. "blue light filter"). 
+A lightweight `Day Mode` | `Night Mode` tray application & CLI for Linux XFCE.
 
-Dynamic `systemd` timers are used for reliable, low-resource scheduling without the need for a persistent daemon.
+ - Automatic switching between user-defined "Day" and "Night" profiles, which can include, GTK theme, wallpapers, and screen color/temperature (i.e. "blue light filter"). 
+ - Dynamic `systemd` timers are used for reliable, low-resource scheduling without the need for a persistent daemon.
 
 <p align="center" style="color:orange;">
   <img src="screenshot.png" alt="fluxfce Screenshot" width=640><br>
