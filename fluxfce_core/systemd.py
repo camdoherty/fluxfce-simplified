@@ -119,7 +119,8 @@ StandardError=journal
 _LOGIN_SERVICE_TEMPLATE = """\
 [Unit]
 Description={app_name}: Apply theme on first login
-After=graphical-session.target xfce4-session.target plasma-workspace.target gnome-session.target
+PartOf=graphical-session.target
+After=graphical-session.target xfce4-session.target
 Requires=graphical-session.target
 ConditionEnvironment=DISPLAY
 
@@ -136,6 +137,7 @@ WantedBy=graphical-session.target
 _RESUME_SERVICE_TEMPLATE = """\
 [Unit]
 Description={app_name}: Apply theme after system resume from sleep/suspend
+PartOf=graphical-session.target
 After=sleep.target graphical-session.target
 Requires=graphical-session.target
 ConditionEnvironment=DISPLAY
@@ -425,21 +427,16 @@ class SystemdManager:
         timer_content = f"""\
 [Unit]
 Description={self.app_name}: Event Timer for {mode.capitalize()} Transition (Dynamic)
-; This timer requires the corresponding apply-transition@mode.service instance
 Requires={service_instance_to_trigger}
 
 [Timer]
 Unit={service_instance_to_trigger}
 OnCalendar={on_calendar_utc_str}
-; The login and resume services handle missed transitions, so Persistent=true
-; is not needed here and its presence causes a race condition on first run.
 AccuracySec=1s
-; Don't wake a sleeping system just for this timer
 WakeSystem=false
 
 [Install]
-; Dynamic timers are not typically "WantedBy" other targets directly.
-; They are started/stopped by the application logic (e.g., via fluxfce-scheduler.service)
+WantedBy=timers.target
 """
         try:
             SYSTEMD_USER_DIR.mkdir(parents=True, exist_ok=True) # Ensure dir exists

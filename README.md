@@ -2,7 +2,11 @@
     <i>fluxfce v0.95 (beta)</i>
 </p>
   
-Automatically switch your XFCE desktop between Day and Night modes. fluxfce lets you create custom profiles for your ideal setups and transitions them for you at local sunrise and sunset.
+**fluxfce** is a lightweight `Day Mode` / `Night Mode` CLI + tray application for Linux XFCE.
+
+It automates switching between user-defined "Day" and "Night" **profiles**, which can include, GTK theme, wallpapers, and screen color/temperature (i.e. "blue light filter"). 
+
+Dynamic `systemd` timers are used for reliable, low-resource scheduling without the need for a persistent daemon.
 
 <p align="center" style="color:orange;">
   <img src="screenshot.png" alt="fluxfce Screenshot" width=640><br>
