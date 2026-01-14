@@ -538,7 +538,7 @@ Examples:
             parser.print_help(sys.stderr)
             exit_code = 1
 
-    except core_exc.fluxfceError as e:
+    except core_exc.FluxFceError as e:
         log.error(f"{AnsiColors.RED}fluxfce Error: {e}{AnsiColors.RESET}", exc_info=args.verbose)
         exit_code = 1
     except Exception as e_main:
