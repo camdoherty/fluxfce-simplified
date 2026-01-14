@@ -224,35 +224,45 @@ class SystemdManager:
         
         status_output = stdout.strip().lower()
 
-        if code == 0: # is-system-running returns 0 for "running", "degraded", etc.
+        # Check for "degraded" status first, regardless of exit code
+        # Some systems may return exit code 1 even for "degraded" state
+        if status_output == "degraded":
+            log.warning(
+                f"Systemd user instance reported: '{status_output}' (exit code: {code}). "
+                f"{self.app_name} will proceed, but functionality might be limited or unreliable."
+            )
+            return True
+
+        if code == 0: # is-system-running returns 0 for "running", etc.
             if status_output == "running":
                 log.info(f"Systemd user instance reported: '{status_output}'.")
                 return True
-            elif status_output == "degraded":
-                log.warning(
-                    f"Systemd user instance reported: '{status_output}'. "
-                    f"{self.app_name} functionality might be limited or unreliable."
-                )
-                return True # Still allow proceeding but with a stronger warning.
             else:
-                # Other states like "stopping", "offline", "initializing", "starting"
-                error_msg = (
-                    f"Systemd user instance is in an ambiguous state: '{status_output}' (exit code {code}). "
-                    f"While not a fatal error state according to 'is-system-running', "
-                    f"this state may prevent {self.app_name} from operating correctly. "
+                # Other states like "stopping", "initializing", "starting"
+                log.warning(
+                    f"Systemd user instance is in state: '{status_output}' (exit code {code}). "
+                    f"This state may prevent {self.app_name} from operating correctly. "
                     f"Stderr: '{stderr.strip()}'"
                 )
-                log.warning(error_msg) 
                 return True # Allow proceeding but highlight potential issues.
         else: # Non-zero usually means a more significant issue or "offline"
-            error_msg = (
-                f"Systemd user instance is not in a usable state "
-                f"(command 'is-system-running' exit code: {code}, status: '{status_output}'). "
-                f"Stderr: '{stderr.strip()}'. "
-                f"{self.app_name} cannot proceed with systemd operations."
-            )
-            log.error(error_msg)
-            raise SystemdError(error_msg)
+            # Only raise error if status is truly problematic (not "degraded", which we already handled)
+            if status_output in ["offline", "stopping"]:
+                error_msg = (
+                    f"Systemd user instance is not in a usable state "
+                    f"(command 'is-system-running' exit code: {code}, status: '{status_output}'). "
+                    f"Stderr: '{stderr.strip()}'. "
+                    f"{self.app_name} cannot proceed with systemd operations."
+                )
+                log.error(error_msg)
+                raise SystemdError(error_msg)
+            else:
+                # Unknown non-zero state - allow with warning
+                log.warning(
+                    f"Systemd user instance reported status '{status_output}' with exit code {code}. "
+                    f"{self.app_name} will attempt to proceed, but may encounter issues."
+                )
+                return True
 
     def install_units(
         self, script_path: str, python_executable: Optional[str] = None
